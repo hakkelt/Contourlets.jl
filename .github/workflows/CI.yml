@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - master
+    tags:
+      - "*"
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ startsWith(github.ref, 'refs/pull/') }}
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  test:
+    name: Julia ${{ matrix.julia-version }} — ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+
+    strategy:
+      fail-fast: false
+      matrix:
+        julia-version:
+          - "lts"
+          - "1"
+        os:
+          - ubuntu-latest
+          - windows-latest
+          - macOS-latest
+        exclude:
+          # Reduce macOS/Windows matrix to only latest Julia to save CI minutes
+          - julia-version: "lts"
+            os: windows-latest
+          - julia-version: "lts"
+            os: macOS-latest
+
+    env:
+      JULIA_NUM_THREADS: "2"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: ${{ matrix.julia-version }}
+
+      - uses: julia-actions/cache@v2
+
+      - uses: julia-actions/julia-buildpkg@v1
+
+      - uses: julia-actions/julia-runtest@v1
+        env:
+          JULIA_NUM_THREADS: "2"
+
+      - uses: julia-actions/julia-processcoverage@v1
+        if: matrix.os == 'ubuntu-latest' && matrix.julia-version == '1'
+
+      - uses: codecov/codecov-action@v5
+        if: matrix.os == 'ubuntu-latest' && matrix.julia-version == '1'
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          file: lcov.info
+          fail_ci_if_error: false

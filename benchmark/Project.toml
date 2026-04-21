@@ -1,0 +1,9 @@
+name = "ContourletsBenchmarks"
+
+[deps]
+BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
+Contourlets = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+
+[compat]
+BenchmarkTools = "1"
+julia = "1.10"

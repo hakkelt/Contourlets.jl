@@ -6,21 +6,36 @@
 # All outputs have the same spatial size as the input.
 
 """
-    nsct_forward(image, params::ContourletParams) -> NSCTCoefficients
+    nsct_forward(image, params::ContourletParams; workspace=nothing) -> NSCTCoefficients
 
-Nonsubsampled Contourlet Transform forward pass.  Fully shift-invariant.
+Nonsubsampled Contourlet Transform forward pass.  Invariant under circular
+shifts of the input.
+
+Optionally pass a preallocated workspace from [`make_nsct_workspace`](@ref) to
+reuse buffers across calls.
 
 # Examples
 ```jldoctest
-julia> using Contourlets, Random; Random.seed!(2)
-julia> x = randn(32, 32)
-julia> p = ContourletParams(J=2, L_array=[1,2])
-julia> coeffs = nsct_forward(x, p)
+julia> using Contourlets, Random
+
+julia> x = randn(Xoshiro(2), 32, 32);
+
+julia> p = ContourletParams(J = 2, L_array = [1, 2]);
+
+julia> coeffs = nsct_forward(x, p);
+
 julia> size(coeffs.coarse) == size(x)
 true
 ```
 """
-function nsct_forward(image::AbstractMatrix, params::ContourletParams{T}) where {T}
+function nsct_forward(
+        image::AbstractMatrix, params::ContourletParams{T};
+        workspace::Union{ContourletWorkspace, Nothing} = nothing
+    ) where {T}
+    if workspace !== nothing
+        coeffs = similar_nsct_coefficients(params, size(image))
+        return nsct_forward!(coeffs, image, workspace)
+    end
     img = T.(image)
     coarse = img
     J = params.J
@@ -56,14 +71,19 @@ function nsct_forward!(
     copyto!(ws.current, image)
 
     for j in 1:J
-        nsp_decompose!(ws.current, ws.bp_bufs[j], ws.current, fp, j; tmp = ws.tmp_buf)
+        # Use coarse_bufs[j] as output to avoid aliasing ws.current with itself.
+        # For j=1 input is ws.current; for j>1 input is coarse_bufs[j-1].
+        input_j = (j == 1) ? ws.current : ws.coarse_bufs[j - 1]
+        nsp_decompose!(
+            ws.coarse_bufs[j], ws.bp_bufs[j], input_j, fp, j;
+            tmp = ws.tmp_buf, tmp2 = ws.tmp_buf2
+        )
         sbs = nsdfb_decompose(ws.bp_bufs[j], L[j], qfp, j)
         for (k, sb) in enumerate(sbs)
             copyto!(coeffs.subbands[j][k], sb)
         end
-        # ws.current now holds coarse_j (overwritten in-place by nsp_decompose!)
     end
-    copyto!(coeffs.coarse, ws.current)
+    copyto!(coeffs.coarse, ws.coarse_bufs[J])
     return coeffs
 end
 
@@ -74,10 +94,14 @@ NSCT inverse pass.
 
 # Examples
 ```jldoctest
-julia> using Contourlets, Random; Random.seed!(2)
-julia> x = randn(32, 32)
-julia> p = ContourletParams(J=2, L_array=[1,2])
-julia> rec = nsct_inverse(nsct_forward(x, p))
+julia> using Contourlets, Random
+
+julia> x = randn(Xoshiro(2), 32, 32);
+
+julia> p = ContourletParams(J = 2, L_array = [1, 2]);
+
+julia> rec = nsct_inverse(nsct_forward(x, p));
+
 julia> maximum(abs, rec .- x) < 1e-12
 true
 ```
@@ -110,13 +134,22 @@ function nsct_inverse!(
     J = params.J
     fp = params.lp_filters
     qfp = params.dfb_filters
-    copyto!(ws.current, coeffs.coarse)
+
+    # Seed coarse_bufs[J] from stored coefficients.
+    copyto!(ws.coarse_bufs[J], coeffs.coarse)
 
     for j in J:-1:1
         bp = nsdfb_reconstruct(coeffs.subbands[j], qfp, j)
-        nsp_reconstruct!(image, ws.current, bp, fp, j; tmp = ws.tmp_buf)
         if j > 1
-            copyto!(ws.current, image)
+            nsp_reconstruct!(
+                ws.coarse_bufs[j - 1], ws.coarse_bufs[j], bp, fp, j;
+                tmp = ws.tmp_buf, tmp2 = ws.tmp_buf2
+            )
+        else
+            nsp_reconstruct!(
+                image, ws.coarse_bufs[j], bp, fp, j;
+                tmp = ws.tmp_buf, tmp2 = ws.tmp_buf2
+            )
         end
     end
     return image

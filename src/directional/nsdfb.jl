@@ -1,21 +1,40 @@
 # Nonsubsampled Directional Filter Bank (NSDFB).
 #
 # The NSDFB removes all downsampling from the DFB binary tree.  At pyramid
-# level `tree_level` (1 = finest), the 1-D column analysis filters are
-# upsampled by factor F = 2^(tree_level-1) via zero-insertion (à trous).
+# level `tree_level` (1 = finest), the 1-D analysis filters are upsampled by
+# factor F = 2^(tree_level-1) via zero-insertion (à trous).
+#
+# Each tree depth splits the input with a two-channel filter bank whose 1-D
+# filters are applied along one of four lattice directions (periodic / circular
+# convolution on the image torus), cycling with depth:
+#
+#   depth ≡ 1 (mod 4):  (0, 1)   across columns  (horizontal frequency split)
+#   depth ≡ 2 (mod 4):  (1, 0)   across rows     (vertical frequency split)
+#   depth ≡ 3 (mod 4):  (1, 1)   main diagonal
+#   depth ≡ 0 (mod 4):  (1, −1)  anti-diagonal
+#
+# Because every stage is a circular convolution, the NSDFB — and hence the
+# NSCT — is exactly invariant under circular shifts of the input.
 #
 # PR for the non-decimated 2-channel FB (da Cunha et al. 2006):
-#   Synthesis filters:  G_k(z) = H_k(z^{-1})  (time-reversed analysis)
-#   Reconstruction:     out = Σ_k (G_k * sb_k)
+#   Reconstruction:  out = scale · Σ_k (G_k * sb_k)
+#   with scale · (G₀H₀ + G₁H₁) = 1.
 #
-# For symmetric FIR filters H_k(z^{-1}) = H_k(z), so the synthesis uses the
-# same tap values as analysis but applied with time-reversed indices (+dc).
-#
-# The HP filter is the base-level modulation H_1(z) = H_0(-z), THEN upsampled
-# (not modulation of the already-upsampled LP), because modulating an
-# upsampled filter that has zeros at odd dc positions yields H_1 = H_0.
-#
-# PR is verified analytically for the Haar pair at all tree_levels ≥ 1.
+# Ladder mode (default Q2345): the equivalent analysis/synthesis filters of the
+# Phoong lifting network satisfy G₀H₀ + G₁H₁ = 2 structurally, so scale = 1/2.
+# Modulation mode: G_k(z) = H_k(z^{-1}) and scale = 1, which is PR whenever
+# |H₀|² + |H₁|² = 1 (e.g. the Haar pair).  In both modes the identity is
+# preserved by à trous upsampling and holds along any lattice direction, so PR
+# holds at every depth and tree_level ≥ 1.
+
+# Filtering direction (di, dj) for a given tree depth.
+function _nsdfb_direction(depth::Int)
+    r = mod1(depth, 4)
+    r == 1 && return (0, 1)
+    r == 2 && return (1, 0)
+    r == 3 && return (1, 1)
+    return (1, -1)
+end
 
 """
     nsdfb_decompose(bandpass, l_levels, qfp, tree_level) -> Vector{Matrix}
@@ -26,13 +45,14 @@ each the same size as `bandpass`.  `tree_level` (≥ 1) controls the
 
 # Examples
 ```jldoctest
-julia> using Contourlets, Random; Random.seed!(5)
-julia> x = randn(16, 16)
-julia> sbs = nsdfb_decompose(x, 2, Q2345, 1)
-julia> length(sbs)
-4
-julia> size(sbs[1]) == size(x)
-true
+julia> using Contourlets, Random
+
+julia> x = randn(Xoshiro(5), 16, 16);
+
+julia> sbs = nsdfb_decompose(x, 2, Q2345, 1);
+
+julia> length(sbs), size(sbs[1]) == size(x)
+(4, true)
 ```
 """
 function nsdfb_decompose(
@@ -49,11 +69,7 @@ function nsdfb_decompose(
 end
 
 function _nsdfb_split(img::AbstractMatrix, remaining::Int, depth::Int, qup)
-    shear_dir = isodd(depth) ? :h : :v
-    sh = shear(img, shear_dir)
-    sb0, sb1 = _nsqfb_decompose(sh, qup)
-    sb0 = inv_shear(sb0, shear_dir)   # allocating — avoids src==dst aliasing
-    sb1 = inv_shear(sb1, shear_dir)
+    sb0, sb1 = _nsqfb_decompose(img, qup, _nsdfb_direction(depth))
     remaining == 1 && return [sb0, sb1]
     return vcat(
         _nsdfb_split(sb0, remaining - 1, depth + 1, qup),
@@ -68,10 +84,14 @@ Nonsubsampled DFB synthesis.
 
 # Examples
 ```jldoctest
-julia> using Contourlets, Random; Random.seed!(5)
-julia> x = randn(16, 16)
-julia> sbs = nsdfb_decompose(x, 2, Q2345, 1)
-julia> rec = nsdfb_reconstruct(sbs, Q2345, 1)
+julia> using Contourlets, Random
+
+julia> x = randn(Xoshiro(5), 16, 16);
+
+julia> sbs = nsdfb_decompose(x, 2, Q2345, 1);
+
+julia> rec = nsdfb_reconstruct(sbs, Q2345, 1);
+
 julia> maximum(abs, rec .- x) < 1e-12
 true
 ```
@@ -90,7 +110,6 @@ function nsdfb_reconstruct(
 end
 
 function _nsdfb_merge(sbs::Vector{<:AbstractMatrix}, l::Int, depth::Int, qup)
-    shear_dir = isodd(depth) ? :h : :v
     half = length(sbs) ÷ 2
     if l == 1
         sb0, sb1 = sbs[1], sbs[2]
@@ -98,63 +117,68 @@ function _nsdfb_merge(sbs::Vector{<:AbstractMatrix}, l::Int, depth::Int, qup)
         sb0 = _nsdfb_merge(sbs[1:half], l - 1, depth + 1, qup)
         sb1 = _nsdfb_merge(sbs[(half + 1):end], l - 1, depth + 1, qup)
     end
-    sh0 = shear(sb0, shear_dir)
-    sh1 = shear(sb1, shear_dir)
-    rec = _nsqfb_reconstruct(sh0, sh1, qup)
-    return inv_shear(rec, shear_dir)   # allocating — avoids src==dst aliasing
+    return _nsqfb_reconstruct(sb0, sb1, qup, _nsdfb_direction(depth))
 end
 
-# ── Non-decimated 1-D column filter bank ─────────────────────────────────────
+# ── Non-decimated 1-D directional filter bank ────────────────────────────────
 #
-# `qup` is a NamedTuple (h, h_high, c_h, K) where:
-#   h      = à trous upsampled analysis LP filter
-#   h_high = à trous upsampled analysis HP filter (= upsample(base HP))
-#   c_h    = center index of h (and h_high), 1-based
-#   K      = length of h (and h_high)
+# `qup` is a NamedTuple (h0, c0, h1, c1, g0, cg0, g1, cg1, scale) holding the
+# à trous upsampled equivalent analysis filters (h0, h1) and synthesis filters
+# (g0, g1) with their 1-based origin indices, plus a reconstruction scale.
 #
-# Analysis (column direction, periodic extension):
-#   sb0[i,j] = Σ_m  h[m]        · x[i, mod1(j − dm, n2)]   LP   dm = m − c_h
-#   sb1[i,j] = Σ_m  h_high[m]   · x[i, mod1(j − dm, n2)]   HP
+# Analysis along lattice direction (di, dj), periodic extension:
+#   sb_k[i,j] = Σ_m  h_k[m] · x[mod1(i − di·(m − c_k), n1), mod1(j − dj·(m − c_k), n2)]
 #
-# Synthesis (time-reversed = correlation form, j+dm instead of j−dm):
-#   out[i,j] = Σ_m  h[m]        · sb0[i, mod1(j + dm, n2)]   LP syn = H_0(z^{-1})
-#            + Σ_m  h_high[m]   · sb1[i, mod1(j + dm, n2)]   HP syn = H_1(z^{-1})
+# Synthesis:
+#   out[i,j] = scale · Σ_k Σ_m  g_k[m] · sb_k[mod1(i − di·(m − cg_k), n1), …]
 #
-# PR: H_0(z)·H_0(z^{-1}) + H_1(z)·H_1(z^{-1}) = |H_0|²+|H_1|² = 1
-#   (holds for the Haar pair at all upsampling factors, verified analytically).
+# PR condition: scale · (G₀(z)H₀(z) + G₁(z)H₁(z)) = 1.
+#   • Modulation mode: G_k = H_k(z^{-1}), scale = 1 (holds e.g. for Haar).
+#   • Ladder mode: G_k from the inverse ladder, scale = 1/2 (structural;
+#     follows from the decimated PR identity G₀H₀ + G₁H₁ = 2).
+# Both identities are invariant under à trous upsampling (z → z^{2^l}).
 
-function _nsqfb_decompose(image::AbstractMatrix, qup)
-    h, h_high, c_h, K = qup.h, qup.h_high, qup.c_h, qup.K
+function _nsqfb_decompose(image::AbstractMatrix, qup, dir::Tuple{Int, Int})
+    h0, c0, h1, c1 = qup.h0, qup.c0, qup.h1, qup.c1
+    di, dj = dir
     n1, n2 = size(image)
     sb0 = similar(image); sb1 = similar(image)
     @inbounds for j in 1:n2, i in 1:n1
-        lp = zero(eltype(image)); hp = zero(eltype(image))
-        for m in 1:K
-            dm = m - c_h
-            jj = mod1(j - dm, n2)   # periodic boundary
-            xval = image[i, jj]
-            lp += h[m] * xval
-            hp += h_high[m] * xval
+        acc0 = zero(eltype(image))
+        for m in eachindex(h0)
+            d = m - c0
+            acc0 += h0[m] * image[mod1(i - di * d, n1), mod1(j - dj * d, n2)]
         end
-        sb0[i, j] = lp
-        sb1[i, j] = hp
+        acc1 = zero(eltype(image))
+        for m in eachindex(h1)
+            d = m - c1
+            acc1 += h1[m] * image[mod1(i - di * d, n1), mod1(j - dj * d, n2)]
+        end
+        sb0[i, j] = acc0
+        sb1[i, j] = acc1
     end
     return sb0, sb1
 end
 
-function _nsqfb_reconstruct(sb0::AbstractMatrix, sb1::AbstractMatrix, qup)
-    h, h_high, c_h, K = qup.h, qup.h_high, qup.c_h, qup.K
+function _nsqfb_reconstruct(
+        sb0::AbstractMatrix, sb1::AbstractMatrix, qup,
+        dir::Tuple{Int, Int}
+    )
+    g0, cg0, g1, cg1 = qup.g0, qup.cg0, qup.g1, qup.cg1
+    di, dj = dir
     n1, n2 = size(sb0)
     out = zeros(eltype(sb0), n1, n2)
     @inbounds for j in 1:n2, i in 1:n1
-        lp = zero(eltype(sb0)); hp = zero(eltype(sb0))
-        for m in 1:K
-            dm = m - c_h
-            jj = mod1(j + dm, n2)   # time-reversed = +dm
-            lp += h[m] * sb0[i, jj]
-            hp += h_high[m] * sb1[i, jj]
+        acc = zero(eltype(sb0))
+        for m in eachindex(g0)
+            d = m - cg0
+            acc += g0[m] * sb0[mod1(i - di * d, n1), mod1(j - dj * d, n2)]
         end
-        out[i, j] = lp + hp
+        for m in eachindex(g1)
+            d = m - cg1
+            acc += g1[m] * sb1[mod1(i - di * d, n1), mod1(j - dj * d, n2)]
+        end
+        out[i, j] = qup.scale * acc
     end
     return out
 end
@@ -162,24 +186,38 @@ end
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 """
-Build the `qup` NamedTuple for the NSDFB at a given `factor`:
-  h      = upsample(h_q_base, factor)
-  h_high = upsample(h_high_base, factor)     (base HP: h_q modulated before upsampling)
-  c_h    = upsampled center index
-  K      = filter length after upsampling
+Build the `qup` NamedTuple for the NSDFB at a given à trous `factor`.
+
+Ladder mode: equivalent filters from the lifting network (see q2345.jl),
+reconstruction scale 1/2.  Modulation mode: HP by modulation of `h_q`,
+synthesis = time-reversed analysis, scale 1.
 """
 function _upsample_qfp_1d(qfp::QuincunxFilterPair, factor::Int, ::Type{T}) where {T}
-    h_base = T.(vec(qfp.h_q))
-    c_base = qfp.c_h[2]
-    K_base = length(h_base)
-    # Build base HP BEFORE upsampling (column modulation by (-1)^{dc})
-    h_high_base = T[iseven(l - c_base) ? h_base[l] : -h_base[l] for l in 1:K_base]
-
-    if factor == 1
-        return (h = h_base, h_high = h_high_base, c_h = c_base, K = K_base)
+    if is_ladder(qfp)
+        eq = _ladder_equivalent_filters(_ladder_modulate(T.(qfp.f_ladder)))
+        h0 = eq.h0; c0 = eq.c0; h1 = eq.h1; c1 = eq.c1
+        g0 = eq.g0; cg0 = eq.cg0; g1 = eq.g1; cg1 = eq.cg1
+        scale = T(0.5)
+    else
+        h0 = T.(vec(qfp.h_q))
+        c0 = qfp.c_h[2]
+        K = length(h0)
+        # HP by modulation BEFORE upsampling (modulating an à trous filter is a no-op)
+        h1 = T[iseven(m - c0) ? h0[m] : -h0[m] for m in 1:K]
+        c1 = c0
+        # synthesis = time-reversed analysis: G_k(z) = H_k(z^{-1})
+        g0 = reverse(h0); cg0 = K + 1 - c0
+        g1 = reverse(h1); cg1 = K + 1 - c1
+        scale = one(T)
     end
-    h_up = upsample_filter(h_base, factor)
-    h_high_up = upsample_filter(h_high_base, factor)
-    c_up = (c_base - 1) * factor + 1
-    return (h = h_up, h_high = h_high_up, c_h = c_up, K = length(h_up))
+    if factor > 1
+        h0 = upsample_filter(h0, factor); c0 = (c0 - 1) * factor + 1
+        h1 = upsample_filter(h1, factor); c1 = (c1 - 1) * factor + 1
+        g0 = upsample_filter(g0, factor); cg0 = (cg0 - 1) * factor + 1
+        g1 = upsample_filter(g1, factor); cg1 = (cg1 - 1) * factor + 1
+    end
+    return (
+        h0 = h0, c0 = c0, h1 = h1, c1 = c1,
+        g0 = g0, cg0 = cg0, g1 = g1, cg1 = cg1, scale = scale,
+    )
 end

@@ -20,10 +20,14 @@ Optionally pass a preallocated `ContourletWorkspace` to avoid per-call allocatio
 
 # Examples
 ```jldoctest
-julia> using Contourlets, Random; Random.seed!(1)
-julia> x = randn(64, 64)
-julia> p = ContourletParams(J=2, L_array=[1,2])
-julia> coeffs = ct_forward(x, p)
+julia> using Contourlets, Random; Random.seed!(1);
+
+julia> x = randn(64, 64);
+
+julia> p = ContourletParams(J=2, L_array=[1,2]);
+
+julia> coeffs = ct_forward(x, p);
+
 julia> length(coeffs.subbands[2])
 4
 ```
@@ -41,12 +45,7 @@ function ct_forward(
     J = params.J
     L = params.L_array
     fp = FilterPair{T_out}(T_out.(params.lp_filters.h), T_out.(params.lp_filters.g))
-    qfp = QuincunxFilterPair{T_out}(
-        T_out.(params.dfb_filters.h_q),
-        T_out.(params.dfb_filters.g_q),
-        params.dfb_filters.c_h,
-        params.dfb_filters.c_g
-    )
+    qfp = _convert_qfp(T_out, params.dfb_filters)
     subbands = Vector{Vector{Matrix{T_out}}}(undef, J)
 
     coarse = img
@@ -81,9 +80,10 @@ function ct_forward!(
     for j in 1:J
         input_j = (j == 1) ? ws.current : ws.coarse_bufs[j - 1]
         n1, n2 = size(input_j)
-        tmp_j = @view ws.tmp_buf[1:n1, 1:n2]   # same-size scratch
+        tmp_j = @view ws.tmp_buf[1:n1, 1:n2]    # same-size scratch
+        tmp2_j = @view ws.tmp_buf2[1:n1, 1:n2]
 
-        lp_decompose!(ws.coarse_bufs[j], ws.bp_bufs[j], input_j, fp; tmp = tmp_j)
+        lp_decompose!(ws.coarse_bufs[j], ws.bp_bufs[j], input_j, fp; tmp = tmp_j, tmp2 = tmp2_j)
         # DFB in-place would need per-level workspace; use allocating for now
         sbs = dfb_decompose(ws.bp_bufs[j], L[j], qfp)
         for (k, sb) in enumerate(sbs)
@@ -101,10 +101,14 @@ Discrete Contourlet Transform inverse pass.
 
 # Examples
 ```jldoctest
-julia> using Contourlets, Random; Random.seed!(1)
-julia> x = randn(64, 64)
-julia> p = ContourletParams(J=2, L_array=[1,2])
-julia> rec = ct_inverse(ct_forward(x, p))
+julia> using Contourlets, Random
+
+julia> x = randn(Xoshiro(1), 64, 64);
+
+julia> p = ContourletParams(J = 2, L_array = [1, 2]);
+
+julia> rec = ct_inverse(ct_forward(x, p));
+
 julia> maximum(abs, rec .- x) < 1e-12
 true
 ```
@@ -143,15 +147,40 @@ function ct_inverse!(
 
     for j in J:-1:1
         bp = dfb_reconstruct(coeffs.subbands[j], qfp)
+        n1, n2 = size(bp)
+        tmp_j = @view ws.tmp_buf[1:n1, 1:n2]
+        tmp2_j = @view ws.tmp_buf2[1:n1, 1:n2]
         if j > 1
             # Output of reconstruction at level j is coarse input for level j-1.
             # coarse_bufs[j-1] has exactly that size: (n1/2^(j-1), n2/2^(j-1)).
-            lp_reconstruct!(ws.coarse_bufs[j - 1], ws.coarse_bufs[j], bp, fp)
+            lp_reconstruct!(ws.coarse_bufs[j - 1], ws.coarse_bufs[j], bp, fp; tmp = tmp_j, tmp2 = tmp2_j)
         else
-            lp_reconstruct!(image, ws.coarse_bufs[j], bp, fp)
+            lp_reconstruct!(image, ws.coarse_bufs[j], bp, fp; tmp = tmp_j, tmp2 = tmp2_j)
         end
     end
     return image
+end
+
+"""
+    dfb_subband_sizes(n1, n2, l; ladder=true) -> Vector{Tuple{Int,Int}}
+
+Per-subband `(rows, cols)` sizes produced by an `l`-level DFB applied to an
+`n1 × n2` bandpass image.  For the ladder (default) DFB the first `2^(l-1)`
+subbands form the horizontal mosaic and the remaining `2^(l-1)` the vertical
+mosaic; for the legacy modulation-mode DFB all subbands are equal-sized.
+"""
+function dfb_subband_sizes(n1::Int, n2::Int, l::Int; ladder::Bool = true)
+    l <= 0 && return [(n1, n2)]
+    if !ladder
+        sub_n1 = n1 >> (l ÷ 2)
+        sub_n2 = n2 >> cld(l, 2)
+        return fill((sub_n1, sub_n2), 2^l)
+    end
+    l == 1 && return fill((n1 >> 1, n2), 2)
+    half = 2^(l - 1)
+    first_sz = (n1 >> (l - 1), n2 >> 1)   # horizontal mosaic
+    second_sz = (n1 >> 1, n2 >> (l - 1))  # vertical mosaic
+    return vcat(fill(first_sz, half), fill(second_sz, half))
 end
 
 """
@@ -168,16 +197,12 @@ function similar_coefficients(
     J = params.J
     L = params.L_array
     n1, n2 = image_size
+    ladder = is_ladder(params.dfb_filters)
     subbands = Vector{Vector{Matrix{T}}}(undef, J)
     cur_n1, cur_n2 = n1, n2
     for j in 1:J
-        n_dirs = max(1, 2^L[j])
-        # Odd DFB levels split columns (n2 halved), even levels split rows (n1 halved)
-        n_col_splits = cld(L[j], 2)      # ceil(L/2) col splits
-        n_row_splits = L[j] ÷ 2         # floor(L/2) row splits
-        sub_n1 = cur_n1 >> n_row_splits
-        sub_n2 = cur_n2 >> n_col_splits
-        subbands[j] = [zeros(T, sub_n1, sub_n2) for _ in 1:n_dirs]
+        szs = dfb_subband_sizes(cur_n1, cur_n2, L[j]; ladder = ladder)
+        subbands[j] = [zeros(T, s...) for s in szs]
         cur_n1 = cld(cur_n1, 2)
         cur_n2 = cld(cur_n2, 2)
     end

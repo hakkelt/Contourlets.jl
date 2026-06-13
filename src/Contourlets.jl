@@ -81,7 +81,7 @@ export
     lp_decompose, lp_decompose!, lp_reconstruct, lp_reconstruct!,
     nsp_decompose, nsp_decompose!, nsp_reconstruct, nsp_reconstruct!,
     qfb_decompose, qfb_decompose!, qfb_reconstruct, qfb_reconstruct!,
-    dfb_decompose, dfb_reconstruct,
+    dfb_decompose, dfb_reconstruct, dfb_subband_sizes,
     nsdfb_decompose, nsdfb_reconstruct,
 
     # Top-level transforms

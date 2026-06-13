@@ -33,10 +33,14 @@ Returns `(sb0, sb1)` where `sb0` is the LP subband and `sb1` the HP subband.
 
 # Examples
 ```jldoctest
-julia> using Contourlets, Random; Random.seed!(7)
-julia> x = randn(16, 16)
-julia> sb0, sb1 = qfb_decompose(x, Q2345)
-julia> sb0_r, sb1_r = qfb_decompose(x, Q2345; dir=:row)
+julia> using Contourlets, Random
+
+julia> x = randn(Xoshiro(7), 16, 16);
+
+julia> sb0, sb1 = qfb_decompose(x, Q2345);
+
+julia> sb0_r, sb1_r = qfb_decompose(x, Q2345; dir = :row);
+
 julia> size(sb0), size(sb0_r)
 ((16, 8), (8, 16))
 ```
@@ -79,10 +83,14 @@ Two-channel quincunx filter bank synthesis.
 
 # Examples
 ```jldoctest
-julia> using Contourlets, Random; Random.seed!(7)
-julia> x = randn(16, 16)
-julia> sb0, sb1 = qfb_decompose(x, Q2345)
-julia> rec = qfb_reconstruct(sb0, sb1, Q2345)
+julia> using Contourlets, Random
+
+julia> x = randn(Xoshiro(7), 16, 16);
+
+julia> sb0, sb1 = qfb_decompose(x, Q2345);
+
+julia> rec = qfb_reconstruct(sb0, sb1, Q2345);
+
 julia> maximum(abs, rec .- x) < 1e-12
 true
 ```
@@ -123,25 +131,27 @@ end
 function _qfb_col_decompose(image::AbstractMatrix, qfp::QuincunxFilterPair)
     T = promote_type(eltype(image), eltype(qfp))
     img = T.(image)
-    h = T.(vec(qfp.h_q))   # 1-D analysis LP filter
-    c_h = qfp.c_h[2]          # column origin index (1-based)
     n1, n2 = size(img)
     d2 = n2 ÷ 2
     sb0 = zeros(T, n1, d2)
     sb1 = zeros(T, n1, d2)
-    _qfb_col_decompose_kernel!(sb0, sb1, img, h, c_h, n1, n2, d2)
-    return sb0, sb1
+    return _qfb_col_decompose!(sb0, sb1, img, _convert_qfp(T, qfp))
 end
 
 function _qfb_col_decompose!(
         sb0::AbstractMatrix, sb1::AbstractMatrix,
         image::AbstractMatrix, qfp::QuincunxFilterPair
     )
-    h = eltype(sb0).(vec(qfp.h_q))
-    c_h = qfp.c_h[2]
     n1, n2 = size(image)
     d2 = size(sb0, 2)
-    _qfb_col_decompose_kernel!(sb0, sb1, image, h, c_h, n1, n2, d2)
+    if is_ladder(qfp)
+        iseven(n2) || throw(ArgumentError("ladder QFB requires an even number of columns"))
+        _qfb_col_decompose_ladder!(sb0, sb1, image, qfp)
+    else
+        h = eltype(sb0).(vec(qfp.h_q))
+        c_h = qfp.c_h[2]
+        _qfb_col_decompose_kernel!(sb0, sb1, image, h, c_h, n1, n2, d2)
+    end
     return sb0, sb1
 end
 
@@ -174,25 +184,101 @@ function _qfb_col_reconstruct(
         qfp::QuincunxFilterPair
     )
     T = promote_type(eltype(sb0), eltype(sb1), eltype(qfp))
-    g = T.(vec(qfp.g_q))
-    c_g = qfp.c_g[2]
     n1 = size(sb0, 1)
     n2 = size(sb0, 2) * 2
     out = zeros(T, n1, n2)
-    _qfb_col_reconstruct_kernel!(out, T.(sb0), T.(sb1), g, c_g, n1, n2, size(sb0, 2))
-    return out
+    return _qfb_col_reconstruct!(out, T.(sb0), T.(sb1), _convert_qfp(T, qfp))
 end
 
 function _qfb_col_reconstruct!(
         out::AbstractMatrix, sb0::AbstractMatrix,
         sb1::AbstractMatrix, qfp::QuincunxFilterPair
     )
-    g = eltype(out).(vec(qfp.g_q))
-    c_g = qfp.c_g[2]
     n1, n2 = size(out)
     d2 = size(sb0, 2)
     fill!(out, zero(eltype(out)))
-    _qfb_col_reconstruct_kernel!(out, sb0, sb1, g, c_g, n1, n2, d2)
+    if is_ladder(qfp)
+        _qfb_col_reconstruct_ladder!(out, sb0, sb1, qfp)
+    else
+        g = eltype(out).(vec(qfp.g_q))
+        c_g = qfp.c_g[2]
+        _qfb_col_reconstruct_kernel!(out, sb0, sb1, g, c_g, n1, n2, d2)
+    end
+    return out
+end
+
+# ── Ladder (lifting) realisation — structural PR, periodic extension ─────────
+#
+# Channel 0 lives on the odd image columns (1-based), channel 1 on the even
+# columns.  See src/filters/q2345.jl for the ladder derivation.
+
+function _qfb_col_decompose_ladder!(
+        sb0::AbstractMatrix, sb1::AbstractMatrix,
+        img::AbstractMatrix, qfp::QuincunxFilterPair
+    )
+    T = eltype(sb0)
+    f = _ladder_modulate(T.(qfp.f_ladder))
+    c = length(f) ÷ 2
+    n1 = size(img, 1)
+    d2 = size(sb0, 2)
+    s2 = sqrt(T(2))
+    # y0 = (1/√2)·(p0 − B₁(p1)),  B₁ lags m − c + 1
+    @inbounds for k in 1:d2
+        for i in 1:n1
+            acc = zero(T)
+            for m in eachindex(f)
+                kk = mod1(k - (m - c + 1), d2)
+                acc += f[m] * img[i, 2kk]
+            end
+            sb0[i, k] = (img[i, 2k - 1] - acc) / s2
+        end
+    end
+    # y1 = −√2·p1 − B₀(y0),  B₀ lags m − c
+    @inbounds for k in 1:d2
+        for i in 1:n1
+            acc = zero(T)
+            for m in eachindex(f)
+                kk = mod1(k - (m - c), d2)
+                acc += f[m] * sb0[i, kk]
+            end
+            sb1[i, k] = -s2 * img[i, 2k] - acc
+        end
+    end
+    return sb0, sb1
+end
+
+function _qfb_col_reconstruct_ladder!(
+        out::AbstractMatrix, sb0::AbstractMatrix,
+        sb1::AbstractMatrix, qfp::QuincunxFilterPair
+    )
+    T = eltype(out)
+    f = _ladder_modulate(T.(qfp.f_ladder))
+    c = length(f) ÷ 2
+    n1 = size(out, 1)
+    d2 = size(sb0, 2)
+    s2 = sqrt(T(2))
+    # p1 = (−1/√2)·(y1 + B₀(y0)) → even columns
+    @inbounds for k in 1:d2
+        for i in 1:n1
+            acc = zero(T)
+            for m in eachindex(f)
+                kk = mod1(k - (m - c), d2)
+                acc += f[m] * sb0[i, kk]
+            end
+            out[i, 2k] = -(sb1[i, k] + acc) / s2
+        end
+    end
+    # p0 = √2·y0 + B₁(p1) → odd columns
+    @inbounds for k in 1:d2
+        for i in 1:n1
+            acc = zero(T)
+            for m in eachindex(f)
+                kk = mod1(k - (m - c + 1), d2)
+                acc += f[m] * out[i, 2kk]
+            end
+            out[i, 2k - 1] = s2 * sb0[i, k] + acc
+        end
+    end
     return out
 end
 

@@ -32,8 +32,10 @@ indices positive.
 # Examples
 ```jldoctest
 julia> using Contourlets
-julia> x = reshape(1.0:16.0, 4, 4)
-julia> y = qx_downsample(x); size(y)
+
+julia> x = reshape(1.0:16.0, 4, 4);
+
+julia> size(qx_downsample(x))
 (4, 2)
 ```
 """

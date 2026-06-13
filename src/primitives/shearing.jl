@@ -23,12 +23,14 @@ In-place shearing of `src` into `dst`.
 # Examples
 ```jldoctest
 julia> using Contourlets
-julia> x = reshape(1.0:9.0, 3, 3)
-julia> shear(x, :h)  # should be permuted
+
+julia> x = reshape(1.0:9.0, 3, 3);
+
+julia> shear(x, :h)
 3×3 Matrix{Float64}:
- 1.0  5.0  9.0
- 2.0  6.0  7.0
- 3.0  4.0  8.0
+ 4.0  7.0  1.0
+ 8.0  2.0  5.0
+ 3.0  6.0  9.0
 ```
 """
 function shear!(

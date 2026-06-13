@@ -7,7 +7,7 @@ verifies perfect reconstruction.
 using Contourlets, TestImages, ImageCore, Colors
 
 # Load a natural image and crop to 128x128
-img = Float64.(Gray.(testimage("barbara")))[100:227, 200:327]
+img = Float64.(Gray.(testimage("barbara")))[1:512, 100:611]
 
 # Build params with parabolic scaling: J=3 scales, 2/4/4 directions per scale
 params = ContourletParams(J=3, L_array=parabolic_levels(3))

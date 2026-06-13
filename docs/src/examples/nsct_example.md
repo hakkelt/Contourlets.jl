@@ -7,7 +7,7 @@ same shift in every subband.
 using Contourlets, TestImages, ImageCore, Colors
 
 # Load a natural image and crop to 64x64 for the shift invariance demo
-img = Float64.(Gray.(testimage("barbara")))[100:163, 200:263]
+img = Float64.(Gray.(testimage("barbara")))[1:512, 100:611]
 
 params = ContourletParams(J=2, L_array=[2, 3])
 

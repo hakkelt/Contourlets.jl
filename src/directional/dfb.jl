@@ -140,25 +140,56 @@ end
 
 # ── 2-D separable periodic filtering (sefilter2) ──────────────────────────────
 
-# Periodic extension by (ru, rd, cl, cr) on the four sides.
-function _extend2_per(x::AbstractMatrix{T}, ru::Int, rd::Int, cl::Int, cr::Int) where {T}
+function _extend2(x::AbstractMatrix{T}, ru::Int, rd::Int, cl::Int, cr::Int, extmod::Symbol) where {T}
     m, n = size(x)
-    out = Matrix{T}(undef, m + ru + rd, n + cl + cr)
-    @inbounds for j in 1:(n + cl + cr), i in 1:(m + ru + rd)
-        out[i, j] = x[mod1(i - ru, m), mod1(j - cl, n)]
+    if extmod === :per
+        out = Matrix{T}(undef, m + ru + rd, n + cl + cr)
+        @inbounds for j in 1:(n + cl + cr), i in 1:(m + ru + rd)
+            out[i, j] = x[mod1(i - ru, m), mod1(j - cl, n)]
+        end
+        return out
+    elseif extmod === :qper_row
+        m2 = round(Int, m / 2)
+        out = Matrix{T}(undef, m + ru + rd, n + cl + cr)
+        @inbounds for j in 1:(n + cl + cr), i in 1:(m + ru + rd)
+            ii = mod1(i - ru, m)
+            jj = j - cl
+            if jj < 1 || jj > n
+                # shift row index by m2 for column extension
+                out[i, j] = x[mod1(ii + m2, m), mod1(jj, n)]
+            else
+                out[i, j] = x[ii, jj]
+            end
+        end
+        return out
+    elseif extmod === :qper_col
+        n2 = round(Int, n / 2)
+        out = Matrix{T}(undef, m + ru + rd, n + cl + cr)
+        @inbounds for j in 1:(n + cl + cr), i in 1:(m + ru + rd)
+            ii = i - ru
+            jj = mod1(j - cl, n)
+            if ii < 1 || ii > m
+                # shift col index by n2 for row extension
+                out[i, j] = x[mod1(ii, m), mod1(jj + n2, n)]
+            else
+                out[i, j] = x[ii, jj]
+            end
+        end
+        return out
+    else
+        throw(ArgumentError("unsupported extmod: $extmod"))
     end
-    return out
 end
 
-# y = X * F1(z1) * F2(z2) * z1^shift1 * z2^shift2, same size as x (extmod = per).
-function _sefilter2_per(x::AbstractMatrix{T}, f::Vector{T}, shift1::Int, shift2::Int) where {T}
+# y = X * F1(z1) * F2(z2) * z1^shift1 * z2^shift2, same size as x
+function _sefilter2(x::AbstractMatrix{T}, f::Vector{T}, shift1::Int, shift2::Int, extmod::Symbol) where {T}
     L = length(f)
     lf = (L - 1) / 2
     ru = floor(Int, lf) + shift1
     rd = ceil(Int, lf) - shift1
     cl = floor(Int, lf) + shift2
     cr = ceil(Int, lf) - shift2
-    ext = _extend2_per(x, ru, rd, cl, cr)
+    ext = _extend2(x, ru, rd, cl, cr, extmod)
     m, n = size(x)
     # Separable valid convolution with f along both dims (conv flips the filter).
     tmp = Matrix{T}(undef, m, size(ext, 2))
@@ -186,18 +217,18 @@ end
 _poly_dec(x, kind::Symbol, t) = kind === :q ? _qpdec(x, t) : _ppdec(x, t)
 _poly_rec(p0, p1, kind::Symbol, t) = kind === :q ? _qprec(p0, p1, t) : _pprec(p0, p1, t)
 
-function _fbdec_l(x::AbstractMatrix{T}, f::Vector{T}, kind::Symbol, t) where {T}
+function _fbdec_l(x::AbstractMatrix{T}, f::Vector{T}, kind::Symbol, t, extmod::Symbol = :per) where {T}
     p0, p1 = _poly_dec(x, kind, t)
     s2 = sqrt(T(2))
-    y0 = (p0 .- _sefilter2_per(p1, f, 1, 1)) ./ s2
-    y1 = (-s2) .* p1 .- _sefilter2_per(y0, f, 0, 0)
+    y0 = (p0 .- _sefilter2(p1, f, 1, 1, extmod)) ./ s2
+    y1 = (-s2) .* p1 .- _sefilter2(y0, f, 0, 0, extmod)
     return y0, y1
 end
 
-function _fbrec_l(y0::AbstractMatrix{T}, y1::AbstractMatrix{T}, f::Vector{T}, kind::Symbol, t) where {T}
+function _fbrec_l(y0::AbstractMatrix{T}, y1::AbstractMatrix{T}, f::Vector{T}, kind::Symbol, t, extmod::Symbol = :per) where {T}
     s2 = sqrt(T(2))
-    p1 = (-(one(T) / s2)) .* (y1 .+ _sefilter2_per(y0, f, 0, 0))
-    p0 = s2 .* y0 .+ _sefilter2_per(p1, f, 1, 1)
+    p1 = (-(one(T) / s2)) .* (y1 .+ _sefilter2(y0, f, 0, 0, extmod))
+    p0 = s2 .* y0 .+ _sefilter2(p1, f, 1, 1, extmod)
     return _poly_rec(p0, p1, kind, t)
 end
 
@@ -252,10 +283,10 @@ end
 function _dfbdec_l(x::AbstractMatrix{T}, f::Vector{T}, n::Int) where {T}
     n == 0 && return [copy(x)]
     if n == 1
-        y0, y1 = _fbdec_l(x, f, :q, :q1r)
+        y0, y1 = _fbdec_l(x, f, :q, :q1r, :qper_col)
         y = [y0, y1]
     else
-        x0, x1 = _fbdec_l(x, f, :q, :q1r)
+        x0, x1 = _fbdec_l(x, f, :q, :q1r, :qper_col)
         y = Vector{Matrix{T}}(undef, 4)
         y[2], y[1] = _fbdec_l(x0, f, :q, :q2c)
         y[4], y[3] = _fbdec_l(x1, f, :q, :q2c)
@@ -287,7 +318,7 @@ function _dfbrec_l(y::Vector{<:AbstractMatrix{T}}, f::Vector{T}) where {T}
     y[(half + 1):end] = reverse(y[(half + 1):end])
     _rebacksamp!(y)
     if n == 1
-        return _fbrec_l(y[1], y[2], f, :q, :q1r)
+        return _fbrec_l(y[1], y[2], f, :q, :q1r, :qper_col)
     end
     for l in n:-1:3
         y_old = y
@@ -303,7 +334,7 @@ function _dfbrec_l(y::Vector{<:AbstractMatrix{T}}, f::Vector{T}) where {T}
     end
     x0 = _fbrec_l(y[2], y[1], f, :q, :q2c)
     x1 = _fbrec_l(y[4], y[3], f, :q, :q2c)
-    return _fbrec_l(x0, x1, f, :q, :q1r)
+    return _fbrec_l(x0, x1, f, :q, :q1r, :qper_col)
 end
 
 # ── Public API ────────────────────────────────────────────────────────────────

@@ -157,9 +157,10 @@ true
 """
 const Q2345 = let
     f = pkva_ladder_filter()
-    eq = _ladder_equivalent_filters(_ladder_modulate(f))
+    f_mod = _ladder_modulate(f)
+    eq = _ladder_equivalent_filters(f_mod)
     QuincunxFilterPair{Float64}(
         reshape(eq.h0, 1, :), reshape(eq.g0, 1, :),
-        (1, eq.c0), (1, eq.cg0), f
+        (1, eq.c0), (1, eq.cg0), f_mod
     )
 end

@@ -231,16 +231,15 @@ white Gaussian noise and evaluate three different thresholding strategies:
    This heavily shrinks coefficients whose parents are small (likely noise), while preserving true edges that persist across multiple scales.
 
 ```@example nla
-# Use a wider crop of the Barbara image containing oriented textures
-ref = Float64.(Gray.(testimage("barbara")))
-N2 = 256
-shading = ref[100:100+N2-1, 200:200+N2-1]
+# Use a 512x512 crop of the Barbara image containing oriented textures
+ref = Float64.(Gray.(testimage("barbara")))[1:512, 100:611]
+shading = ref
 
 Random.seed!(11)
-σ = 0.04
-noisy = shading .+ σ .* randn(N2, N2)
+σ = 0.03
+noisy = shading .+ σ .* randn(size(shading)...)
 
-gains = nsct_noise_gains(params, (N2, N2))
+gains = nsct_noise_gains(params, size(shading))
 ct_rec = nsct_denoise(noisy, params, gains, σ, 3.0)
 ct_local = nsct_local_variance_denoise(noisy, params, gains, σ)
 ct_bivar = nsct_bivariate_denoise(noisy, params, gains, σ)

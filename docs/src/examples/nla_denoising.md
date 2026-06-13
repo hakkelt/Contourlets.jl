@@ -232,7 +232,7 @@ white Gaussian noise and evaluate three different thresholding strategies:
 
 ```@example nla
 # Use a 512x512 crop of the Barbara image containing oriented textures
-ref = Float64.(Gray.(testimage("barbara")))[1:512, 100:611]
+ref = reverse(Float64.(Gray.(testimage("barbara")))[1:512, 100:611], dims=2)
 shading = ref
 
 Random.seed!(11)
@@ -263,6 +263,17 @@ savefig(p2, "nla_denoise.svg"); nothing # hide
 ```
 
 ![](nla_denoise.svg)
+
+```@example nla
+p3 = plot(layout = (2, 2), size = (800, 800))
+heatmap!(p3[1], abs.(shading .- noisy), title = "Noisy (Diff)", color = :grays, aspect_ratio = :equal, axis = false, colorbar = false)
+heatmap!(p3[2], abs.(shading .- wt_rec), title = "Wavelet hard (Diff)", color = :grays, aspect_ratio = :equal, axis = false, colorbar = false)
+heatmap!(p3[3], abs.(shading .- ct_rec), title = "NSCT hard (Diff)", color = :grays, aspect_ratio = :equal, axis = false, colorbar = false)
+heatmap!(p3[4], abs.(shading .- ct_bivar), title = "NSCT bivariate (Diff)", color = :grays, aspect_ratio = :equal, axis = false, colorbar = false)
+savefig(p3, "nla_diff.svg"); nothing # hide
+```
+
+![](nla_diff.svg)
 
 !!! note "Scope and reproducibility"
     These are small (128²) synthetic experiments meant to illustrate the

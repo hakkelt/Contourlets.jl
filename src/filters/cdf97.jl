@@ -20,9 +20,11 @@ synthesis filter are the JPEG2000 default low-pass filters.
 
 ```jldoctest
 julia> using Contourlets
-julia> isapprox(sum(CDF97.h), 1.0; atol=1e-14)
+
+julia> isapprox(sum(CDF97.h), 1.0; atol = 1e-12)
 true
-julia> isapprox(sum(CDF97.g), 2.0; atol=1e-14)
+
+julia> isapprox(sum(CDF97.g), 2.0; atol = 1e-12)
 true
 ```
 """

@@ -13,8 +13,11 @@ index `ceil(Int, length/2)` (1-based Julia indexing).
 # Examples
 ```jldoctest
 julia> using Contourlets
-julia> fp = FilterPair([0.5, 1.0, 0.5], [0.25, 0.5, 0.25])
-FilterPair{Float64}
+
+julia> fp = FilterPair([0.5, 1.0, 0.5], [0.25, 0.5, 0.25]);
+
+julia> eltype(fp)
+Float64
 ```
 """
 struct FilterPair{T <: AbstractFloat}
@@ -30,37 +33,69 @@ Base.eltype(::FilterPair{T}) where {T} = T
 """
     QuincunxFilterPair{T}
 
-A 2-D quincunx filter pair.  `h_q` is the analysis low-pass kernel and `g_q` is the
-synthesis low-pass kernel, both stored as dense `Matrix{T}`.  The origin (zero-lag) tap
-is at `(c_h[1], c_h[2])` and `(c_g[1], c_g[2])` respectively (1-based).
+A two-channel filter pair for the DFB stage.  `h_q` is the analysis low-pass kernel
+and `g_q` is the synthesis low-pass kernel, both stored as dense `Matrix{T}`.  The
+origin (zero-lag) tap is at `(c_h[1], c_h[2])` and `(c_g[1], c_g[2])` respectively
+(1-based).
 
-For the standard Q2345 pair the high-pass filters are derived by modulation:
-`h_high[n1,n2] = (-1)^(n1+n2) * g_q[n1,n2]` (analysis high-pass) and
-`g_high[n1,n2] = (-1)^(n1+n2) * h_q[n1,n2]` (synthesis high-pass).
+Two operating modes exist:
+
+- **Modulation mode** (`f_ladder` empty): the high-pass filters are derived by
+  modulation, `H₁(z) = H₀(-z)` and `G₁(z) = G₀(-z)`.  Perfect reconstruction is
+  the user's responsibility (it holds e.g. for the Haar pair).
+- **Ladder (lifting) mode** (`f_ladder` non-empty): the filter bank is realised as
+  a two-step ladder network with the 1-D lifting filter `f_ladder` (Phoong et al.
+  1995).  Perfect reconstruction is structural — exact for any `f_ladder`.  In
+  this mode `h_q`/`g_q` hold the *equivalent* analysis/synthesis low-pass filters
+  for reference (e.g. the 23/45-tap "pkva" filters of [`Q2345`](@ref)).
 
 # Examples
 ```jldoctest
 julia> using Contourlets
-julia> qfp = QuincunxFilterPair([0.5 0.0; 0.5 0.0], [1.0 0.0; 1.0 0.0], (1,1), (2,1))
-QuincunxFilterPair{Float64}
+
+julia> qfp = QuincunxFilterPair([0.5 0.5], [1.0 1.0], (1, 1), (1, 2));
+
+julia> eltype(qfp)
+Float64
 ```
 """
 struct QuincunxFilterPair{T <: AbstractFloat}
-    h_q::Matrix{T}       # analysis low-pass kernel
-    g_q::Matrix{T}       # synthesis low-pass kernel
+    h_q::Matrix{T}       # analysis low-pass kernel (equivalent filter in ladder mode)
+    g_q::Matrix{T}       # synthesis low-pass kernel (equivalent filter in ladder mode)
     c_h::Tuple{Int, Int}  # origin index in h_q (1-based row, col)
     c_g::Tuple{Int, Int}  # origin index in g_q (1-based row, col)
+    f_ladder::Vector{T}  # 1-D lifting filter; empty → modulation mode
 end
 
 function QuincunxFilterPair(
         h_q::AbstractMatrix, g_q::AbstractMatrix,
-        c_h::Tuple{Int, Int}, c_g::Tuple{Int, Int}
+        c_h::Tuple{Int, Int}, c_g::Tuple{Int, Int},
+        f_ladder::AbstractVector = Float64[]
     )
     T = promote_type(eltype(h_q), eltype(g_q))
-    return QuincunxFilterPair{T}(T.(h_q), T.(g_q), c_h, c_g)
+    return QuincunxFilterPair{T}(T.(h_q), T.(g_q), c_h, c_g, T.(f_ladder))
 end
 
+# Backward-compatible 4-argument inner-style constructor (modulation mode).
+QuincunxFilterPair{T}(
+    h_q::AbstractMatrix, g_q::AbstractMatrix,
+    c_h::Tuple{Int, Int}, c_g::Tuple{Int, Int}
+) where {T <: AbstractFloat} =
+    QuincunxFilterPair{T}(T.(h_q), T.(g_q), c_h, c_g, T[])
+
 Base.eltype(::QuincunxFilterPair{T}) where {T} = T
+
+"""
+    is_ladder(qfp::QuincunxFilterPair) -> Bool
+
+Return `true` if `qfp` operates in ladder (lifting) mode.
+"""
+is_ladder(qfp::QuincunxFilterPair) = !isempty(qfp.f_ladder)
+
+# Convert a QuincunxFilterPair to element type T (no-op when already T).
+_convert_qfp(::Type{T}, qfp::QuincunxFilterPair{T}) where {T} = qfp
+_convert_qfp(::Type{T}, qfp::QuincunxFilterPair) where {T} =
+    QuincunxFilterPair{T}(T.(qfp.h_q), T.(qfp.g_q), qfp.c_h, qfp.c_g, T.(qfp.f_ladder))
 
 """
     ContourletParams
@@ -70,7 +105,8 @@ per-level DFB depth `L_array` (length `J`), and optional filter overrides.
 
 ```jldoctest
 julia> using Contourlets
-julia> p = ContourletParams(J=3, L_array=[1,2,3])
+
+julia> ContourletParams(J = 3, L_array = [1, 2, 3])
 ContourletParams(J=3, L_array=[1, 2, 3], …)
 ```
 """
@@ -93,12 +129,7 @@ function ContourletParams(;
     return ContourletParams{T}(
         J, collect(Int, L_array),
         FilterPair{T}(T.(lp_filters.h), T.(lp_filters.g)),
-        QuincunxFilterPair{T}(
-            T.(dfb_filters.h_q),
-            T.(dfb_filters.g_q),
-            dfb_filters.c_h,
-            dfb_filters.c_g
-        )
+        _convert_qfp(T, dfb_filters)
     )
 end
 
@@ -136,22 +167,34 @@ end
 """
     parabolic_levels(J, l_j0=1) -> Vector{Int}
 
-Compute the per-scale DFB depth array following the parabolic scaling law:
+Compute the per-scale DFB depth array following the parabolic scaling law
 
-    l_j = l_j0 + floor((j0 - j) / 2)
+    l_j = l_j0 + ⌊(j0 - j) / 2⌋,    j0 = J,
 
-where `j` runs from 1 (coarsest) to `J` (finest) and `j0 = J`.  The returned
-vector has `J` elements with `L_array[j]` corresponding to scale `j`.
+so that the number of directions doubles every other scale.  Index `j` matches
+the scale ordering of [`ct_forward`](@ref) and [`nsct_forward`](@ref): `j = 1`
+is the *finest* scale (first pyramid split) and `j = J` the coarsest, hence
+finer scales receive more directional subbands.  `l_j0` is the DFB depth at the
+coarsest scale.
 
 # Examples
 ```jldoctest
 julia> using Contourlets
+
 julia> parabolic_levels(4)
 4-element Vector{Int64}:
- 1
- 1
  2
+ 2
+ 1
+ 1
+
+julia> parabolic_levels(5, 2)
+5-element Vector{Int64}:
+ 4
  3
+ 3
+ 2
+ 2
 ```
 """
 function parabolic_levels(J::Int, l_j0::Int = 1)::Vector{Int}

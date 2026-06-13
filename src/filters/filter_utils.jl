@@ -10,6 +10,7 @@ to avoid downsampling at coarser levels.
 # Examples
 ```jldoctest
 julia> using Contourlets
+
 julia> upsample_filter([1.0, 2.0, 3.0], 2)
 5-element Vector{Float64}:
  1.0

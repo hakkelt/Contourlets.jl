@@ -30,10 +30,11 @@ jobs:
       - uses: julia-actions/cache@v2
 
       - name: Install docs dependencies
-        run: julia --project=docs -e '
-          using Pkg
-          Pkg.develop(PackageSpec(path=pwd()))
-          Pkg.instantiate()'
+        run: |
+          julia --project=docs -e '
+            using Pkg
+            Pkg.develop(PackageSpec(path=pwd()))
+            Pkg.instantiate()'
 
       - name: Build and deploy
         uses: julia-actions/julia-docdeploy@v1

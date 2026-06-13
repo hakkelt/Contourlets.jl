@@ -32,12 +32,6 @@ jobs:
           - ubuntu-latest
           - windows-latest
           - macOS-latest
-        exclude:
-          # Reduce macOS/Windows matrix to only latest Julia to save CI minutes
-          - julia-version: "lts"
-            os: windows-latest
-          - julia-version: "lts"
-            os: macOS-latest
 
     env:
       JULIA_NUM_THREADS: "2"

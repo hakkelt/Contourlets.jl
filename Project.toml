@@ -1,5 +1,5 @@
 name = "Contourlets"
-uuid = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+uuid = "4d443f37-8914-48d3-9d0d-9e555eaf7273"
 version = "0.1.0"
 authors = ["Contourlets.jl Contributors"]
 
@@ -7,16 +7,21 @@ authors = ["Contourlets.jl Contributors"]
 projects = ["test", "docs", "benchmark"]
 
 [deps]
-Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
 FFTW = "7a1cc6ca-52ef-59f5-83cd-3a7055c09341"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 PrecompileTools = "aea7be01-6a6a-4083-8856-8a6e6704d82a"
-TestItemRunner = "f8b46487-2199-4994-9208-9a1283c18c0a"
+
+[weakdeps]
+GPUArrays = "0c68f7d7-f131-5f86-a1c3-88cf8149b2d7"
+KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
+
+[extensions]
+ContourletsGPUExt = ["GPUArrays", "KernelAbstractions"]
 
 [compat]
-Aqua = "0.8.14"
 FFTW = "1"
+GPUArrays = "10, 11"
+KernelAbstractions = "0.9"
 LinearAlgebra = "1"
 PrecompileTools = "1"
-TestItemRunner = "1.1.5"
 julia = "1.10"

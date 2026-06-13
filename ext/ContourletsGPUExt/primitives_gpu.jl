@@ -1,0 +1,371 @@
+# GPU KernelAbstractions kernels for the Contourlet primitive operations.
+#
+# Each CPU primitive (conv2d_sep!, shear!, rect_downsample!, …) is overloaded
+# for AbstractGPUMatrix via a specialised @kernel that runs on any KA backend
+# (CUDA, AMDGPU, oneAPI, Metal, CPU).
+
+# ── Separable 2-D convolution ─────────────────────────────────────────────────
+
+# Boundary remap of a (possibly out-of-range) 1-based index `p` into `1:n`.
+# `bmode`: 1 = symmetric reflect, 2 = periodic.  Branch is uniform across the
+# work-group, so it does not cause warp divergence in practice.
+@inline function _gpu_boundary_idx(p::Int, n::Int, bmode::Int)
+    if bmode == 2
+        return mod(p - 1, n) + 1
+    else
+        p < 1 && (p = 2 - p)
+        p > n && (p = 2 * n - p)
+        p < 1 && (p = 1)
+        p > n && (p = n)
+        return p
+    end
+end
+
+# Pass 1: apply 1-D filter `h` along columns (axis-1), write to `tmp`.
+@kernel function _conv_cols_kernel!(
+        tmp, @Const(src), @Const(h),
+        n1::Int, n2::Int, lc::Int, cc::Int, bmode::Int
+    )
+    i, j = @index(Global, NTuple)
+    T = eltype(tmp)
+    acc = zero(T)
+    @inbounds for k in 1:lc
+        ii = _gpu_boundary_idx(i - (k - cc), n1, bmode)
+        acc += h[k] * src[ii, j]
+    end
+    @inbounds tmp[i, j] = acc
+end
+
+# Pass 2: apply 1-D filter `h` along rows (axis-2), write to `dst`.
+@kernel function _conv_rows_kernel!(
+        dst, @Const(tmp), @Const(h),
+        n1::Int, n2::Int, lr::Int, cr::Int, bmode::Int
+    )
+    i, j = @index(Global, NTuple)
+    T = eltype(dst)
+    acc = zero(T)
+    @inbounds for k in 1:lr
+        jj = _gpu_boundary_idx(j - (k - cr), n2, bmode)
+        acc += h[k] * tmp[i, jj]
+    end
+    @inbounds dst[i, j] = acc
+end
+
+"""
+    conv2d_sep!(dst, src, h_row, h_col; boundary=:symmetric)
+
+GPU-specialised separable convolution.  Dispatches via `AbstractGPUMatrix`.
+The filters `h_row` / `h_col` may be CPU or GPU vectors; they are moved to the
+device automatically.  Supports `:symmetric` and `:periodic` boundaries.
+"""
+function conv2d_sep!(
+        dst::AbstractGPUMatrix{T},
+        src::AbstractGPUMatrix,
+        h_row::AbstractVector,
+        h_col::AbstractVector;
+        boundary::Symbol = :symmetric
+    ) where {T}
+    bmode = if boundary === :symmetric
+        1
+    elseif boundary === :periodic
+        2
+    else
+        throw(ArgumentError("GPU conv2d_sep! supports :symmetric or :periodic, got :$boundary"))
+    end
+    backend = _gpu_backend(src)
+    n1, n2 = size(src)
+    lc = length(h_col)
+    lr = length(h_row)
+    cc = (lc + 1) ÷ 2
+    cr = (lr + 1) ÷ 2
+
+    h_col_d = _ensure_gpu(backend, T.(h_col))
+    h_row_d = _ensure_gpu(backend, T.(h_row))
+
+    tmp = KernelAbstractions.allocate(backend, T, n1, n2)
+
+    kernel1 = _conv_cols_kernel!(backend, (16, 16))
+    kernel1(tmp, src, h_col_d, n1, n2, lc, cc, bmode; ndrange = (n1, n2))
+
+    kernel2 = _conv_rows_kernel!(backend, (16, 16))
+    kernel2(dst, tmp, h_row_d, n1, n2, lr, cr, bmode; ndrange = (n1, n2))
+
+    return dst
+end
+
+# ── Shearing ─────────────────────────────────────────────────────────────────
+
+@kernel function _shear_h_kernel!(dst, @Const(src), n2::Int)
+    i, j = @index(Global, NTuple)
+    @inbounds dst[i, j] = src[i, mod1(j + i, n2)]
+end
+
+@kernel function _shear_v_kernel!(dst, @Const(src), n1::Int)
+    i, j = @index(Global, NTuple)
+    @inbounds dst[i, j] = src[mod1(i + j, n1), j]
+end
+
+@kernel function _inv_shear_h_kernel!(dst, @Const(src), n2::Int)
+    i, j = @index(Global, NTuple)
+    @inbounds dst[i, j] = src[i, mod1(j - i, n2)]
+end
+
+@kernel function _inv_shear_v_kernel!(dst, @Const(src), n1::Int)
+    i, j = @index(Global, NTuple)
+    @inbounds dst[i, j] = src[mod1(i - j, n1), j]
+end
+
+function shear!(
+        dst::AbstractGPUMatrix{T},
+        src::AbstractGPUMatrix{T},
+        dir::Symbol
+    ) where {T}
+    n1, n2 = size(src)
+    size(dst) == size(src) || throw(DimensionMismatch("dst and src must have the same size"))
+    backend = _gpu_backend(src)
+    if dir === :h
+        kernel = _shear_h_kernel!(backend, (16, 16))
+        kernel(dst, src, n2; ndrange = (n1, n2))
+    elseif dir === :v
+        kernel = _shear_v_kernel!(backend, (16, 16))
+        kernel(dst, src, n1; ndrange = (n1, n2))
+    else
+        throw(ArgumentError("dir must be :h or :v, got :$dir"))
+    end
+    return dst
+end
+
+function inv_shear!(
+        dst::AbstractGPUMatrix{T},
+        src::AbstractGPUMatrix{T},
+        dir::Symbol
+    ) where {T}
+    n1, n2 = size(src)
+    size(dst) == size(src) || throw(DimensionMismatch("dst and src must have the same size"))
+    backend = _gpu_backend(src)
+    if dir === :h
+        kernel = _inv_shear_h_kernel!(backend, (16, 16))
+        kernel(dst, src, n2; ndrange = (n1, n2))
+    elseif dir === :v
+        kernel = _inv_shear_v_kernel!(backend, (16, 16))
+        kernel(dst, src, n1; ndrange = (n1, n2))
+    else
+        throw(ArgumentError("dir must be :h or :v, got :$dir"))
+    end
+    return dst
+end
+
+# ── Rectangular up/downsampling ───────────────────────────────────────────────
+
+@kernel function _rect_downsample_kernel!(dst, @Const(src))
+    i, j = @index(Global, NTuple)
+    @inbounds dst[i, j] = src[2i - 1, 2j - 1]
+end
+
+@kernel function _rect_upsample_kernel!(dst, @Const(src))
+    i, j = @index(Global, NTuple)
+    @inbounds dst[2i - 1, 2j - 1] = src[i, j]
+end
+
+function rect_downsample!(dst::AbstractGPUMatrix{T}, src::AbstractGPUMatrix{T}) where {T}
+    d1, d2 = size(dst)
+    backend = _gpu_backend(src)
+    fill!(dst, zero(T))
+    kernel = _rect_downsample_kernel!(backend, (16, 16))
+    kernel(dst, src; ndrange = (d1, d2))
+    return dst
+end
+
+function rect_upsample!(dst::AbstractGPUMatrix{T}, src::AbstractGPUMatrix{T}) where {T}
+    d1, d2 = size(src)
+    backend = _gpu_backend(src)
+    fill!(dst, zero(T))
+    kernel = _rect_upsample_kernel!(backend, (16, 16))
+    kernel(dst, src; ndrange = (d1, d2))
+    return dst
+end
+
+# ── Quincunx up/downsampling ─────────────────────────────────────────────────
+
+@kernel function _qx_downsample_kernel!(dst, @Const(src), n2::Int, d2::Int, offset1::Int)
+    idx = @index(Global)
+    # Enumerate (i, j) with i+j even, 1-indexed.  KernelAbstractions forbids an
+    # explicit `return` in a kernel, so guard the body with an `if` instead.
+    n1 = size(src, 1)
+    total = n1 * size(src, 2)
+    if idx <= total
+        i = ((idx - 1) % n1) + 1
+        j = ((idx - 1) ÷ n1) + 1
+        if iseven(i + j)
+            k1 = (i - j) ÷ 2 + offset1
+            k2 = (i + j) ÷ 2
+            if 1 <= k1 <= size(dst, 1) && 1 <= k2 <= d2
+                @inbounds dst[k1, k2] = src[i, j]
+            end
+        end
+    end
+end
+
+@kernel function _qx_upsample_kernel!(dst, @Const(src), n2_dst::Int, offset1::Int)
+    k1, k2 = @index(Global, NTuple)
+    i = k1 + k2 - offset1
+    j = k2 * 2 - i
+    n1 = size(dst, 1)
+    if 1 <= i <= n1 && 1 <= j <= n2_dst
+        @inbounds dst[i, j] = src[k1, k2]
+    end
+end
+
+function qx_downsample!(dst::AbstractGPUMatrix{T}, src::AbstractGPUMatrix{T}) where {T}
+    n1, n2 = size(src)
+    d1, d2 = size(dst)
+    backend = _gpu_backend(src)
+    fill!(dst, zero(T))
+    offset1 = (n2 + 1) ÷ 2
+    kernel = _qx_downsample_kernel!(backend, 256)
+    kernel(dst, src, n2, d2, offset1; ndrange = n1 * n2)
+    return dst
+end
+
+function qx_upsample!(dst::AbstractGPUMatrix{T}, src::AbstractGPUMatrix{T}) where {T}
+    n1, n2 = size(dst)
+    d1, d2 = size(src)
+    backend = _gpu_backend(src)
+    fill!(dst, zero(T))
+    offset1 = (n2 + 1) ÷ 2
+    kernel = _qx_upsample_kernel!(backend, (16, 16))
+    kernel(dst, src, n2, offset1; ndrange = (d1, d2))
+    return dst
+end
+
+"""
+    qx_downsample(src::AbstractGPUMatrix) -> GPU Matrix
+"""
+function qx_downsample(src::AbstractGPUMatrix{T}) where {T}
+    n1, n2 = size(src)
+    d1 = n1
+    d2 = max(1, n2 ÷ 2)
+    backend = _gpu_backend(src)
+    dst = KernelAbstractions.zeros(backend, T, d1, d2)
+    return qx_downsample!(dst, src)
+end
+
+"""
+    qx_upsample(src::AbstractGPUMatrix, out_size) -> GPU Matrix
+"""
+function qx_upsample(src::AbstractGPUMatrix{T}, out_size::Tuple{Int, Int}) where {T}
+    backend = _gpu_backend(src)
+    dst = KernelAbstractions.zeros(backend, T, out_size...)
+    return qx_upsample!(dst, src)
+end
+
+# ── Quincunx Filter Bank (QFB) ────────────────────────────────────────────────
+
+# GPU kernel: QFB col-direction analysis.
+# Each thread handles one (i, k2) pair where k2 is the output column index.
+@kernel function _qfb_col_decompose_kernel_gpu!(
+        sb0, sb1, @Const(img),
+        @Const(h), c_h::Int, n1::Int, n2::Int, d2::Int, K::Int
+    )
+    i, k2 = @index(Global, NTuple)
+    T = eltype(sb0)
+    j = 2 * k2   # even column (1-indexed: j = 2, 4, 6, …)
+    lp_val = zero(T)
+    hp_val = zero(T)
+    @inbounds for l in 1:K
+        dc = l - c_h
+        jj = j - dc
+        # symmetric boundary
+        if jj < 1
+            jj = 2 - jj
+        end
+        if jj > n2
+            jj = 2 * n2 - jj
+        end
+        if jj < 1
+            jj = 1
+        end
+        if jj > n2
+            jj = n2
+        end
+        xval = img[i, jj]
+        lp_val += h[l] * xval
+        hp_val += (iseven(dc) ? h[l] : -h[l]) * xval
+    end
+    sb0[i, k2] = lp_val
+    sb1[i, k2] = hp_val
+end
+
+# GPU kernel: QFB col-direction synthesis (row-parallel).
+# One thread per row i; loops over all output columns (k2) serially.
+# This avoids write-after-write races while still parallelising over rows.
+@kernel function _qfb_col_reconstruct_kernel_gpu!(
+        out, @Const(sb0), @Const(sb1),
+        @Const(g), c_g::Int, n2::Int, d2::Int, K::Int
+    )
+    i = @index(Global)
+    T = eltype(out)
+    @inbounds for k2 in 1:d2
+        j_src = 2 * k2
+        s0 = sb0[i, k2]
+        s1 = sb1[i, k2]
+        for l in 1:K
+            dc = l - c_g
+            j_out = j_src + dc
+            if 1 <= j_out <= n2
+                out[i, j_out] += g[l] * s0 + (iseven(dc) ? g[l] : -g[l]) * s1
+            end
+        end
+    end
+end
+
+function qfb_decompose(image::AbstractGPUMatrix, qfp::QuincunxFilterPair; dir::Symbol = :col)
+    Contourlets.is_ladder(qfp) &&
+        throw(ArgumentError("ladder-mode filter pairs (e.g. Q2345) are not yet supported on GPU"))
+    T = promote_type(eltype(image), eltype(qfp))
+    backend = _gpu_backend(image)
+    img = T.(image)
+    if dir === :col
+        h_d = _ensure_gpu(backend, T.(vec(qfp.h_q)))
+        c_h = qfp.c_h[2]
+        n1, n2 = size(img)
+        d2 = n2 ÷ 2
+        sb0 = KernelAbstractions.zeros(backend, T, n1, d2)
+        sb1 = KernelAbstractions.zeros(backend, T, n1, d2)
+        K = length(h_d)
+        kernel = _qfb_col_decompose_kernel_gpu!(backend, (16, 16))
+        kernel(sb0, sb1, img, h_d, c_h, n1, n2, d2, K; ndrange = (n1, d2))
+        return sb0, sb1
+    else
+        img_t = collect(img')
+        sb0_t, sb1_t = qfb_decompose(img_t, qfp; dir = :col)
+        return collect(sb0_t'), collect(sb1_t')
+    end
+end
+
+function qfb_reconstruct(
+        sb0::AbstractGPUMatrix, sb1::AbstractGPUMatrix,
+        qfp::QuincunxFilterPair; dir::Symbol = :col
+    )
+    Contourlets.is_ladder(qfp) &&
+        throw(ArgumentError("ladder-mode filter pairs (e.g. Q2345) are not yet supported on GPU"))
+    T = promote_type(eltype(sb0), eltype(sb1), eltype(qfp))
+    backend = _gpu_backend(sb0)
+    g_d = _ensure_gpu(backend, T.(vec(qfp.g_q)))
+    c_g = qfp.c_g[2]
+    n1 = size(sb0, 1)
+    n2 = size(sb0, 2) * 2
+    d2 = size(sb0, 2)
+    if dir === :col
+        out = KernelAbstractions.zeros(backend, T, n1, n2)
+        K = length(g_d)
+        kernel = _qfb_col_reconstruct_kernel_gpu!(backend, 256)
+        kernel(out, T.(sb0), T.(sb1), g_d, c_g, n2, d2, K; ndrange = n1)
+        return out
+    else
+        sb0_t = collect(sb0')
+        sb1_t = collect(sb1')
+        rec_t = qfb_reconstruct(sb0_t, sb1_t, qfp; dir = :col)
+        return _to_device(backend, collect(rec_t'))
+    end
+end

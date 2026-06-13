@@ -4,6 +4,12 @@
 CurrentModule = Contourlets
 ```
 
+## Module
+
+```@docs
+Contourlets
+```
+
 ## Transforms
 
 ```@docs
@@ -45,16 +51,44 @@ lp_decompose!
 lp_reconstruct
 lp_reconstruct!
 nsp_decompose
+nsp_decompose!
 nsp_reconstruct
+nsp_reconstruct!
 ```
 
 ## Directional Filter Bank
 
 ```@docs
+qfb_decompose
+qfb_decompose!
+qfb_reconstruct
+qfb_reconstruct!
 dfb_decompose
 dfb_reconstruct
+dfb_subband_sizes
 nsdfb_decompose
 nsdfb_reconstruct
+```
+
+## Primitives
+
+```@docs
+conv2d
+conv2d!
+conv2d_sep
+conv2d_sep!
+rect_downsample
+rect_downsample!
+rect_upsample
+rect_upsample!
+qx_downsample
+qx_downsample!
+qx_upsample
+qx_upsample!
+shear
+shear!
+inv_shear
+inv_shear!
 ```
 
 ## Filters
@@ -66,5 +100,6 @@ FilterPair
 QuincunxFilterPair
 parabolic_levels
 upsample_filter
+upsample_kernel
 check_pr_condition
 ```

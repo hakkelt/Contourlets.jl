@@ -6,7 +6,7 @@
 
 ```julia
 using Pkg
-Pkg.add(url="https://github.com/your-org/Contourlets.jl")
+Pkg.add(url="https://github.com/hakkelt/Contourlets.jl")
 ```
 
 ## Quick Start
@@ -30,11 +30,11 @@ ns_coeffs = nsct_forward(img, params)
 ns_rec    = nsct_inverse(ns_coeffs)
 @assert maximum(abs, ns_rec .- img) < 1e-12
 
-# ── Zero-allocation iterative usage ─────────────────────────────────────────
+# ── Preallocated-buffer iterative usage ──────────────────────────────────────
 ws  = make_workspace(Float64, size(img), params)
 buf = similar_coefficients(params, size(img))
 for _ in 1:100
-    ct_forward!(buf, img, ws)   # no allocations after warm-up
+    ct_forward!(buf, img, ws)   # reuses workspace buffers across iterations
 end
 ```
 
@@ -48,6 +48,6 @@ end
 | [`make_workspace`](@ref) | Preallocate buffers for iterative algorithms |
 | [`parabolic_levels`](@ref) | Compute optimal direction counts per scale |
 | [`CDF97`](@ref) | Default CDF 9/7 biorthogonal LP filter pair |
-| [`Q2345`](@ref) | Default Haar quincunx DFB filter pair |
+| [`Q2345`](@ref) | Default "23-45" (Phoong et al. 1995) ladder DFB filter pair |
 
 See the [Theory](@ref theory) page for the mathematical background, and the [API Reference](@ref) for the complete public interface.

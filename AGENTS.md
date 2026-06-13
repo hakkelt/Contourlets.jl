@@ -22,7 +22,7 @@ Contourlets/
 │   ├── precompile.jl          # PrecompileTools workload
 │   ├── filters/
 │   │   ├── cdf97.jl           # CDF 9/7 LP filter constants
-│   │   ├── q2345.jl           # Haar quincunx DFB filter constants
+│   │   ├── q2345.jl           # "23-45" Phoong (pkva) ladder DFB filter constants
 │   │   └── filter_utils.jl    # upsample_filter, check_pr_condition
 │   ├── primitives/
 │   │   ├── conv2d.jl          # 2-D separable convolution (direct + FFTW)
@@ -48,6 +48,7 @@ Contourlets/
 │       ├── test_dfb.jl
 │       ├── test_transforms.jl
 │       ├── test_workspace.jl
+│       ├── test_gpu.jl        # universal GPU tests (GPUEnv + JLArrays), tag :gpu
 │       └── test_quality.jl    # Aqua checks
 ├── benchmark/
 │   └── benchmarks.jl          # BenchmarkTools SUITE
@@ -89,7 +90,7 @@ These must remain true after any change:
 | NSCT perfect reconstruction `< 2e-15` | `test_transforms.jl` — "NSCT PR" test items |
 | Workspace path gives same result as allocating | `test_workspace.jl` |
 | No Aqua regressions | `test_quality.jl` |
-| All 119 tests pass | Run all test items |
+| All tests pass | Run all test items |
 
 ---
 
@@ -105,13 +106,23 @@ See `.github/skills/julia-long-test-workflow/SKILL.md` for:
 
 ## Design Decisions
 
-- **No downsampling in NSCT** — all subbands have the same spatial size as the input.
+- **No downsampling in NSCT** — all subbands have the same spatial size as the
+  input.  All NSP/NSDFB filtering uses periodic (circular) convolution, so the
+  NSCT is exactly invariant under circular shifts of the input.
 - **Duck-typed public API** — functions accept `AbstractMatrix` without `where T`
   constraints that cause dispatch issues.  Float type is pinned via
   `T_out = float(eltype(image))` inside the function body.
 - **Workspace buffers use views** — `@view ws.tmp_buf[1:n1, 1:n2]` passes a
-  correctly-sized scratch buffer at each LP level without re-allocation.
-- **FFTW.MEASURE plans** — cached in `_PLAN_CACHE` keyed on `(src_size, kernel_size)`.
-- **Test-only deps in main Project.toml** — Aqua and TestItemRunner are listed
-  in `[deps]` (not `[extras]`) to allow running tests from the root environment.
-  This requires `stale_deps=false` in the Aqua test call.
+  correctly-sized scratch buffer at each LP level without re-allocation.  Two
+  scratch buffers (`tmp_buf`, `tmp_buf2`) are kept so separable convolutions run
+  without allocating an intermediate.
+- **FFTW.MEASURE plans** — cached in `_PLAN_CACHE` (in `conv2d.jl`) keyed on
+  `(eltype, padded_dims)` behind a lock; plan execution uses caller-owned
+  buffers so it stays thread-safe.
+- **Test-only deps live in `test/Project.toml`** — Aqua, JET and TestItemRunner
+  are *not* in the package `[deps]`; run the suite with `julia --project=test`.
+- **GPU = device pyramid + host directional** — the `ContourletsGPUExt`
+  extension kernelises the LP/NSP convolutions and the sampling/shearing
+  primitives; the recursive DFB/NSDFB resampling stage runs on the host, so
+  GPU `ct_forward`/`nsct_forward` are bit-identical to the CPU path.  Tests use
+  GPUEnv.jl to run on JLArrays (CI) and any real backend present (`:gpu` tag).

@@ -4,6 +4,11 @@ This page gives a brief mathematical description of the transforms implemented
 in Contourlets.jl.  For in-depth derivations see the primary references listed
 at the bottom.
 
+```@setup theory
+using Contourlets, Plots, FFTW
+Plots.default(show = false)
+```
+
 ## Laplacian Pyramid (LP)
 
 The LP provides a multiscale decomposition without aliasing.
@@ -21,23 +26,89 @@ rec = bandpass + g ⊛ (↑2 · coarse) = image
 ```
 
 The default filter pair [`CDF97`](@ref) is the CDF 9/7 biorthogonal wavelet used
-in JPEG 2000.
+in JPEG 2000.  Its analysis low-pass ``h`` has unit gain at DC and a null at the
+Nyquist frequency, so the bandpass image ``\text{image} - \text{pred}`` carries
+exactly the detail removed by the coarse approximation:
+
+```@example theory
+ω = range(0, π; length = 400)
+dtft(f, c) = [abs(sum(f[n] * cis(-w * (n - c)) for n in eachindex(f))) for w in ω]
+plot(ω, dtft(CDF97.h, 5), label = "analysis h (low-pass)", lw = 2,
+    xlabel = "ω", ylabel = "|H(ω)|", title = "CDF 9/7 low-pass response",
+    xticks = ([0, π/2, π], ["0", "π/2", "π"]), legend = :topright)
+plot!(ω, 1 .- dtft(CDF97.h, 5), label = "1 − h  (band/high-pass)", lw = 2, ls = :dash)
+savefig("lp_response.svg"); nothing # hide
+```
+
+![](lp_response.svg)
 
 ## Directional Filter Bank (DFB)
 
-The DFB partitions the 2-D frequency plane into ``2^L`` directional wedges
-using a binary tree of quincunx filter banks and shearing operations
-(Bamberger & Smith 1992).
+The DFB partitions the 2-D frequency plane into ``2^L`` directional wedges using
+a binary tree of two-channel filter banks (Bamberger & Smith 1992; Do & Vetterli
+2005).  With the default [`Q2345`](@ref) pair the implementation follows the
+ladder construction of the reference contourlet toolbox:
 
-At each tree level ``d = 1, \ldots, L``:
-1. **Shear** the input with alternating horizontal/vertical periodised index
-   remapping.
-2. Apply the **quincunx filter bank** (analysis pair ``h_q, g_q``) and
-   quincunx downsampling.
-3. **Inverse-shear** the high-pass branch for the next level.
+1. The first two tree levels use **quincunx** polyphase decompositions
+   (``Q_1, Q_2``), realised via Smith-factorised resampling matrices.
+2. Deeper levels (``\ell \ge 3``) use **parallelogram** polyphase decompositions
+   (``R_1 \ldots R_4``), expanding alternately the "mostly-horizontal" and
+   "mostly-vertical" halves of the tree.
+3. Each two-channel split is the Phoong et al. (1995) **lifting (ladder)
+   network**, giving structural perfect reconstruction.
+4. A final **backsampling** step makes the overall sampling lattice of each
+   subband diagonal.
 
-The default quincunx pair [`Q2345`](@ref) is a PR 1×2 Haar-like pair with
-perfect reconstruction verified to ``< 10^{-15}``.
+Decimation by 2 at every split keeps the DFB nearly critically sampled, and the
+``2^L`` subbands form genuine directional wedges (the first ``2^{L-1}`` capture
+mostly-horizontal orientations, the rest mostly-vertical).  Modulation-mode
+filter pairs instead use a simpler shear-based tree that is perfect-
+reconstructing but only weakly directional.
+
+Reconstructing a single coefficient from each subband reveals the **directional
+basis functions** — elongated, oriented elements (the anisotropy that lets
+contourlets trace smooth contours):
+
+```@example theory
+N = 64
+sbs = dfb_decompose(zeros(N, N), 3, Q2345)     # 8 directional subbands
+function basis_element(k)
+    s = [zeros(size(sb)) for sb in sbs]
+    s[k][size(s[k], 1) ÷ 2 + 1, size(s[k], 2) ÷ 2 + 1] = 1.0
+    return dfb_reconstruct(s, Q2345)
+end
+
+p = plot(layout = (2, 4), size = (860, 440))
+for k in 1:8
+    heatmap!(p[k], basis_element(k), color = :RdBu, title = "subband $k",
+        aspect_ratio = :equal, axis = false, colorbar = false)
+end
+savefig(p, "dfb_basis.svg"); nothing # hide
+```
+
+![](dfb_basis.svg)
+
+In the frequency domain those basis functions occupy complementary **wedges**
+that tile the 2-D plane — the directional partition that gives the contourlet
+its name:
+
+```@example theory
+pf = plot(layout = (2, 4), size = (860, 440))
+for k in 1:8
+    spec = log1p.(abs.(fftshift(fft(basis_element(k)))))
+    heatmap!(pf[k], spec, color = :viridis, title = "subband $k",
+        aspect_ratio = :equal, axis = false, colorbar = false)
+end
+savefig(pf, "dfb_freq.svg"); nothing # hide
+```
+
+![](dfb_freq.svg)
+
+The default pair [`Q2345`](@ref) is the "23-45" biorthogonal pair of Phoong et
+al. (1995), realised as a two-step ladder (lifting) network with the 12-tap
+"pkva" lifting filter.  Perfect reconstruction is structural — exact to machine
+precision (``< 10^{-15}``) at every tree depth.  The equivalent analysis and
+synthesis low-pass filters have 23 and 45 taps respectively, hence the name.
 
 ## Pyramid Directional Filter Bank (PDFB) — Contourlet Transform
 
@@ -70,13 +141,16 @@ counterpart:
   ``h_j = h`` upsampled by ``2^{j-1}`` (inserting ``2^{j-1}-1`` zeros between
   taps).  No downsampling is applied, so all outputs have the same size as the
   input.
-- **NSDFB**: the quincunx filters at tree level ``d`` within pyramid level
-  ``j`` are upsampled by ``2^{d + j - 2}`` (combined pyramid + directional
-  upsampling factor).
+- **NSDFB**: every decimation is removed.  At pyramid level ``j`` the
+  directional filters are à trous upsampled by ``2^{j-1}``, and each tree depth
+  filters along one of four cycling lattice directions
+  ``(0,1), (1,0), (1,1), (1,-1)``.  The equivalent analysis/synthesis filters of
+  the ladder network give structural perfect reconstruction at every depth.
 
-The NSCT is **fully shift-invariant**: a circular shift of the input produces
-the same shift in each subband.  The cost is redundancy proportional to
-``1 + \sum_{j=1}^J 2^{L_j}``.
+All NSP and NSDFB filtering uses periodic (circular) convolution, so the NSCT is
+**invariant under circular shifts**: a circular shift of the input produces the
+same circular shift in every subband, with no redistribution of energy.  The
+cost is redundancy proportional to ``1 + \sum_{j=1}^J 2^{L_j}``.
 
 ## References
 

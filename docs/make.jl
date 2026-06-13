@@ -6,10 +6,10 @@ makedocs(;
     modules = [Contourlets],
     sitename = "Contourlets.jl",
     authors = "Contourlets.jl Contributors",
-    repo = "https://github.com/your-org/Contourlets.jl/blob/{commit}{path}#{line}",
+    repo = "https://github.com/hakkelt/Contourlets.jl/blob/{commit}{path}#{line}",
     format = Documenter.HTML(;
         prettyurls = get(ENV, "CI", "false") == "true",
-        canonical = "https://your-org.github.io/Contourlets.jl",
+        canonical = "https://hakkelt.github.io/Contourlets.jl",
         edit_link = "master",
         assets = String[],
     ),
@@ -18,16 +18,18 @@ makedocs(;
         "Theory" => "theory.md",
         "API Reference" => "api.md",
         "Examples" => [
+            "Showcase" => "examples/showcase.md",
             "Contourlet Transform" => "examples/ct_example.md",
             "Nonsubsampled Contourlet Transform" => "examples/nsct_example.md",
+            "Approximation & Denoising" => "examples/nla_denoising.md",
         ],
+        "Comparison with MATLAB and Python" => "comparison.md",
     ],
     checkdocs = :exports,
     doctest = true,
-    warnonly = [:doctest, :missing_docs],
 )
 
 deploydocs(;
-    repo = "github.com/your-org/Contourlets.jl",
+    repo = "github.com/hakkelt/Contourlets.jl",
     devbranch = "master",
 )

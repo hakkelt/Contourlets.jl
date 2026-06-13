@@ -205,7 +205,7 @@ The contourlet keeps a higher PSNR at every budget: its directional subbands
 match the texture orientation, so fewer coefficients describe each patch.
 
 ```@example nla
-M = 2048
+M = 1024
 ct_approx = ct_nla(texture, params, γ, M)
 wt_approx = wt_nla(texture, M)
 p = plot(layout = (1, 3), size = (900, 320))
@@ -232,11 +232,11 @@ white Gaussian noise and evaluate three different thresholding strategies:
 
 ```@example nla
 # Use a 512x512 crop of the Barbara image containing oriented textures
-ref = reverse(Float64.(Gray.(testimage("barbara")))[1:512, 100:611], dims=2)
+ref = Float64.(Gray.(testimage("barbara")))[1:512, 100:611]
 shading = ref
 
 Random.seed!(11)
-σ = 0.03
+σ = 0.08
 noisy = shading .+ σ .* randn(size(shading)...)
 
 gains = nsct_noise_gains(params, size(shading))
@@ -255,25 +255,14 @@ println("Bivariate gain over wavelet: $(round(psnr(shading, ct_bivar) - psnr(sha
 
 ```@example nla
 p2 = plot(layout = (2, 2), size = (800, 800))
-heatmap!(p2[1], noisy, title = "Noisy", color = :grays, aspect_ratio = :equal, axis = false, colorbar = false)
-heatmap!(p2[2], wt_rec, title = "Wavelet hard", color = :grays, aspect_ratio = :equal, axis = false, colorbar = false)
-heatmap!(p2[3], ct_rec, title = "NSCT hard", color = :grays, aspect_ratio = :equal, axis = false, colorbar = false)
-heatmap!(p2[4], ct_bivar, title = "NSCT bivariate", color = :grays, aspect_ratio = :equal, axis = false, colorbar = false)
+heatmap!(p2[1], noisy, title = "Noisy", color = :grays, aspect_ratio = :equal, axis = false, colorbar = false, yflip = true)
+heatmap!(p2[2], wt_rec, title = "Wavelet hard", color = :grays, aspect_ratio = :equal, axis = false, colorbar = false, yflip = true)
+heatmap!(p2[3], ct_rec, title = "NSCT hard", color = :grays, aspect_ratio = :equal, axis = false, colorbar = false, yflip = true)
+heatmap!(p2[4], ct_bivar, title = "NSCT bivariate", color = :grays, aspect_ratio = :equal, axis = false, colorbar = false, yflip = true)
 savefig(p2, "nla_denoise.svg"); nothing # hide
 ```
 
 ![](nla_denoise.svg)
-
-```@example nla
-p3 = plot(layout = (2, 2), size = (800, 800))
-heatmap!(p3[1], abs.(shading .- noisy), title = "Noisy (Diff)", color = :grays, aspect_ratio = :equal, axis = false, colorbar = false)
-heatmap!(p3[2], abs.(shading .- wt_rec), title = "Wavelet hard (Diff)", color = :grays, aspect_ratio = :equal, axis = false, colorbar = false)
-heatmap!(p3[3], abs.(shading .- ct_rec), title = "NSCT hard (Diff)", color = :grays, aspect_ratio = :equal, axis = false, colorbar = false)
-heatmap!(p3[4], abs.(shading .- ct_bivar), title = "NSCT bivariate (Diff)", color = :grays, aspect_ratio = :equal, axis = false, colorbar = false)
-savefig(p3, "nla_diff.svg"); nothing # hide
-```
-
-![](nla_diff.svg)
 
 !!! note "Scope and reproducibility"
     These are small (128²) synthetic experiments meant to illustrate the

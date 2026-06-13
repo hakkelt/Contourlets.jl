@@ -16,14 +16,14 @@ makedocs(;
     pages = [
         "Home" => "index.md",
         "Theory" => "theory.md",
-        "API Reference" => "api.md",
         "Examples" => [
             "Showcase" => "examples/showcase.md",
             "Contourlet Transform" => "examples/ct_example.md",
             "Nonsubsampled Contourlet Transform" => "examples/nsct_example.md",
             "Approximation & Denoising" => "examples/nla_denoising.md",
         ],
-        "Comparison with MATLAB and Python" => "comparison.md",
+        "Comparison with MATLAB" => "comparison.md",
+        "API Reference" => "api.md",
     ],
     checkdocs = :exports,
     doctest = true,

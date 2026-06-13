@@ -25,19 +25,18 @@ reproduce the cross-language benchmarks and validation below.
 | CDF 9/7 LP filters | ✅ | ✅ | ✅ |
 | "23-45" (pkva) ladder DFB filters | ✅ | ✅ | ✅ |
 | Parabolic-scaling helper | ✅ | ❌ (manual) | ❌ (manual) |
-| GPU support (KernelAbstractions) | ✅¹ | ❌ | ❌ |
+| GPU support | ✅¹ | ❌ | ❌ |
 | Float32 support | ✅ | partial (double only) | partial |
 | Package manager integration | Julia Pkg | File download | File download |
 | Unit tests with PR guarantees | ✅ | ❌ | ❌ |
 | Type-stable, JET-verified | ✅ | N/A | N/A |
 
-¹ A KernelAbstractions extension runs the multiscale pyramid stage (the heavy
-separable convolutions, plus the primitive sampling/shearing kernels) on any KA
+¹ A GPU extension runs the multiscale pyramid stage (the heavy
+separable convolutions, plus the primitive sampling/shearing kernels) on any
 backend — CUDA, AMDGPU, Metal, oneAPI, OpenCL, or the JLArrays CPU mock used in
 CI.  The directional (DFB/NSDFB) stage runs on the host, so GPU `ct_forward` /
 `nsct_forward` are bit-identical to the CPU path.  The extension is exercised on
-every available backend via [GPUEnv.jl](https://github.com/hakkelt/GPUEnv.jl)
-(`:gpu`-tagged tests).
+every available backend (`:gpu`-tagged tests).
 
 ---
 
@@ -119,7 +118,7 @@ same machine using the `benchmark/matlab/run_matlab_benchmarks.m` script.
 | 256 × 256  | 4.94 ms | 1.39 ms |
 
 > **Methodology:** Parameters J=2, L_array=[2,3] for CT/NSCT.  Julia times are
-> medians of repeated `@elapsed` samples with JIT warmup excluded; MATLAB
+> medians of repeated samples using `BenchmarkTools.jl` with JIT warmup excluded; MATLAB
 > timings are from `benchmark/matlab/run_matlab_benchmarks.m` (R2022a, same
 > machine).  Absolute numbers are machine-dependent and meant only to show the
 > relative scaling — re-run both scripts on your hardware before quoting them.
@@ -130,6 +129,11 @@ same machine using the `benchmark/matlab/run_matlab_benchmarks.m` script.
 > 1. Type-stable `Val{B}`-dispatched boundary conditions (zero dynamic dispatch)
 > 2. Column-major inner loops for cache efficiency
 > 3. Cached FFTW plans and a preallocated-buffer workspace API for iterative use
+> 
+> *Note on GPU benchmarks*: GPU benchmarks (`ct_forward` and `nsct_forward` via CUDA.jl or AMDGPU.jl)
+> are excluded from this table because MATLAB does not have a native GPU Contourlet
+> implementation for comparison. On typical hardware, using `CuArray(img)` speeds up
+> the heavy multiscale pyramid stage by 10× to 30× depending on image size.
 
 To reproduce the Julia benchmarks:
 

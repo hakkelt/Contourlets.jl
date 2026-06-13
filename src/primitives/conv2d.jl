@@ -5,15 +5,16 @@
 #   _conv2d_fftw!   — overlap-add via FFTW (good for large kernels)
 #
 # The public entry points conv2d! / conv2d select the backend automatically:
-# FFTW is preferred when the kernel area exceeds FFTW_THRESHOLD (set by internal
-# micro-benchmark during first call — see _select_backend()).
+# FFTW is preferred when the kernel area exceeds a fixed threshold.
 
 using FFTW, LinearAlgebra
 
 # ────────────────────────────────────────────────────────────────────────────────
-# Boundary extension helpers
+# Boundary extension helpers (type-parameterised for zero overhead)
 # ────────────────────────────────────────────────────────────────────────────────
 
+# All boundary helpers take B as a type parameter so they compile to
+# fully specialised (branch-free) code.
 @inline function _clamp_idx(i::Int, n::Int, ::Val{:symmetric})::Int
     i < 1  && return 2 - i
     i > n  && return 2n - i
@@ -39,7 +40,7 @@ end
 end
 
 # ────────────────────────────────────────────────────────────────────────────────
-# Direct (time-domain) backend
+# Direct (time-domain) backend — type-stable inner kernel
 # ────────────────────────────────────────────────────────────────────────────────
 
 """
@@ -55,10 +56,26 @@ function _conv2d_direct!(
         origin::Tuple{Int, Int};
         boundary::Symbol = :symmetric
     ) where {T}
+    if boundary === :symmetric
+        _conv2d_direct_impl!(dst, src, kernel, origin, Val(:symmetric))
+    elseif boundary === :periodic
+        _conv2d_direct_impl!(dst, src, kernel, origin, Val(:periodic))
+    else
+        _conv2d_direct_impl!(dst, src, kernel, origin, Val(:zero))
+    end
+    return dst
+end
+
+@inline function _conv2d_direct_impl!(
+        dst::AbstractMatrix{T},
+        src::AbstractMatrix{T},
+        kernel::AbstractMatrix{T},
+        origin::Tuple{Int, Int},
+        bv::Val{B}
+    ) where {T, B}
     n1, n2 = size(src)
     kn1, kn2 = size(kernel)
     o1, o2 = origin
-    bv = Val(boundary)
 
     @inbounds for j in 1:n2
         for i in 1:n1
@@ -82,10 +99,17 @@ end
 # FFTW backend
 # ────────────────────────────────────────────────────────────────────────────────
 
-"""
-    _build_fft_plan(src_size, kernel_size) -> (plan_fwd, plan_inv, padded_size)
+# Cache of FFTW plans keyed on (element type, padded size).  Plan creation with
+# FFTW.MEASURE is expensive; plan *execution* via mul! with caller-owned buffers
+# is thread-safe, so only the plans are cached (buffers are allocated per call).
+const _PLAN_CACHE = Dict{Tuple{DataType, Int, Int}, Tuple{Any, Any}}()
+const _PLAN_LOCK = ReentrantLock()
 
-Build or retrieve a cached FFTW plan for overlap-add convolution.
+"""
+    _build_fft_plan(src_size, kernel_size, T) -> (plan_fwd, plan_inv, padded_size)
+
+Build — or retrieve from `_PLAN_CACHE` — the FFTW plans for FFT convolution of
+a `src_size` image with a `kernel_size` kernel.
 """
 function _build_fft_plan(
         src_size::Tuple{Int, Int},
@@ -96,9 +120,14 @@ function _build_fft_plan(
     k1, k2 = kernel_size
     p1 = nextprod([2, 3, 5], n1 + k1 - 1)
     p2 = nextprod([2, 3, 5], n2 + k2 - 1)
-    buf = zeros(T, p1, p2)
-    fwd = plan_rfft(buf; flags = FFTW.MEASURE)
-    inv = plan_irfft(fwd * buf, p1; flags = FFTW.MEASURE)
+    fwd, inv = lock(_PLAN_LOCK) do
+        get!(_PLAN_CACHE, (T, p1, p2)) do
+            buf = zeros(T, p1, p2)
+            fwd = plan_rfft(buf; flags = FFTW.MEASURE)
+            inv = plan_irfft(fwd * buf, p1; flags = FFTW.MEASURE)
+            (fwd, inv)
+        end
+    end
     return fwd, inv, (p1, p2)
 end
 
@@ -123,22 +152,22 @@ function _conv2d_fftw!(
     o1, o2 = origin
     bv = Val(boundary)
 
-    # Fill padded source with boundary extension
+    # Fill the padded source.  The circular convolution reads extended samples on
+    # all four sides: indices above n1 (reach o1−1 below the image) sit at rows
+    # n1+1 … n1+o1−1, while negative indices (reach kn1−o1 above the image) wrap
+    # to the END of the padded array (rows p1−(kn1−o1)+1 … p1).  Both regions are
+    # filled with the requested boundary extension; the same applies to columns.
+    ext_lo1, ext_hi1 = kn1 - o1, o1 - 1   # extension above / below the image
+    ext_lo2, ext_hi2 = kn2 - o2, o2 - 1
     fill!(pad_src, zero(T))
-    @inbounds for j in 1:n2, i in 1:n1
-        pad_src[i, j] = src[i, j]
-    end
-    # Extend boundaries in padded region
-    half_k1 = o1 - 1
-    half_k2 = o2 - 1
-    for j in 1:n2
-        for k in 1:half_k1
-            pad_src[n1 + k, j] = _get(src, n1 + k, j, n1, n2, bv)
-        end
-    end
-    for i in 1:(n1 + half_k1)
-        for k in 1:half_k2
-            pad_src[i, n2 + k] = _get(src, i, n2 + k, n1, n2, bv)
+    @inbounds for J in 1:p2
+        # map padded column J to (possibly out-of-range) source column j
+        j = J <= n2 + ext_hi2 ? J : J - p2
+        (j > n2 + ext_hi2 || j < 1 - ext_lo2) && continue
+        for I in 1:p1
+            i = I <= n1 + ext_hi1 ? I : I - p1
+            (i > n1 + ext_hi1 || i < 1 - ext_lo1) && continue
+            pad_src[I, J] = _get(src, i, j, n1, n2, bv)
         end
     end
 
@@ -216,10 +245,12 @@ function conv2d(
 end
 
 """
-    conv2d_sep!(dst, src, h_row, h_col; boundary=:symmetric) -> dst
+    conv2d_sep!(dst, src, h_row, h_col; boundary=:symmetric, tmp=similar(src)) -> dst
 
-Separable 2-D convolution: first apply 1-D filter `h_row` to each row, then
-`h_col` to each column.  Both filters are symmetric (centre = mid-point).
+Separable 2-D convolution: first apply 1-D filter `h_col` to each column, then
+`h_row` to each row.  Both filters are symmetric (centre = mid-point).
+Pass a preallocated `tmp` buffer (same size as `src`, distinct from `dst` and
+`src`) to make the call allocation-free.
 
 This is the workhorse for the Laplacian Pyramid stage.
 """
@@ -228,15 +259,32 @@ function conv2d_sep!(
         src::AbstractMatrix{T},
         h_row::AbstractVector{T},
         h_col::AbstractVector{T};
-        boundary::Symbol = :symmetric
+        boundary::Symbol = :symmetric,
+        tmp::AbstractMatrix{T} = similar(src)
     ) where {T}
+    if boundary === :symmetric
+        _conv2d_sep_impl!(dst, src, h_row, h_col, tmp, Val(:symmetric))
+    elseif boundary === :periodic
+        _conv2d_sep_impl!(dst, src, h_row, h_col, tmp, Val(:periodic))
+    else
+        _conv2d_sep_impl!(dst, src, h_row, h_col, tmp, Val(:zero))
+    end
+    return dst
+end
+
+@inline function _conv2d_sep_impl!(
+        dst::AbstractMatrix{T},
+        src::AbstractMatrix{T},
+        h_row::AbstractVector{T},
+        h_col::AbstractVector{T},
+        tmp::AbstractMatrix{T},
+        bv::Val{B}
+    ) where {T, B}
     n1, n2 = size(src)
     lr = length(h_row)
     lc = length(h_col)
     cr = (lr + 1) ÷ 2   # centre of row filter
     cc = (lc + 1) ÷ 2   # centre of col filter
-    tmp = similar(src)
-    bv = Val(boundary)
 
     # Filter along columns (axis-1) first — accesses memory column-major
     @inbounds for j in 1:n2

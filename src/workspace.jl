@@ -27,6 +27,7 @@ struct ContourletWorkspace{T <: AbstractFloat}
 
     # Scratch buffers for separable conv and reconstruction
     tmp_buf::Matrix{T}               # size = image_size (for in-place conv)
+    tmp_buf2::Matrix{T}              # second scratch (separable-conv intermediate)
     current::Matrix{T}               # running coarse (size changes per level for CT)
 end
 
@@ -41,8 +42,11 @@ The second form is a convenience overload with the element type as the first pos
 # Examples
 ```jldoctest
 julia> using Contourlets
-julia> p = ContourletParams(J=2, L_array=[1,2])
-julia> ws = make_workspace(p, (64, 64))
+
+julia> p = ContourletParams(J = 2, L_array = [1, 2]);
+
+julia> ws = make_workspace(p, (64, 64));
+
 julia> typeof(ws)
 ContourletWorkspace{Float64}
 ```
@@ -58,34 +62,32 @@ function make_workspace(
         image_size::Tuple{Int, Int};
         T::Type{<:AbstractFloat} = Float64
     ) where {Tp}
+    Tout = promote_type(Tp, T)
     J = params.J
     n1, n2 = image_size
-    coarse_bufs = Vector{Matrix{T}}(undef, J)
-    bp_bufs = Vector{Matrix{T}}(undef, J)
+    coarse_bufs = Vector{Matrix{Tout}}(undef, J)
+    bp_bufs = Vector{Matrix{Tout}}(undef, J)
     c1, c2 = n1, n2
     for j in 1:J
         d1, d2 = cld(c1, 2), cld(c2, 2)
-        coarse_bufs[j] = zeros(T, d1, d2)
-        bp_bufs[j] = zeros(T, c1, c2)
+        coarse_bufs[j] = zeros(Tout, d1, d2)
+        bp_bufs[j] = zeros(Tout, c1, c2)
         c1, c2 = d1, d2
     end
-    tmp_buf = zeros(T, n1, n2)
-    current = zeros(T, n1, n2)
-    Tp2 = promote_type(Tp, T)
-    p2 = ContourletParams{Tp2}(
+    tmp_buf = zeros(Tout, n1, n2)
+    tmp_buf2 = zeros(Tout, n1, n2)
+    current = zeros(Tout, n1, n2)
+    p2 = ContourletParams{Tout}(
         params.J, params.L_array,
-        FilterPair{Tp2}(
-            Tp2.(params.lp_filters.h),
-            Tp2.(params.lp_filters.g)
+        FilterPair{Tout}(
+            Tout.(params.lp_filters.h),
+            Tout.(params.lp_filters.g)
         ),
-        QuincunxFilterPair{Tp2}(
-            Tp2.(params.dfb_filters.h_q),
-            Tp2.(params.dfb_filters.g_q),
-            params.dfb_filters.c_h,
-            params.dfb_filters.c_g
-        )
+        _convert_qfp(Tout, params.dfb_filters)
     )
-    return ContourletWorkspace{T}(p2, image_size, coarse_bufs, bp_bufs, tmp_buf, current)
+    return ContourletWorkspace{Tout}(
+        p2, image_size, coarse_bufs, bp_bufs, tmp_buf, tmp_buf2, current
+    )
 end
 
 """
@@ -108,50 +110,56 @@ function make_nsct_workspace(
         image_size::Tuple{Int, Int};
         T::Type{<:AbstractFloat} = Float64
     ) where {Tp}
+    Tout = promote_type(Tp, T)
     J = params.J
     n1, n2 = image_size
-    coarse_bufs = [zeros(T, n1, n2) for _ in 1:J]
-    bp_bufs = [zeros(T, n1, n2) for _ in 1:J]
-    tmp_buf = zeros(T, n1, n2)
-    current = zeros(T, n1, n2)
-    Tp2 = promote_type(Tp, T)
-    p2 = ContourletParams{Tp2}(
+    coarse_bufs = [zeros(Tout, n1, n2) for _ in 1:J]
+    bp_bufs = [zeros(Tout, n1, n2) for _ in 1:J]
+    tmp_buf = zeros(Tout, n1, n2)
+    tmp_buf2 = zeros(Tout, n1, n2)
+    current = zeros(Tout, n1, n2)
+    p2 = ContourletParams{Tout}(
         params.J, params.L_array,
-        FilterPair{Tp2}(
-            Tp2.(params.lp_filters.h),
-            Tp2.(params.lp_filters.g)
+        FilterPair{Tout}(
+            Tout.(params.lp_filters.h),
+            Tout.(params.lp_filters.g)
         ),
-        QuincunxFilterPair{Tp2}(
-            Tp2.(params.dfb_filters.h_q),
-            Tp2.(params.dfb_filters.g_q),
-            params.dfb_filters.c_h,
-            params.dfb_filters.c_g
-        )
+        _convert_qfp(Tout, params.dfb_filters)
     )
-    return ContourletWorkspace{T}(p2, image_size, coarse_bufs, bp_bufs, tmp_buf, current)
+    return ContourletWorkspace{Tout}(
+        p2, image_size, coarse_bufs, bp_bufs, tmp_buf, tmp_buf2, current
+    )
 end
 
 """
-    estimate_workspace_size(params::ContourletParams, image_size) -> Int
+    estimate_workspace_size(params::ContourletParams, image_size;
+                            nonsubsampled=false) -> Int
 
 Return the total number of floating-point elements across all workspace buffers
-(useful for memory planning before allocation).
+(useful for memory planning before allocation).  Pass `nonsubsampled=true` for
+workspaces created with [`make_nsct_workspace`](@ref), whose per-level buffers
+all have the full image size.
 """
 function estimate_workspace_size(
         params::ContourletParams,
-        image_size::Tuple{Int, Int}
+        image_size::Tuple{Int, Int};
+        nonsubsampled::Bool = false
     )::Int
     J = params.J
     n1, n2 = image_size
     total = 0
-    c1, c2 = n1, n2
-    for j in 1:J
-        d1, d2 = cld(c1, 2), cld(c2, 2)
-        total += d1 * d2    # coarse buf
-        total += c1 * c2    # bp buf
-        c1, c2 = d1, d2
+    if nonsubsampled
+        total += 2 * J * n1 * n2          # coarse + bp bufs, full size each level
+    else
+        c1, c2 = n1, n2
+        for j in 1:J
+            d1, d2 = cld(c1, 2), cld(c2, 2)
+            total += d1 * d2    # coarse buf
+            total += c1 * c2    # bp buf
+            c1, c2 = d1, d2
+        end
     end
-    total += 2 * n1 * n2    # tmp_buf + current
+    total += 3 * n1 * n2    # tmp_buf + tmp_buf2 + current
     return total
 end
 
@@ -163,6 +171,7 @@ reset (e.g., when switching to a different image in the same iterative loop).
 """
 function workspace_clear!(ws::ContourletWorkspace{T}) where {T}
     fill!(ws.tmp_buf, zero(T))
+    fill!(ws.tmp_buf2, zero(T))
     fill!(ws.current, zero(T))
     for b in ws.coarse_bufs
         fill!(b, zero(T))

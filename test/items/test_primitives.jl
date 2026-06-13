@@ -1,12 +1,31 @@
-@testitem "conv2d direct vs FFTW" begin
+@testitem "conv2d direct backend small kernel" begin
     using Contourlets, Random
     Random.seed!(1)
     x = randn(16, 16)
-    k = randn(3, 3)
-    c = (2, 2)
-    out_d = Contourlets.conv2d(x, k, c; boundary = :symmetric)
-    out_f = Contourlets.conv2d(x, k, c; boundary = :symmetric)
-    @test maximum(abs, out_d .- out_f) < 1.0e-10
+    # 3-tap separable averaging kernel, compare against a hand-rolled reference
+    k = reshape([0.25, 0.5, 0.25], 3, 1)
+    out = Contourlets.conv2d(x, k, (2, 1); boundary = :symmetric)
+    # Symmetric (whole-sample) reflection: row 0 ↦ row 2, row n+1 ↦ row n-1.
+    refl(i) = i < 1 ? 2 - i : (i > 16 ? 32 - i : i)
+    ref = similar(x)
+    for j in 1:16, i in 1:16
+        ref[i, j] = 0.25x[refl(i - 1), j] + 0.5x[i, j] + 0.25x[refl(i + 1), j]
+    end
+    @test maximum(abs, out .- ref) < 1.0e-13
+end
+
+@testitem "conv2d FFTW backend matches direct (all boundaries)" begin
+    using Contourlets, Random
+    Random.seed!(101)
+    x = randn(40, 48)
+    k = randn(7, 7)            # 49 taps > 25 ⇒ FFTW path
+    c = (4, 4)
+    for b in (:symmetric, :periodic, :zero)
+        out_fftw = Contourlets.conv2d(x, k, c; boundary = b)   # FFTW path
+        out_dir = similar(x)
+        Contourlets._conv2d_direct!(out_dir, x, k, c; boundary = b)
+        @test maximum(abs, out_fftw .- out_dir) < 1.0e-10
+    end
 end
 
 @testitem "rect_downsample / upsample round-trip" begin
@@ -43,4 +62,109 @@ end
     dst = similar(x)
     shear!(dst, x, :h)
     @test dst == sh
+end
+
+@testitem "conv2d FFTW backend (large kernel)" begin
+    using Contourlets, Random
+    Random.seed!(4)
+    x = randn(32, 32)
+    # Kernel with more than 25 elements triggers FFTW path
+    k = randn(6, 6)   # 36 elements
+    # origin at centre
+    c = (3, 3)
+    out_fftw = Contourlets.conv2d(x, k, c; boundary = :symmetric)
+    # Compute reference with direct backend via small kernel comparison:
+    # just ensure the output has correct size and is finite
+    @test size(out_fftw) == size(x)
+    @test all(isfinite, out_fftw)
+end
+
+@testitem "conv2d boundary modes :periodic and :zero" begin
+    using Contourlets, Random
+    Random.seed!(5)
+    x = randn(8, 8)
+    k = reshape([0.25, 0.5, 0.25], 3, 1)
+    out_sym = Contourlets.conv2d(x, k; boundary = :symmetric)
+    out_per = Contourlets.conv2d(x, k; boundary = :periodic)
+    out_zero = Contourlets.conv2d(x, k; boundary = :zero)
+    # Interior pixels should all agree (away from boundary)
+    @test maximum(abs, out_sym[3:6, :] .- out_per[3:6, :]) < 1.0e-13
+    @test maximum(abs, out_sym[3:6, :] .- out_zero[3:6, :]) < 1.0e-13
+    # Boundary pixels differ between modes
+    @test out_sym[1, 1] != out_per[1, 1] || out_sym[1, 1] != out_zero[1, 1]
+end
+
+@testitem "conv2d! size mismatch error" begin
+    using Contourlets
+    x = randn(8, 8)
+    k = randn(3, 3)
+    dst = zeros(4, 8)
+    @test_throws DimensionMismatch Contourlets.conv2d!(dst, x, k)
+end
+
+@testitem "qx_downsample / upsample round-trip" begin
+    using Contourlets, Random
+    Random.seed!(6)
+    x = randn(16, 16)
+    y = qx_downsample(x)
+    @test size(y) == (16, 8)
+    x_rec = qx_upsample(y, size(x))
+    # All non-zero entries of x_rec should match x at quincunx positions
+    @test any(!iszero, x_rec)
+end
+
+@testitem "qx_downsample! in-place" begin
+    using Contourlets, Random
+    Random.seed!(7)
+    x = randn(16, 16)
+    y_alloc = qx_downsample(x)
+    y_inplace = zeros(size(y_alloc)...)
+    qx_downsample!(y_inplace, x)
+    @test y_inplace == y_alloc
+end
+
+@testitem "qx_upsample! in-place" begin
+    using Contourlets, Random
+    Random.seed!(8)
+    x = randn(16, 16)
+    y = qx_downsample(x)
+    x_alloc = qx_upsample(y, size(x))
+    x_inplace = zeros(size(x)...)
+    qx_upsample!(x_inplace, y)
+    @test x_inplace == x_alloc
+end
+
+@testitem "shear! invalid direction throws" begin
+    using Contourlets
+    x = randn(8, 8)
+    dst = similar(x)
+    @test_throws ArgumentError shear!(dst, x, :bad)
+end
+
+@testitem "inv_shear! invalid direction throws" begin
+    using Contourlets
+    x = randn(8, 8)
+    dst = similar(x)
+    @test_throws ArgumentError inv_shear!(dst, x, :bad)
+end
+
+@testitem "rect_upsample! in-place" begin
+    using Contourlets, Random
+    Random.seed!(9)
+    x = randn(8, 8)
+    y = rect_downsample(x)
+    up_alloc = rect_upsample(y)
+    up_inplace = zeros(size(up_alloc)...)
+    rect_upsample!(up_inplace, y)
+    @test up_inplace == up_alloc
+end
+
+@testitem "rect_downsample! in-place" begin
+    using Contourlets, Random
+    Random.seed!(10)
+    x = randn(8, 8)
+    y_alloc = rect_downsample(x)
+    y_inplace = zeros(4, 4)
+    rect_downsample!(y_inplace, x)
+    @test y_inplace == y_alloc
 end

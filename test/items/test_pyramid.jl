@@ -42,3 +42,35 @@ end
         @test maximum(abs, rec .- x) < 1.0e-12
     end
 end
+
+@testitem "NSP in-place decompose/reconstruct" begin
+    using Contourlets, Random
+    Random.seed!(14)
+    x = randn(32, 32)
+    c = similar(x)
+    bp = similar(x)
+    tmp = similar(x)
+    nsp_decompose!(c, bp, x, CDF97, 1; tmp = tmp)
+    rec = similar(x)
+    nsp_reconstruct!(rec, c, bp, CDF97, 1; tmp = tmp)
+    @test maximum(abs, rec .- x) < 1.0e-12
+end
+
+@testitem "NSP in-place level 2 and 3" begin
+    using Contourlets, Random
+    Random.seed!(15)
+    x = randn(32, 32)
+    for lv in 2:3
+        c = similar(x); bp = similar(x); tmp = similar(x)
+        nsp_decompose!(c, bp, x, CDF97, lv)
+        rec = similar(x)
+        nsp_reconstruct!(rec, c, bp, CDF97, lv)
+        @test maximum(abs, rec .- x) < 1.0e-12
+    end
+end
+
+@testitem "NSP decompose invalid level" begin
+    using Contourlets
+    x = randn(16, 16)
+    @test_throws ArgumentError nsp_decompose(x, CDF97, 0)
+end

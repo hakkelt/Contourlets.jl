@@ -1,11 +1,11 @@
-# Comparison with MATLAB and Python Alternatives
+# Comparison with MATLAB Alternatives
 
 This page compares Contourlets.jl against the two reference implementations:
 
-- **MATLAB Contourlet Toolbox** (Do & Vetterli, 2005) — [FileExchange 8837](https://www.mathworks.com/matlabcentral/fileexchange/8837-contourlet-toolbox), GPL licence
-- **MATLAB Nonsubsampled Contourlet Toolbox** (da Cunha et al., 2006) — [FileExchange 10049](https://www.mathworks.com/matlabcentral/fileexchange/10049-nonsubsampled-contourlet-toolbox), GPL licence
+- **MATLAB Contourlet Toolbox** (Do & Vetterli, 2005) — [FileExchange 8837](https://www.mathworks.com/matlabcentral/fileexchange/8837-contourlet-toolbox), BSD license
+- **MATLAB Nonsubsampled Contourlet Toolbox** (da Cunha et al., 2006) — [FileExchange 10049](https://www.mathworks.com/matlabcentral/fileexchange/10049-nonsubsampled-contourlet-toolbox), BSD license
 
-These toolboxes are GPL-licensed and are therefore **not** vendored into this
+These toolboxes are BSD-licensed and are therefore **not** vendored into this
 MIT-licensed repository.  Download them separately into `benchmark/matlab/` to
 reproduce the cross-language benchmarks and validation below.
 
@@ -16,7 +16,7 @@ reproduce the cross-language benchmarks and validation below.
 | Feature | Contourlets.jl | MATLAB CT Toolbox | MATLAB NSCT Toolbox |
 |---------|---------------|------------------|-------------------|
 | Language | Julia 1.10+ | MATLAB R2006+ | MATLAB R2007+ |
-| Licence | MIT | GPL | GPL |
+| Licence | MIT | BSD | BSD |
 | Discrete CT (`ct_forward/inverse`) | ✅ | ✅ (`pdfbdec/pdfbrec`) | ✅ |
 | Nonsubsampled CT (`nsct_forward/inverse`) | ✅ | ❌ | ✅ (`nsctdec/nsctrec`) |
 | Laplacian Pyramid (standalone) | ✅ | ✅ (`lpdec/lprec`) | ✅ |
@@ -40,6 +40,8 @@ every available backend via [GPUEnv.jl](https://github.com/hakkelt/GPUEnv.jl)
 (`:gpu`-tagged tests).
 
 ---
+
+
 
 ## Algorithm Correspondence
 

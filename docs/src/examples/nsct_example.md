@@ -4,10 +4,10 @@ The NSCT is fully shift-invariant: a circular shift of the input produces the
 same shift in every subband.
 
 ```julia
-using Contourlets, Random
+using Contourlets, TestImages, ImageCore, Colors
 
-Random.seed!(7)
-img = randn(64, 64)
+# Load a natural image and crop to 64x64 for the shift invariance demo
+img = Float64.(Gray.(testimage("barbara")))[100:163, 200:263]
 
 params = ContourletParams(J=2, L_array=[2, 3])
 

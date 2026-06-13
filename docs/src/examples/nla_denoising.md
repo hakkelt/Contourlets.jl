@@ -15,7 +15,7 @@ Both transforms use the same CDF 9/7 filters, so the comparison isolates the
 build (so they will track the implementation).
 
 ```@setup nla
-using Contourlets, Wavelets, Random, Plots
+using Contourlets, Wavelets, Random, Plots, TestImages, ImageCore, Colors
 Plots.default(show = false)
 
 psnr(ref, x) = 10 * log10((maximum(ref) - minimum(ref))^2 / (sum(abs2, x .- ref) / length(ref)))
@@ -86,6 +86,82 @@ function wt_denoise(noisy, λ)
     @. c = ifelse(abs(c) >= λ, c, 0.0)
     return idwt(c, WT97)
 end
+
+function nsct_local_variance_denoise(noisy, params, gains, σ; window_size=5)
+    c = nsct_forward(noisy, params)
+    pad = window_size ÷ 2
+    for j in eachindex(c.subbands), kk in eachindex(c.subbands[j])
+        sb = c.subbands[j][kk]
+        σ_n = σ * gains[j][kk]
+        var_n = σ_n^2
+        out = similar(sb)
+        R, C = size(sb)
+        for c_idx in 1:C, r_idx in 1:R
+            energy = 0.0
+            count = 0
+            for dc in -pad:pad, dr in -pad:pad
+                r_w = clamp(r_idx + dr, 1, R)
+                c_w = clamp(c_idx + dc, 1, C)
+                energy += sb[r_w, c_w]^2
+                count += 1
+            end
+            energy /= count
+            
+            σ_w = sqrt(max(0.0, energy - var_n))
+            T = σ_w > 0.0 ? var_n / σ_w : var_n / 1e-6
+            
+            val = sb[r_idx, c_idx]
+            out[r_idx, c_idx] = sign(val) * max(0.0, abs(val) - T)
+        end
+        c.subbands[j][kk] .= out
+    end
+    return nsct_inverse(c)
+end
+
+function nsct_bivariate_denoise(noisy, params, gains, σ; window_size=5)
+    c = nsct_forward(noisy, params)
+    pad = window_size ÷ 2
+    for j in eachindex(c.subbands), kk in eachindex(c.subbands[j])
+        sb = c.subbands[j][kk]
+        σ_n = σ * gains[j][kk]
+        var_n = σ_n^2
+        
+        parent_sb = if j == length(c.subbands)
+            c.coarse
+        else
+            L_curr = length(c.subbands[j])
+            L_parent = length(c.subbands[j+1])
+            parent_kk = L_curr >= L_parent ? (kk - 1) ÷ (L_curr ÷ L_parent) + 1 : (kk - 1) * (L_parent ÷ L_curr) + 1
+            c.subbands[j+1][parent_kk]
+        end
+        
+        out = similar(sb)
+        R, C = size(sb)
+        for c_idx in 1:C, r_idx in 1:R
+            energy = 0.0
+            count = 0
+            for dc in -pad:pad, dr in -pad:pad
+                r_w = clamp(r_idx + dr, 1, R)
+                c_w = clamp(c_idx + dc, 1, C)
+                energy += sb[r_w, c_w]^2
+                count += 1
+            end
+            energy /= count
+            
+            σ_w = sqrt(max(0.0, energy - var_n))
+            
+            y1 = sb[r_idx, c_idx]
+            y2 = parent_sb[r_idx, c_idx]
+            y = sqrt(y1^2 + y2^2)
+            
+            T = σ_w > 0.0 ? (sqrt(3.0) * var_n) / σ_w : (sqrt(3.0) * var_n) / 1e-6
+            
+            out[r_idx, c_idx] = y > T ? (y - T) / y * y1 : 0.0
+        end
+        c.subbands[j][kk] .= out
+    end
+    return nsct_inverse(c)
+end
 ```
 
 ## M-term approximation of directional texture
@@ -143,38 +219,47 @@ savefig(p, "nla_mterm.svg"); nothing # hide
 
 ## Denoising with the shift-invariant NSCT
 
-We corrupt a "texture + smooth shading" image (a stand-in for the fabric regions
-of *Barbara*) with white Gaussian noise and hard-threshold each NSCT subband at
-its own noise level ``k\,\sigma\,\gamma_{j,k}``, estimated by passing unit
-noise through the transform.
+We corrupt a crop of the *Barbara* image (focusing on the fabric regions) with 
+white Gaussian noise and evaluate three different thresholding strategies:
+
+1. **Hard Thresholding**: A universal threshold ``\lambda = k\,\sigma\,\gamma_{j,k}`` is applied independently, where ``\gamma_{j,k}`` is the estimated noise gain of the subband.
+2. **Local Variance-Adaptive Thresholding**: A spatially-adaptive soft threshold. We estimate the local signal variance ``\sigma_w^2 = \max(0, \frac{1}{N} \sum y_i^2 - \sigma_n^2)`` in a small window. The threshold is dynamically set as ``T = \sigma_n^2 / \sigma_w``.
+3. **Bivariate Shrinkage**: Proposed by Sendur & Selesnick, this models the dependency between a coefficient ``y_1`` and its parent coefficient ``y_2`` (at the same spatial location in the next coarser scale). The joint magnitude is ``y = \sqrt{y_1^2 + y_2^2}``, and the shrinkage function is:
+   ```math
+   \hat{w}_1 = \frac{(y - \sqrt{3}\sigma_n^2 / \sigma_w)_{+}}{y} y_1
+   ```
+   This heavily shrinks coefficients whose parents are small (likely noise), while preserving true edges that persist across multiple scales.
 
 ```@example nla
-shading = zeros(Float64, N, N)
-for i in 1:N, j in 1:N
-    base = 0.5 + 0.3 * sin(2π * (i + j) / 180)
-    tex = (40 <= i <= 100 && 30 <= j <= 95) ? 0.35 * sin(2π * 0.25 * (0.8i + 0.6j)) : 0.0
-    shading[i, j] = base + tex
-end
+# Use a wider crop of the Barbara image containing oriented textures
+ref = Float64.(Gray.(testimage("barbara")))
+N2 = 256
+shading = ref[100:100+N2-1, 200:200+N2-1]
 
 Random.seed!(11)
-σ = 0.1
-noisy = shading .+ σ .* randn(N, N)
+σ = 0.04
+noisy = shading .+ σ .* randn(N2, N2)
 
-gains = nsct_noise_gains(params, (N, N))
+gains = nsct_noise_gains(params, (N2, N2))
 ct_rec = nsct_denoise(noisy, params, gains, σ, 3.0)
+ct_local = nsct_local_variance_denoise(noisy, params, gains, σ)
+ct_bivar = nsct_bivariate_denoise(noisy, params, gains, σ)
 wt_rec = wt_denoise(noisy, 3σ)
 
-println("noisy      : $(round(psnr(shading, noisy);  digits = 2)) dB")
-println("9/7 wavelet: $(round(psnr(shading, wt_rec); digits = 2)) dB")
-println("NSCT       : $(round(psnr(shading, ct_rec); digits = 2)) dB")
-println("NSCT gain over wavelet: $(round(psnr(shading, ct_rec) - psnr(shading, wt_rec); digits = 2)) dB")
+println("noisy            : $(round(psnr(shading, noisy);  digits = 2)) dB")
+println("9/7 wavelet hard : $(round(psnr(shading, wt_rec); digits = 2)) dB")
+println("NSCT hard        : $(round(psnr(shading, ct_rec); digits = 2)) dB")
+println("NSCT local var   : $(round(psnr(shading, ct_local); digits = 2)) dB")
+println("NSCT bivariate   : $(round(psnr(shading, ct_bivar); digits = 2)) dB")
+println("Bivariate gain over wavelet: $(round(psnr(shading, ct_bivar) - psnr(shading, wt_rec); digits = 2)) dB")
 ```
 
 ```@example nla
-p2 = plot(layout = (1, 3), size = (900, 320))
+p2 = plot(layout = (2, 2), size = (800, 800))
 heatmap!(p2[1], noisy, title = "Noisy", color = :grays, aspect_ratio = :equal, axis = false, colorbar = false)
-heatmap!(p2[2], ct_rec, title = "NSCT denoised", color = :grays, aspect_ratio = :equal, axis = false, colorbar = false)
-heatmap!(p2[3], wt_rec, title = "Wavelet denoised", color = :grays, aspect_ratio = :equal, axis = false, colorbar = false)
+heatmap!(p2[2], wt_rec, title = "Wavelet hard", color = :grays, aspect_ratio = :equal, axis = false, colorbar = false)
+heatmap!(p2[3], ct_rec, title = "NSCT hard", color = :grays, aspect_ratio = :equal, axis = false, colorbar = false)
+heatmap!(p2[4], ct_bivar, title = "NSCT bivariate", color = :grays, aspect_ratio = :equal, axis = false, colorbar = false)
 savefig(p2, "nla_denoise.svg"); nothing # hide
 ```
 

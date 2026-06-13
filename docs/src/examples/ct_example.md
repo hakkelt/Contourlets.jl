@@ -4,10 +4,10 @@ This example applies the Discrete Contourlet Transform to a random image and
 verifies perfect reconstruction.
 
 ```julia
-using Contourlets, Random
+using Contourlets, TestImages, ImageCore, Colors
 
-Random.seed!(42)
-img = randn(128, 128)
+# Load a natural image and crop to 128x128
+img = Float64.(Gray.(testimage("barbara")))[100:227, 200:327]
 
 # Build params with parabolic scaling: J=3 scales, 2/4/4 directions per scale
 params = ContourletParams(J=3, L_array=parabolic_levels(3))

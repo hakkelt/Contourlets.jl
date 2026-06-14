@@ -157,10 +157,13 @@ true
 """
 const Q2345 = let
     f = pkva_ladder_filter()
-    f_mod = _ladder_modulate(f)
-    eq = _ladder_equivalent_filters(f_mod)
+    # `f_ladder` stores the *unmodulated* symmetric pkva filter; the fan (diagonal)
+    # modulation is applied once at each use site via `_ladder_modulate`.  The
+    # equivalent reference filters are computed from the modulated filter so they
+    # match what the nonsubsampled DFB re-derives.
+    eq = _ladder_equivalent_filters(_ladder_modulate(f))
     QuincunxFilterPair{Float64}(
         reshape(eq.h0, 1, :), reshape(eq.g0, 1, :),
-        (1, eq.c0), (1, eq.cg0), f_mod
+        (1, eq.c0), (1, eq.cg0), f
     )
 end

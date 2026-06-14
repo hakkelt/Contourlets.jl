@@ -5,17 +5,17 @@
 # real backend (CUDA, AMDGPU, Metal, oneAPI, OpenCL) that is installed and
 # functional.  The same test body therefore validates every available backend.
 #
-# Loading KernelAbstractions + GPUArrays triggers the package extension.
+# Loading a backend (JLArrays / CUDA) pulls in GPUArrays + KernelAbstractions,
+# which triggers the package extension.
 
 @testmodule GPUBackends begin
-    using GPUEnv, KernelAbstractions, GPUArrays, JLArrays
-    export backends, ka_backend
+    using GPUEnv
+    export backends
 
-    # All backends to exercise (JLArrays always present).
+    # All backends to exercise (JLArrays always present).  GPUEnv supplies the
+    # backend packages from its overlay environment, so the tests need no direct
+    # GPUArrays / KernelAbstractions / JLArrays dependency.
     const backends = gpu_backends(; include_jlarrays = true)
-
-    # KernelAbstractions backend for a device array (needed by the inverse transforms).
-    ka_backend(xg) = KernelAbstractions.get_backend(xg)
 end
 
 @testitem "GPU at least one backend (JLArrays)" tags = [:gpu] setup = [GPUBackends] begin
@@ -24,7 +24,7 @@ end
 end
 
 @testitem "GPU primitives match CPU" tags = [:gpu] setup = [GPUBackends] begin
-    using Contourlets, GPUEnv, Random
+    using GPUEnv, Random
     Random.seed!(50)
     x = randn(32, 32)
     h = [0.25, 0.5, 0.25]
@@ -34,7 +34,6 @@ end
         for bnd in (:symmetric, :periodic)
             dg = similar(xg)
             Contourlets.conv2d_sep!(dg, xg, h, h; boundary = bnd)
-            synchronize_backend(backend)
             @test maximum(abs, Array(dg) .- Contourlets.conv2d_sep(x, h, h; boundary = bnd)) < 1.0e-12
         end
         # shear / inv_shear round-trip and CPU match
@@ -55,24 +54,22 @@ end
 end
 
 @testitem "GPU Laplacian pyramid matches CPU + PR" tags = [:gpu] setup = [GPUBackends] begin
-    using Contourlets, GPUEnv, Random
+    using GPUEnv, Random
     Random.seed!(51)
     x = randn(32, 32)
     cc, bpc = lp_decompose(x, CDF97)
     for backend in GPUBackends.backends
         xg = to_gpu(backend, x)
         cg, bpg = lp_decompose(xg, CDF97)
-        synchronize_backend(backend)
         @test maximum(abs, Array(cg) .- cc) < 1.0e-12
         @test maximum(abs, Array(bpg) .- bpc) < 1.0e-12
         rec = lp_reconstruct(cg, bpg, CDF97)
-        synchronize_backend(backend)
         @test maximum(abs, Array(rec) .- x) < 1.0e-12
     end
 end
 
 @testitem "GPU nonsubsampled pyramid matches CPU + PR" tags = [:gpu] setup = [GPUBackends] begin
-    using Contourlets, GPUEnv, Random
+    using GPUEnv, Random
     Random.seed!(52)
     x = randn(32, 32)
     for backend in GPUBackends.backends
@@ -80,18 +77,16 @@ end
         for lvl in 1:2
             cc, bpc = nsp_decompose(x, CDF97, lvl)
             cg, bpg = nsp_decompose(xg, CDF97, lvl)
-            synchronize_backend(backend)
             @test maximum(abs, Array(cg) .- cc) < 1.0e-12
             @test maximum(abs, Array(bpg) .- bpc) < 1.0e-12
             rec = nsp_reconstruct(cg, bpg, CDF97, lvl)
-            synchronize_backend(backend)
             @test maximum(abs, Array(rec) .- x) < 1.0e-12
         end
     end
 end
 
 @testitem "GPU CT matches CPU and reconstructs" tags = [:gpu] setup = [GPUBackends] begin
-    using Contourlets, GPUEnv, Random
+    using GPUEnv, Random
     Random.seed!(53)
     x = randn(64, 64)
     p = ContourletParams(J = 2, L_array = [2, 3])
@@ -104,14 +99,13 @@ end
         for j in 1:2, k in eachindex(ccpu.subbands[j])
             @test maximum(abs, cgpu.subbands[j][k] .- ccpu.subbands[j][k]) < 1.0e-12
         end
-        rec = ct_inverse(cgpu, GPUBackends.ka_backend(xg))
-        synchronize_backend(backend)
+        rec = ct_inverse(cgpu, xg)
         @test maximum(abs, Array(rec) .- x) < 1.0e-11
     end
 end
 
 @testitem "GPU NSCT matches CPU, reconstructs, shift-invariant" tags = [:gpu] setup = [GPUBackends] begin
-    using Contourlets, GPUEnv, Random
+    using GPUEnv, Random
     Random.seed!(54)
     x = randn(32, 32)
     p = ContourletParams(J = 2, L_array = [2, 3])
@@ -123,8 +117,7 @@ end
         for j in 1:2, k in eachindex(ncpu.subbands[j])
             @test maximum(abs, ngpu.subbands[j][k] .- ncpu.subbands[j][k]) < 1.0e-12
         end
-        rec = nsct_inverse(ngpu, GPUBackends.ka_backend(xg))
-        synchronize_backend(backend)
+        rec = nsct_inverse(ngpu, xg)
         @test maximum(abs, Array(rec) .- x) < 1.0e-11
         # Shift invariance on device.
         s = (3, 5)

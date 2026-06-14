@@ -1,5 +1,4 @@
 @testitem "make_workspace allocates correct sizes" begin
-    using Contourlets
     p = ContourletParams(J = 2, L_array = [2, 3])
     ws = make_workspace(Float64, (32, 32), p)
     @test ws isa ContourletWorkspace
@@ -9,7 +8,6 @@
 end
 
 @testitem "make_nsct_workspace all same size" begin
-    using Contourlets
     p = ContourletParams(J = 2, L_array = [2, 3])
     ws = make_nsct_workspace(Float64, (32, 32), p)
     @test ws isa ContourletWorkspace
@@ -19,7 +17,7 @@ end
 end
 
 @testitem "CT with workspace gives same result as without" begin
-    using Contourlets, Random
+    using Random
     Random.seed!(40)
     x = randn(32, 32)
     p = ContourletParams(J = 2, L_array = [2, 3])
@@ -31,7 +29,6 @@ end
 end
 
 @testitem "workspace_clear! resets all buffers to zero" begin
-    using Contourlets
     p = ContourletParams(J = 1, L_array = [2])
     ws = make_workspace(Float64, (16, 16), p)
     ws.coarse_bufs[1] .= 999.0
@@ -40,7 +37,6 @@ end
 end
 
 @testitem "estimate_workspace_size" begin
-    using Contourlets
     p = ContourletParams(J = 2, L_array = [2, 3])
     n = estimate_workspace_size(p, (32, 32))
     @test n isa Int
@@ -61,7 +57,6 @@ end
 end
 
 @testitem "make_workspace params (type-first positional API)" begin
-    using Contourlets
     p = ContourletParams(J = 2, L_array = [1, 2])
     # Float64 params + Float32 request → promotes to Float64
     ws = make_workspace(Float32, (32, 32), p)
@@ -70,7 +65,6 @@ end
 end
 
 @testitem "make_nsct_workspace (keyword T)" begin
-    using Contourlets
     p = ContourletParams(J = 2, L_array = [2, 3])
     # Float64 params + Float32 request → promotes to Float64
     ws = make_nsct_workspace(p, (32, 32); T = Float32)
@@ -81,14 +75,13 @@ end
 end
 
 @testitem "make_nsct_workspace (type-first positional API)" begin
-    using Contourlets
     p = ContourletParams(J = 2, L_array = [1, 2])
     ws = make_nsct_workspace(Float32, (32, 32), p)
     @test ws isa ContourletWorkspace{Float64}
 end
 
 @testitem "CT workspace PR after workspace_clear!" begin
-    using Contourlets, Random
+    using Random
     Random.seed!(41)
     x = randn(32, 32)
     p = ContourletParams(J = 2, L_array = [2, 3])

@@ -1,5 +1,5 @@
 @testitem "conv2d direct backend small kernel" begin
-    using Contourlets, Random
+    using Random
     Random.seed!(1)
     x = randn(16, 16)
     # 3-tap separable averaging kernel, compare against a hand-rolled reference
@@ -15,7 +15,7 @@
 end
 
 @testitem "conv2d FFTW backend matches direct (all boundaries)" begin
-    using Contourlets, Random
+    using Random
     Random.seed!(101)
     x = randn(40, 48)
     k = randn(7, 7)            # 49 taps > 25 ⇒ FFTW path
@@ -29,7 +29,7 @@ end
 end
 
 @testitem "rect_downsample / upsample round-trip" begin
-    using Contourlets, Random
+    using Random
     Random.seed!(2)
     x = randn(8, 8)
     y = rect_downsample(x)
@@ -41,7 +41,7 @@ end
 end
 
 @testitem "shear / inv_shear" begin
-    using Contourlets, Random
+    using Random
     Random.seed!(3)
     x = randn(8, 8)
     for dir in [:h, :v]
@@ -53,7 +53,6 @@ end
 end
 
 @testitem "shear does not alias src/dst" begin
-    using Contourlets
     x = randn(8, 8)
     y = copy(x)
     sh = shear(x, :h)          # allocating — never aliases
@@ -65,7 +64,7 @@ end
 end
 
 @testitem "conv2d FFTW backend (large kernel)" begin
-    using Contourlets, Random
+    using Random
     Random.seed!(4)
     x = randn(32, 32)
     # Kernel with more than 25 elements triggers FFTW path
@@ -80,7 +79,7 @@ end
 end
 
 @testitem "conv2d boundary modes :periodic and :zero" begin
-    using Contourlets, Random
+    using Random
     Random.seed!(5)
     x = randn(8, 8)
     k = reshape([0.25, 0.5, 0.25], 3, 1)
@@ -95,7 +94,6 @@ end
 end
 
 @testitem "conv2d! size mismatch error" begin
-    using Contourlets
     x = randn(8, 8)
     k = randn(3, 3)
     dst = zeros(4, 8)
@@ -103,7 +101,7 @@ end
 end
 
 @testitem "qx_downsample / upsample round-trip" begin
-    using Contourlets, Random
+    using Random
     Random.seed!(6)
     x = randn(16, 16)
     y = qx_downsample(x)
@@ -114,7 +112,7 @@ end
 end
 
 @testitem "qx_downsample! in-place" begin
-    using Contourlets, Random
+    using Random
     Random.seed!(7)
     x = randn(16, 16)
     y_alloc = qx_downsample(x)
@@ -124,7 +122,7 @@ end
 end
 
 @testitem "qx_upsample! in-place" begin
-    using Contourlets, Random
+    using Random
     Random.seed!(8)
     x = randn(16, 16)
     y = qx_downsample(x)
@@ -135,21 +133,19 @@ end
 end
 
 @testitem "shear! invalid direction throws" begin
-    using Contourlets
     x = randn(8, 8)
     dst = similar(x)
     @test_throws ArgumentError shear!(dst, x, :bad)
 end
 
 @testitem "inv_shear! invalid direction throws" begin
-    using Contourlets
     x = randn(8, 8)
     dst = similar(x)
     @test_throws ArgumentError inv_shear!(dst, x, :bad)
 end
 
 @testitem "rect_upsample! in-place" begin
-    using Contourlets, Random
+    using Random
     Random.seed!(9)
     x = randn(8, 8)
     y = rect_downsample(x)
@@ -160,7 +156,7 @@ end
 end
 
 @testitem "rect_downsample! in-place" begin
-    using Contourlets, Random
+    using Random
     Random.seed!(10)
     x = randn(8, 8)
     y_alloc = rect_downsample(x)

@@ -1,5 +1,5 @@
 @testitem "@test_call Contourlets public API" tags = [:jet] begin
-    using JET, Contourlets, Random
+    using JET, Random
     Random.seed!(100)
 
     # ── Types / constructors ─────────────────────────────────────────────────
@@ -85,7 +85,7 @@
 end
 
 @testitem "@test_opt Contourlets core functions" tags = [:jet] begin
-    using JET, Contourlets, Random
+    using JET, Random
     Random.seed!(101)
     x = randn(16, 16)
     dst = similar(x)

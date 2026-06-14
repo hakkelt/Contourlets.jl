@@ -1,5 +1,5 @@
 @testitem "CT forward/inverse PR" begin
-    using Contourlets, Random
+    using Random
     Random.seed!(30)
     x = randn(32, 32)
     params = ContourletParams(J = 2, L_array = [2, 3])
@@ -10,7 +10,6 @@
 end
 
 @testitem "CT coeff structure" begin
-    using Contourlets
     x = zeros(32, 32); x[16, 16] = 1.0
     p = ContourletParams(J = 2, L_array = [2, 3])
     c = ct_forward(x, p)
@@ -21,7 +20,7 @@ end
 end
 
 @testitem "CT Float32 round-trip" begin
-    using Contourlets, Random
+    using Random
     Random.seed!(31)
     x = randn(Float32, 32, 32)
     p = ContourletParams(J = 1, L_array = [2])
@@ -32,7 +31,7 @@ end
 end
 
 @testitem "NSCT forward/inverse PR" begin
-    using Contourlets, Random
+    using Random
     Random.seed!(32)
     x = randn(32, 32)
     params = ContourletParams(J = 2, L_array = [2, 3])
@@ -43,7 +42,7 @@ end
 end
 
 @testitem "NSCT shift invariance" begin
-    using Contourlets, Random
+    using Random
     Random.seed!(38)
     x = randn(32, 32)
     p = ContourletParams(J = 2, L_array = [2, 3])
@@ -60,7 +59,7 @@ end
 end
 
 @testitem "NSCT subband energy is shift invariant" begin
-    using Contourlets, Random
+    using Random
     Random.seed!(39)
     x = randn(32, 32)
     p = ContourletParams(J = 2, L_array = [2, 3])
@@ -70,7 +69,6 @@ end
 end
 
 @testitem "NSCT all subbands same size as input" begin
-    using Contourlets
     x = zeros(32, 32)
     p = ContourletParams(J = 2, L_array = [2, 3])
     nc = nsct_forward(x, p)
@@ -82,7 +80,7 @@ end
 end
 
 @testitem "CT J=0 trivial reconstruction" begin
-    using Contourlets, Random
+    using Random
     Random.seed!(33)
     x = randn(32, 32)
     p = ContourletParams(J = 0, L_array = Int[])
@@ -93,7 +91,6 @@ end
 end
 
 @testitem "parabolic_levels helper" begin
-    using Contourlets
     ls = parabolic_levels(4)
     @test length(ls) == 4
     @test all(x -> x >= 1, ls)
@@ -101,7 +98,7 @@ end
 end
 
 @testitem "CT in-place forward/inverse with workspace" begin
-    using Contourlets, Random
+    using Random
     Random.seed!(34)
     x = randn(32, 32)
     p = ContourletParams(J = 2, L_array = [2, 3])
@@ -114,7 +111,7 @@ end
 end
 
 @testitem "CT in-place forward matches allocating" begin
-    using Contourlets, Random
+    using Random
     Random.seed!(35)
     x = randn(32, 32)
     p = ContourletParams(J = 2, L_array = [2, 3])
@@ -129,7 +126,7 @@ end
 end
 
 @testitem "NSCT in-place forward/inverse with workspace" begin
-    using Contourlets, Random
+    using Random
     Random.seed!(36)
     x = randn(32, 32)
     p = ContourletParams(J = 2, L_array = [2, 3])
@@ -142,7 +139,7 @@ end
 end
 
 @testitem "NSCT in-place forward matches allocating" begin
-    using Contourlets, Random
+    using Random
     Random.seed!(37)
     x = randn(32, 32)
     p = ContourletParams(J = 2, L_array = [2, 3])
@@ -154,7 +151,6 @@ end
 end
 
 @testitem "similar_nsct_coefficients sizes" begin
-    using Contourlets
     p = ContourletParams(J = 2, L_array = [2, 3])
     nc = similar_nsct_coefficients(p, (64, 64))
     @test size(nc.coarse) == (64, 64)
@@ -168,7 +164,6 @@ end
 end
 
 @testitem "similar_coefficients sizes" begin
-    using Contourlets
     p = ContourletParams(J = 2, L_array = [2, 3])
     c = similar_coefficients(p, (32, 32))
     @test length(c.subbands[1]) == 4

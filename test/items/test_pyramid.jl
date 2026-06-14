@@ -1,5 +1,5 @@
 @testitem "LP PR — Float64" begin
-    using Contourlets, Random
+    using Random
     Random.seed!(10)
     x = randn(32, 32)
     c, bp = lp_decompose(x, CDF97)
@@ -10,7 +10,7 @@
 end
 
 @testitem "LP PR — Float32" begin
-    using Contourlets, Random
+    using Random
     Random.seed!(11)
     x = randn(Float32, 32, 32)
     c, bp = lp_decompose(x, CDF97)
@@ -20,7 +20,7 @@ end
 end
 
 @testitem "LP in-place round-trip" begin
-    using Contourlets, Random
+    using Random
     Random.seed!(12)
     x = randn(32, 32)
     c = zeros(16, 16); bp = zeros(32, 32)
@@ -31,7 +31,7 @@ end
 end
 
 @testitem "NSP PR — multiple levels" begin
-    using Contourlets, Random
+    using Random
     Random.seed!(13)
     x = randn(32, 32)
     for lv in 1:3
@@ -44,7 +44,7 @@ end
 end
 
 @testitem "NSP in-place decompose/reconstruct" begin
-    using Contourlets, Random
+    using Random
     Random.seed!(14)
     x = randn(32, 32)
     c = similar(x)
@@ -57,7 +57,7 @@ end
 end
 
 @testitem "NSP in-place level 2 and 3" begin
-    using Contourlets, Random
+    using Random
     Random.seed!(15)
     x = randn(32, 32)
     for lv in 2:3
@@ -70,7 +70,6 @@ end
 end
 
 @testitem "NSP decompose invalid level" begin
-    using Contourlets
     x = randn(16, 16)
     @test_throws ArgumentError nsp_decompose(x, CDF97, 0)
 end

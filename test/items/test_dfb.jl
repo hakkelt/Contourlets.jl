@@ -1,5 +1,5 @@
 @testitem "QFB PR col-direction" begin
-    using Contourlets, Random
+    using Random
     Random.seed!(20)
     x = randn(32, 32)
     sb0, sb1 = qfb_decompose(x, Q2345)
@@ -10,7 +10,7 @@
 end
 
 @testitem "QFB PR row-direction" begin
-    using Contourlets, Random
+    using Random
     Random.seed!(21)
     x = randn(32, 32)
     sb0, sb1 = qfb_decompose(x, Q2345; dir = :row)
@@ -20,7 +20,7 @@ end
 end
 
 @testitem "DFB PR levels 1–4" begin
-    using Contourlets, Random
+    using Random
     Random.seed!(22)
     x = randn(32, 32)
     for l in 1:4
@@ -32,7 +32,6 @@ end
 end
 
 @testitem "DFB subband sizes (canonical directional mosaic)" begin
-    using Contourlets
     x = zeros(64, 64)
     # l=1: two horizontal subbands, rows halved.
     sbs1 = dfb_decompose(x, 1, Q2345)
@@ -59,7 +58,6 @@ end
 end
 
 @testitem "DFB is directionally selective" begin
-    using Contourlets
     # An l=3 DFB has 8 directional wedges.  Sweeping the orientation of a
     # near-Nyquist 2-D sinusoid must light up several *different* dominant
     # subbands — a degenerate (non-directional) DFB would always pick the same
@@ -76,7 +74,6 @@ end
 end
 
 @testitem "DFB level 0 returns single subband" begin
-    using Contourlets
     x = randn(8, 8)
     sbs = dfb_decompose(x, 0, Q2345)
     @test length(sbs) == 1
@@ -84,7 +81,7 @@ end
 end
 
 @testitem "NSDFB PR levels 1–3, tree_level 1–3" begin
-    using Contourlets, Random
+    using Random
     Random.seed!(23)
     x = randn(32, 32)
     for l in 1:3, tl in 1:3
@@ -97,7 +94,6 @@ end
 end
 
 @testitem "NSDFB subbands are directionally selective" begin
-    using Contourlets
     # A horizontally-varying pattern (vertical edges) and a vertically-varying
     # pattern (horizontal edges) must concentrate their energy in different
     # directional subbands.  This guards against a degenerate DFB whose stages
@@ -119,7 +115,7 @@ end
 end
 
 @testitem "QFB in-place decompose col-direction" begin
-    using Contourlets, Random
+    using Random
     Random.seed!(24)
     x = randn(32, 32)
     sb0_alloc, sb1_alloc = qfb_decompose(x, Q2345)
@@ -131,7 +127,7 @@ end
 end
 
 @testitem "QFB in-place decompose row-direction" begin
-    using Contourlets, Random
+    using Random
     Random.seed!(25)
     x = randn(32, 32)
     sb0_alloc, sb1_alloc = qfb_decompose(x, Q2345; dir = :row)
@@ -143,7 +139,7 @@ end
 end
 
 @testitem "QFB in-place reconstruct col-direction" begin
-    using Contourlets, Random
+    using Random
     Random.seed!(26)
     x = randn(32, 32)
     sb0, sb1 = qfb_decompose(x, Q2345)
@@ -153,7 +149,7 @@ end
 end
 
 @testitem "QFB in-place reconstruct row-direction" begin
-    using Contourlets, Random
+    using Random
     Random.seed!(27)
     x = randn(32, 32)
     sb0, sb1 = qfb_decompose(x, Q2345; dir = :row)

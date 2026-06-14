@@ -15,3 +15,11 @@ lcov.info
 # Local benchmark scratch output
 /julia_bench.txt
 /matlab_bench.txt
+
+# GPUEnv persisted overlay environments
+/test/gpu_env/
+/benchmark/gpu_env/
+
+# AirspeedVelocity benchmark result artifacts
+/results_*.json
+/results_*.json.tmp

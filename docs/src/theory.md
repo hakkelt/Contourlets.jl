@@ -37,10 +37,10 @@ plot(ω, dtft(CDF97.h, 5), label = "analysis h (low-pass)", lw = 2,
     xlabel = "ω", ylabel = "|H(ω)|", title = "CDF 9/7 low-pass response",
     xticks = ([0, π/2, π], ["0", "π/2", "π"]), legend = :topright)
 plot!(ω, 1 .- dtft(CDF97.h, 5), label = "1 − h  (band/high-pass)", lw = 2, ls = :dash)
-savefig("lp_response.svg"); nothing # hide
+savefig("lp_response.png"); nothing # hide
 ```
 
-![](lp_response.svg)
+![](lp_response.png)
 
 ## Directional Filter Bank (DFB)
 
@@ -83,10 +83,10 @@ for k in 1:4
     heatmap!(p[k], basis_element(k), color = :RdBu, title = "subband $k",
         aspect_ratio = :equal, axis = false, colorbar = false)
 end
-savefig(p, "dfb_basis.svg"); nothing # hide
+savefig(p, "dfb_basis.png"); nothing # hide
 ```
 
-![](dfb_basis.svg)
+![](dfb_basis.png)
 
 In the frequency domain those basis functions occupy complementary **wedges**
 that tile the 2-D plane — the directional partition that gives the contourlet
@@ -99,10 +99,10 @@ for k in 1:4
     heatmap!(pf[k], spec, color = :viridis, title = "subband $k",
         aspect_ratio = :equal, axis = false, colorbar = false)
 end
-savefig(pf, "dfb_freq.svg"); nothing # hide
+savefig(pf, "dfb_freq.png"); nothing # hide
 ```
 
-![](dfb_freq.svg)
+![](dfb_freq.png)
 
 The default pair [`Q2345`](@ref) is the "23-45" biorthogonal pair of Phoong et
 al. (1995), realised as a two-step ladder (lifting) network with the 12-tap
@@ -157,10 +157,10 @@ end
 
 p_ct = heatmap(log1p.(composite_freq), color = :viridis, title = "Contourlet Frequency Tiling",
     aspect_ratio = :equal, axis = false, colorbar = false, size=(400, 400))
-savefig(p_ct, "ct_tiling.svg"); nothing # hide
+savefig(p_ct, "ct_tiling.png"); nothing # hide
 ```
 
-![](ct_tiling.svg)
+![](ct_tiling.png)
 
 ## Nonsubsampled Contourlet Transform (NSCT)
 
@@ -208,10 +208,10 @@ end
 
 p_nsct = heatmap(log1p.(composite_freq_nsct), color = :viridis, title = "NSCT Frequency Tiling",
     aspect_ratio = :equal, axis = false, colorbar = false, size=(400, 400))
-savefig(p_nsct, "nsct_tiling.svg"); nothing # hide
+savefig(p_nsct, "nsct_tiling.png"); nothing # hide
 ```
 
-![](nsct_tiling.svg)
+![](nsct_tiling.png)
 
 ## References
 

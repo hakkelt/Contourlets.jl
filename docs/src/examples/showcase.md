@@ -33,10 +33,10 @@ img[64:192, 128:132] .= 2.0
 img[128:132, 64:192] .= 2.0
 
 heatmap(img, color=:grays, title="Test Image", aspect_ratio=:equal, axis=false, colorbar=false)
-savefig("original.svg"); nothing # hide
+savefig("original.png"); nothing # hide
 ```
 
-![](original.svg)
+![](original.png)
 
 ## Contourlet Transform (CT)
 
@@ -69,10 +69,10 @@ for (k, sb) in enumerate(finest_subbands)
     heatmap!(p[k], sb, color=:grays, title="Dir $k", aspect_ratio=:equal, axis=false, colorbar=false)
 end
 
-savefig(p, "ct_finest.svg"); nothing # hide
+savefig(p, "ct_finest.png"); nothing # hide
 ```
 
-![](ct_finest.svg)
+![](ct_finest.png)
 
 ## Nonsubsampled Contourlet Transform (NSCT)
 
@@ -91,10 +91,10 @@ for (k, sb) in enumerate(nsct_finest)
     heatmap!(p_nsct[k], sb, color=:grays, title="NSCT Dir $k", aspect_ratio=:equal, axis=false, colorbar=false)
 end
 
-savefig(p_nsct, "nsct_finest.svg"); nothing # hide
+savefig(p_nsct, "nsct_finest.png"); nothing # hide
 ```
 
-![](nsct_finest.svg)
+![](nsct_finest.png)
 
 ## Laplacian Pyramid (LP)
 
@@ -108,10 +108,10 @@ p_lp = plot(layout=(1, 2), size=(800, 400))
 heatmap!(p_lp[1], coarse, color=:grays, title="Coarse", aspect_ratio=:equal, axis=false, colorbar=false)
 heatmap!(p_lp[2], bandpass, color=:grays, title="Bandpass", aspect_ratio=:equal, axis=false, colorbar=false)
 
-savefig(p_lp, "lp_demo.svg"); nothing # hide
+savefig(p_lp, "lp_demo.png"); nothing # hide
 ```
 
-![](lp_demo.svg)
+![](lp_demo.png)
 
 ## Reconstruction
 

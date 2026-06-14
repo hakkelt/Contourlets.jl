@@ -5,13 +5,9 @@ DocMeta.setdocmeta!(Contourlets, :DocTestSetup, :(using Contourlets, Random); re
 makedocs(;
     modules = [Contourlets],
     sitename = "Contourlets.jl",
-    authors = "Contourlets.jl Contributors",
-    repo = "https://github.com/hakkelt/Contourlets.jl/blob/{commit}{path}#{line}",
+    authors = "Tamás Hakkel",
     format = Documenter.HTML(;
-        prettyurls = get(ENV, "CI", "false") == "true",
         canonical = "https://hakkelt.github.io/Contourlets.jl",
-        edit_link = "master",
-        assets = String[],
     ),
     pages = [
         "Home" => "index.md",
@@ -26,7 +22,6 @@ makedocs(;
         "API Reference" => "api.md",
     ],
     checkdocs = :exports,
-    doctest = true,
 )
 
 deploydocs(;

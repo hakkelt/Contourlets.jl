@@ -128,7 +128,7 @@ same machine using the `benchmark/matlab/run_matlab_benchmarks.m` script.
 > convolutions.  Key performance factors:
 > 1. Type-stable `Val{B}`-dispatched boundary conditions (zero dynamic dispatch)
 > 2. Column-major inner loops for cache efficiency
-> 3. Cached FFTW plans and a preallocated-buffer workspace API for iterative use
+> 3. A preallocated-buffer workspace API for iterative use
 > 
 > *Note on GPU benchmarks*: GPU benchmarks (`ct_forward` and `nsct_forward` via CUDA.jl or AMDGPU.jl)
 > are excluded from this table because MATLAB does not have a native GPU Contourlet

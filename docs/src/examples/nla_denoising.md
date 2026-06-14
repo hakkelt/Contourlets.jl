@@ -181,10 +181,10 @@ for i in 1:N, j in 1:N
 end
 heatmap(texture, color = :grays, title = "Directional texture", aspect_ratio = :equal,
     axis = false, colorbar = false)
-savefig("nla_texture.svg"); nothing # hide
+savefig("nla_texture.png"); nothing # hide
 ```
 
-![](nla_texture.svg)
+![](nla_texture.png)
 
 Keeping the same number of coefficients `M` for both transforms:
 
@@ -212,10 +212,10 @@ p = plot(layout = (1, 3), size = (900, 320))
 heatmap!(p[1], texture, title = "Original", color = :grays, aspect_ratio = :equal, axis = false, colorbar = false)
 heatmap!(p[2], ct_approx, title = "Contourlet ($M terms)", color = :grays, aspect_ratio = :equal, axis = false, colorbar = false)
 heatmap!(p[3], wt_approx, title = "Wavelet ($M terms)", color = :grays, aspect_ratio = :equal, axis = false, colorbar = false)
-savefig(p, "nla_mterm.svg"); nothing # hide
+savefig(p, "nla_mterm.png"); nothing # hide
 ```
 
-![](nla_mterm.svg)
+![](nla_mterm.png)
 
 ## Denoising with the shift-invariant NSCT
 
@@ -259,10 +259,10 @@ heatmap!(p2[1], noisy, title = "Noisy", color = :grays, aspect_ratio = :equal, a
 heatmap!(p2[2], wt_rec, title = "Wavelet hard", color = :grays, aspect_ratio = :equal, axis = false, colorbar = false, yflip = true)
 heatmap!(p2[3], ct_rec, title = "NSCT hard", color = :grays, aspect_ratio = :equal, axis = false, colorbar = false, yflip = true)
 heatmap!(p2[4], ct_bivar, title = "NSCT bivariate", color = :grays, aspect_ratio = :equal, axis = false, colorbar = false, yflip = true)
-savefig(p2, "nla_denoise.svg"); nothing # hide
+savefig(p2, "nla_denoise.png"); nothing # hide
 ```
 
-![](nla_denoise.svg)
+![](nla_denoise.png)
 
 !!! note "Scope and reproducibility"
     These are small (128²) synthetic experiments meant to illustrate the

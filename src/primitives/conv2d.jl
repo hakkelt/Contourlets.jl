@@ -99,17 +99,17 @@ end
 # FFTW backend
 # ────────────────────────────────────────────────────────────────────────────────
 
-# Cache of FFTW plans keyed on (element type, padded size).  Plan creation with
-# FFTW.MEASURE is expensive; plan *execution* via mul! with caller-owned buffers
-# is thread-safe, so only the plans are cached (buffers are allocated per call).
-const _PLAN_CACHE = Dict{Tuple{DataType, Int, Int}, Tuple{Any, Any}}()
-const _PLAN_LOCK = ReentrantLock()
-
 """
     _build_fft_plan(src_size, kernel_size, T) -> (plan_fwd, plan_inv, padded_size)
 
-Build — or retrieve from `_PLAN_CACHE` — the FFTW plans for FFT convolution of
-a `src_size` image with a `kernel_size` kernel.
+Build the FFTW plans for FFT convolution of a `src_size` image with a
+`kernel_size` kernel.
+
+No plan is cached at the package level: FFTW already caches its `MEASURE` wisdom
+(the expensive timing step) globally in the C library, so rebuilding a plan for a
+size that has been planned before is cheap (sub-millisecond).  This FFT path is
+only reached for large kernels through the public [`conv2d`](@ref); the contourlet
+transforms use the separable direct backend ([`conv2d_sep!`](@ref)).
 """
 function _build_fft_plan(
         src_size::Tuple{Int, Int},
@@ -120,14 +120,9 @@ function _build_fft_plan(
     k1, k2 = kernel_size
     p1 = nextprod([2, 3, 5], n1 + k1 - 1)
     p2 = nextprod([2, 3, 5], n2 + k2 - 1)
-    fwd, inv = lock(_PLAN_LOCK) do
-        get!(_PLAN_CACHE, (T, p1, p2)) do
-            buf = zeros(T, p1, p2)
-            fwd = plan_rfft(buf; flags = FFTW.MEASURE)
-            inv = plan_irfft(fwd * buf, p1; flags = FFTW.MEASURE)
-            (fwd, inv)
-        end
-    end
+    buf = zeros(T, p1, p2)
+    fwd = plan_rfft(buf; flags = FFTW.MEASURE)
+    inv = plan_irfft(fwd * buf, p1; flags = FFTW.MEASURE)
     return fwd, inv, (p1, p2)
 end
 
@@ -325,7 +320,9 @@ function conv2d_sep(
 end
 
 # ────────────────────────────────────────────────────────────────────────────────
-# Internal workspace builder (used by workspace.jl as well)
+# Internal FFT workspace builder — used only by `conv2d!` for large kernels.
+# The contourlet transforms and `ContourletWorkspace` never reach this path
+# (they convolve with small separable filters via `conv2d_sep!`).
 # ────────────────────────────────────────────────────────────────────────────────
 
 function _make_fftw_workspace(

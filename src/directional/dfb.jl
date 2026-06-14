@@ -53,10 +53,15 @@ function _resamp(x::AbstractMatrix{T}, type::Int, shift::Int = 1) where {T}
 end
 
 # Cyclic column/row roll: forward = x[:, [2:end; 1]]; back = x[:, [end; 1:end-1]].
-_roll_cols(x; back::Bool = false) =
-    back ? x[:, [size(x, 2); 1:(size(x, 2) - 1)]] : x[:, [2:size(x, 2); 1]]
-_roll_rows(x; back::Bool = false) =
-    back ? x[[size(x, 1); 1:(size(x, 1) - 1)], :] : x[[2:size(x, 1); 1], :]
+# Expressed via `circshift` so the roll is a single vectorised op (and avoids
+# index-vector gathers that would force scalar indexing on the GPU).
+_roll_cols(x; back::Bool = false) = circshift(x, (0, back ? 1 : -1))
+_roll_rows(x; back::Bool = false) = circshift(x, (back ? 1 : -1, 0))
+
+# Zero matrix on the same device/array type as `ref` (so the polyphase
+# reconstructors stay on the GPU when given device arrays).
+_zeros_like(ref::AbstractArray, dims::Vararg{Int}) =
+    fill!(similar(ref, dims...), zero(eltype(ref)))
 
 # ── Quincunx polyphase (types '1r', '2c') ─────────────────────────────────────
 
@@ -78,13 +83,13 @@ end
 function _qprec(p0::AbstractMatrix{T}, p1::AbstractMatrix{T}, type::Symbol) where {T}
     if type === :q1r
         m, n = size(p0)
-        y = zeros(T, 2m, n)
+        y = _zeros_like(p0, 2m, n)
         y[1:2:end, :] = _resamp(p0, 4)
         y[2:2:end, :] = _roll_cols(_resamp(p1, 4); back = true)
         return _resamp(y, 1)
     elseif type === :q2c
         m, n = size(p0)
-        y = zeros(T, m, 2n)
+        y = _zeros_like(p0, m, 2n)
         y[:, 1:2:end] = _resamp(p0, 2)
         y[:, 2:2:end] = _roll_rows(_resamp(p1, 2); back = true)
         return _resamp(y, 3)
@@ -117,19 +122,19 @@ end
 function _pprec(p0::AbstractMatrix{T}, p1::AbstractMatrix{T}, type::Int) where {T}
     m, n = size(p0)
     if type == 1
-        x = zeros(T, 2m, n)
+        x = _zeros_like(p0, 2m, n)
         x[1:2:end, :] = _resamp(p0, 4)
         x[2:2:end, :] = _roll_cols(_resamp(p1, 4); back = true)
     elseif type == 2
-        x = zeros(T, 2m, n)
+        x = _zeros_like(p0, 2m, n)
         x[1:2:end, :] = _resamp(p0, 3)
         x[2:2:end, :] = _resamp(p1, 3)
     elseif type == 3
-        x = zeros(T, m, 2n)
+        x = _zeros_like(p0, m, 2n)
         x[:, 1:2:end] = _resamp(p0, 2)
         x[:, 2:2:end] = _roll_rows(_resamp(p1, 2); back = true)
     elseif type == 4
-        x = zeros(T, m, 2n)
+        x = _zeros_like(p0, m, 2n)
         x[:, 1:2:end] = _resamp(p0, 1)
         x[:, 2:2:end] = _resamp(p1, 1)
     else
@@ -191,24 +196,59 @@ function _sefilter2(x::AbstractMatrix{T}, f::Vector{T}, shift1::Int, shift2::Int
     cr = ceil(Int, lf) - shift2
     ext = _extend2(x, ru, rd, cl, cr, extmod)
     m, n = size(x)
+    # The lifting filter is symmetric (f[a] == f[L+1-a]); fold the taps so each
+    # output uses ⌈L/2⌉ multiplies instead of L.  Cuts the FLOP count of this
+    # (dominant) kernel roughly in half for the default Q2345 pair.
+    sym = _is_symmetric(f, L)
+    half = (L + 1) ÷ 2
     # Separable valid convolution with f along both dims (conv flips the filter).
     tmp = Matrix{T}(undef, m, size(ext, 2))
-    @inbounds for j in axes(ext, 2), i in 1:m
-        acc = zero(T)
-        for a in 1:L
-            acc += f[a] * ext[i + L - a, j]
+    if sym
+        @inbounds for j in axes(ext, 2), i in 1:m
+            acc = zero(T)
+            for a in 1:half
+                acc += f[a] * (ext[i + L - a, j] + ext[i + a - 1, j])
+            end
+            isodd(L) && (acc -= f[half] * ext[i + L - half, j])
+            tmp[i, j] = acc
         end
-        tmp[i, j] = acc
+    else
+        @inbounds for j in axes(ext, 2), i in 1:m
+            acc = zero(T)
+            for a in 1:L
+                acc += f[a] * ext[i + L - a, j]
+            end
+            tmp[i, j] = acc
+        end
     end
     out = Matrix{T}(undef, m, n)
-    @inbounds for j in 1:n, i in 1:m
-        acc = zero(T)
-        for b in 1:L
-            acc += f[b] * tmp[i, j + L - b]
+    if sym
+        @inbounds for j in 1:n, i in 1:m
+            acc = zero(T)
+            for b in 1:half
+                acc += f[b] * (tmp[i, j + L - b] + tmp[i, j + b - 1])
+            end
+            isodd(L) && (acc -= f[half] * tmp[i, j + L - half])
+            out[i, j] = acc
         end
-        out[i, j] = acc
+    else
+        @inbounds for j in 1:n, i in 1:m
+            acc = zero(T)
+            for b in 1:L
+                acc += f[b] * tmp[i, j + L - b]
+            end
+            out[i, j] = acc
+        end
     end
     return out
+end
+
+# True when f reads the same forwards and backwards (symmetric impulse response).
+@inline function _is_symmetric(f::Vector{T}, L::Int) where {T}
+    @inbounds for a in 1:(L ÷ 2)
+        f[a] == f[L + 1 - a] || return false
+    end
+    return true
 end
 
 # ── Two-channel ladder filter bank ────────────────────────────────────────────
@@ -287,12 +327,13 @@ function _dfbdec_l(x::AbstractMatrix{T}, f::Vector{T}, n::Int) where {T}
         y = [y0, y1]
     else
         x0, x1 = _fbdec_l(x, f, :q, :q1r, :qper_col)
-        y = Vector{Matrix{T}}(undef, 4)
+        M = typeof(x0)
+        y = Vector{M}(undef, 4)
         y[2], y[1] = _fbdec_l(x0, f, :q, :q2c)
         y[4], y[3] = _fbdec_l(x1, f, :q, :q2c)
         for l in 3:n
             y_old = y
-            y = Vector{Matrix{T}}(undef, 2^l)
+            y = Vector{M}(undef, 2^l)
             for k in 1:(2^(l - 2))
                 i = mod(k - 1, 2) + 1
                 y[2k], y[2k - 1] = _fbdec_l(y_old[k], f, :p, i)
@@ -314,6 +355,7 @@ function _dfbrec_l(y::Vector{<:AbstractMatrix{T}}, f::Vector{T}) where {T}
     n = round(Int, log2(length(y)))
     n == 0 && return copy(y[1])
     y = copy(y)
+    M = typeof(y[1])
     half = 2^(n - 1)
     y[(half + 1):end] = reverse(y[(half + 1):end])
     _rebacksamp!(y)
@@ -322,7 +364,7 @@ function _dfbrec_l(y::Vector{<:AbstractMatrix{T}}, f::Vector{T}) where {T}
     end
     for l in n:-1:3
         y_old = y
-        y = Vector{Matrix{T}}(undef, 2^(l - 1))
+        y = Vector{M}(undef, 2^(l - 1))
         for k in 1:(2^(l - 2))
             i = mod(k - 1, 2) + 1
             y[k] = _fbrec_l(y_old[2k], y_old[2k - 1], f, :p, i)

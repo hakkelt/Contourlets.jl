@@ -37,7 +37,7 @@ function bench_time(f; samples = 10, evals = 1)
             result
         end samples = samples evals = evals
     )
-    return median(trial.times) / 1e9
+    return median(trial.times) / 1.0e9
 end
 
 function print_header(title)
@@ -45,12 +45,12 @@ function print_header(title)
     println(repeat("=", 78))
     println(title)
     println(repeat("=", 78))
-    @printf("%-16s %12s %12s %10s\n", "Size", "CPU (ms)", "GPU (ms)", "Speedup")
+    return @printf("%-16s %12s %12s %10s\n", "Size", "CPU (ms)", "GPU (ms)", "Speedup")
 end
 
 function print_row(label, cpu_t, gpu_t)
     speedup = cpu_t / gpu_t
-    @printf("%-16s %12.3f %12.3f %10.2fx\n", label, cpu_t * 1e3, gpu_t * 1e3, speedup)
+    @printf("%-16s %12.3f %12.3f %10.2fx\n", label, cpu_t * 1.0e3, gpu_t * 1.0e3, speedup)
     return speedup
 end
 
@@ -60,7 +60,7 @@ record!(k, v) = push!(get!(results, k, Float64[]), v)
 function benchmark_case(group, label, cpu_f, gpu_f)
     cpu_t = bench_time(cpu_f)
     gpu_t = bench_time(gpu_f)
-    record!(group, print_row(label, cpu_t, gpu_t))
+    return record!(group, print_row(label, cpu_t, gpu_t))
 end
 
 println("Contourlets.jl GPU benchmark")

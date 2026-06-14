@@ -172,11 +172,18 @@ under `.temp/`, which is git-ignored.
 - **No downsampling in NSCT** — all subbands have the same spatial size as the
   input. All NSP/NSDFB filtering uses periodic (circular) convolution, so the
   NSCT is exactly invariant under circular shifts of the input.
-- **GPU = device pyramid + host directional** — the `ContourletsGPUExt`
-  extension only kernelises the low-level primitives (separable convolution,
-  sampling, shearing). The LP/NSP pyramid functions are *reused unchanged* from
-  the main package: their allocating methods are broadcast-based and dispatch to
-  the GPU primitives when given device arrays, so there are no GPU-specific
-  pyramid overloads. The recursive DFB/NSDFB resampling stage runs on the host,
-  so GPU `ct_forward`/`nsct_forward` are bit-identical to the CPU path. Tests
-  use GPUEnv.jl on JLArrays (CI) and any real backend present (`:gpu` tag).
+- **GPU = whole transform on the device** — the `ContourletsGPUExt` extension
+  runs every stage of CT/NSCT on the device. The LP/NSP pyramid functions are
+  *reused unchanged* from the main package: their allocating methods are
+  broadcast-based and dispatch to the GPU primitives (separable convolution,
+  sampling, shearing) when given device arrays, so there are no GPU-specific
+  pyramid overloads. Both directional banks are kernelised too: the decimated
+  DFB via GPU `_resamp`/`_sefilter2` (`dfb_gpu.jl`) plus the type-generic
+  polyphase tree, and the NSDFB via per-pixel `_nsqfb_*` kernels (`nsdfb_gpu.jl`).
+  Each device kernel reproduces the CPU reduction order, so GPU
+  `ct_forward`/`nsct_forward` match the CPU path (to Float32 precision); only the
+  final subbands are copied to the host `Matrix` coefficient containers. Shared
+  src must stay device-portable — allocate scratch with `_zeros_like`/`similar`
+  (not `zeros`), avoid index-vector gathers (use `circshift`), and size work
+  vectors from the actual array type, not `Matrix{T}`. Tests use GPUEnv.jl on
+  JLArrays (CI) and any real backend present (`:gpu` tag).

@@ -1,14 +1,17 @@
 # GPU overloads for the top-level CT and NSCT transforms.
 #
-# Design: the multiscale (Laplacian / nonsubsampled) pyramid stage — which is
-# dominated by separable convolutions — runs on the GPU, while the directional
-# stage (DFB / NSDFB) runs on the host.  The directional stage is a recursive
-# resampling/polyphase construction with data-dependent indexing that is not
-# expressed as KernelAbstractions kernels; the coefficient containers also store
-# plain CPU `Matrix{T}`, so the bandpass images are moved host-side for the
-# directional split and the resulting subbands need no further transfer.  This
-# keeps results bit-identical to the CPU path (including the ladder DFB and the
-# shift-invariant NSCT) while still offloading the heavy convolutions.
+# Design: the whole transform runs on the device.  The multiscale (Laplacian /
+# nonsubsampled) pyramid stage dispatches to the GPU primitives, and both
+# directional filter banks stay on the device too:
+#
+#  • CT  — the decimated DFB (`dfb_gpu.jl`): the recursive polyphase tree is
+#    built from slicing / circshift / broadcast plus the GPU `_resamp` and
+#    `_sefilter2` kernels.
+#  • NSCT — the NSDFB (`nsdfb_gpu.jl`): a per-pixel directional convolution.
+#
+# Only the final subbands are copied to the host `Matrix{T}` coefficient
+# containers.  Each device kernel reproduces the CPU reduction order, so results
+# match the host path (including the shift-invariant NSCT).
 
 # Convert params to element type `T`, preserving the ladder filter.
 function _params_as(::Type{T}, params::ContourletParams) where {T}
@@ -22,9 +25,9 @@ end
 """
     ct_forward(image::AbstractGPUMatrix, params::ContourletParams) -> ContourletCoefficients
 
-GPU Discrete Contourlet Transform forward pass.  The Laplacian-pyramid stage runs
-on the device; the directional filter bank runs on the host.  The returned
-coefficients are host `Matrix` objects (bit-identical to the CPU `ct_forward`).
+GPU Discrete Contourlet Transform forward pass.  Both the Laplacian-pyramid and
+the directional filter-bank stages run on the device.  The returned coefficients
+are host `Matrix` objects (matching the CPU `ct_forward` to Float32 precision).
 """
 function ct_forward(image::AbstractGPUMatrix, params::ContourletParams)
     T_out = float(eltype(image))
@@ -37,7 +40,8 @@ function ct_forward(image::AbstractGPUMatrix, params::ContourletParams)
     coarse = img
     for j in 1:J
         coarse_j, bp_j = lp_decompose(coarse, fp)        # GPU
-        subbands[j] = dfb_decompose(Array(bp_j), L[j], qfp)  # host directional
+        dev_sb = dfb_decompose(bp_j, L[j], qfp)          # GPU DFB
+        subbands[j] = [Array(s) for s in dev_sb]         # subbands → host
         coarse = coarse_j
     end
     return ContourletCoefficients{T_out}(Array(coarse), subbands, p)
@@ -48,8 +52,8 @@ end
 
 Inverse Contourlet Transform on GPU.  Pass any device array `device` (e.g. the
 input image used for the forward pass); its KernelAbstractions backend selects
-the output device.  The directional reconstruction runs on the host; the pyramid
-synthesis on the device.
+the output device.  Both the directional reconstruction and the pyramid
+synthesis run on the device.
 """
 function ct_inverse(coeffs::ContourletCoefficients{T}, device::AbstractGPUArray) where {T}
     backend = _gpu_backend(device)
@@ -58,8 +62,8 @@ function ct_inverse(coeffs::ContourletCoefficients{T}, device::AbstractGPUArray)
     qfp = coeffs.params.dfb_filters
     coarse = _to_device(backend, coeffs.coarse)
     for j in J:-1:1
-        bp_cpu = dfb_reconstruct(coeffs.subbands[j], qfp)   # host directional
-        bp = _to_device(backend, bp_cpu)
+        dev_sbs = [_to_device(backend, s) for s in coeffs.subbands[j]]  # subbands → device
+        bp = dfb_reconstruct(dev_sbs, qfp)                  # GPU DFB
         coarse = lp_reconstruct(coarse, bp, fp)             # GPU
     end
     return coarse
@@ -70,7 +74,7 @@ end
 """
     nsct_forward(image::AbstractGPUMatrix, params::ContourletParams) -> NSCTCoefficients
 
-GPU Nonsubsampled Contourlet Transform forward pass (GPU pyramid + host NSDFB).
+GPU Nonsubsampled Contourlet Transform forward pass (GPU pyramid + GPU NSDFB).
 """
 function nsct_forward(image::AbstractGPUMatrix, params::ContourletParams)
     T_out = float(eltype(image))
@@ -83,7 +87,8 @@ function nsct_forward(image::AbstractGPUMatrix, params::ContourletParams)
     coarse = img
     for j in 1:J
         coarse_j, bp_j = nsp_decompose(coarse, fp, j)              # GPU
-        subbands[j] = nsdfb_decompose(Array(bp_j), L[j], qfp, j)   # host directional
+        dev_sb = nsdfb_decompose(bp_j, L[j], qfp, j)               # GPU NSDFB
+        subbands[j] = [Array(s) for s in dev_sb]                   # subbands → host
         coarse = coarse_j
     end
     return NSCTCoefficients{T_out}(Array(coarse), subbands, p)
@@ -102,8 +107,8 @@ function nsct_inverse(coeffs::NSCTCoefficients{T}, device::AbstractGPUArray) whe
     qfp = coeffs.params.dfb_filters
     coarse = _to_device(backend, coeffs.coarse)
     for j in J:-1:1
-        bp_cpu = nsdfb_reconstruct(coeffs.subbands[j], qfp, j)     # host directional
-        bp = _to_device(backend, bp_cpu)
+        dev_sbs = [_to_device(backend, s) for s in coeffs.subbands[j]]  # subbands → device
+        bp = nsdfb_reconstruct(dev_sbs, qfp, j)                    # GPU NSDFB
         coarse = nsp_reconstruct(coarse, bp, fp, j)               # GPU
     end
     return coarse

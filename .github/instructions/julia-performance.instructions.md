@@ -37,15 +37,17 @@ Julia stores arrays in column-major order.  Cache-friendly pattern:
 end
 ```
 
-## FFTW Plan Reuse
+## FFTW Plans
 
-FFTW plans are expensive to create.  Cache plans indexed by `(src_size, kernel_size)`:
-```julia
-const _PLAN_CACHE = Dict{Tuple{NTuple{2,Int},NTuple{2,Int}}, Any}()
-```
+Do **not** add a package-level plan cache.  FFTW already caches its `MEASURE`
+wisdom (the expensive timing step) globally in the C library, so calling
+`plan_rfft(buf; flags=FFTW.MEASURE)` again for a size seen before is cheap
+(sub-millisecond).  A Julia-side `Dict` of plan objects only saves that
+sub-millisecond reconstruction and adds a lock plus a type-unstable cache.
 
-Use `FFTW.MEASURE` for cached plans (one-time overhead), `FFTW.ESTIMATE` in
-contexts where the plan is used only once.
+Prefer `FFTW.MEASURE` for repeated transforms (the wisdom amortizes the cost),
+or `FFTW.ESTIMATE` when a plan is used only once and the first-call latency of
+`MEASURE` matters.
 
 ## Workspace Pattern
 
@@ -54,6 +56,9 @@ write into its pre-allocated buffers.  Do not allocate inside `ct_forward!` /
 `ct_inverse!` / `nsct_forward!` / `nsct_inverse!`.
 
 ## Benchmark Discipline
+
+The persistent suite in `benchmark/benchmarks.jl` uses `@benchmarkable`
+(deferred — `run(SUITE)` executes it later):
 
 ```julia
 # Good — uses pre-allocated data, deterministic seed
@@ -65,4 +70,19 @@ SUITE["CT"]["256"]["forward"] = @benchmarkable ct_forward($img, $params)
 SUITE["CT"]["256"]["forward"] = @benchmarkable ct_forward(randn(256, 256), params)
 ```
 
-Always use `$` interpolation for captured variables in `@benchmarkable`.
+For a quick one-off measurement at the REPL, use `@benchmark` (runs immediately
+and prints a full distribution) or `@btime` (prints just the minimum time and
+allocations):
+
+```julia
+using BenchmarkTools
+img = randn(MersenneTwister(1234), 256, 256)
+p   = ContourletParams(J=2, L_array=[2, 3])
+
+@benchmark ct_forward($img, $p)     # full timing distribution
+@btime ct_forward($img, $p);        # one-line min time + allocations
+```
+
+Always `$`-interpolate captured variables (`$img`, `$p`) in `@benchmark`,
+`@btime`, and `@benchmarkable` so the value is not treated as a non-constant
+global — otherwise the measurement is dominated by global-lookup overhead.

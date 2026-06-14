@@ -57,14 +57,3 @@ end
 
 Always seed random inputs: `Random.seed!(42)` (or another fixed seed).  Never
 rely on the default global RNG state.
-
-## Aqua / JET Configuration
-
-```julia
-Aqua.test_all(Contourlets;
-    ambiguities      = false,   # duck-typed dispatch has minor ambiguities
-    stale_deps       = false,   # Aqua/TestItemRunner in main deps by design
-    persistent_tasks = false)   # 7z spawn may fail in restricted environments
-```
-
-JET: `JET.test_package(Contourlets; target_defined_modules=true)`.

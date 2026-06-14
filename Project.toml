@@ -1,7 +1,7 @@
 name = "Contourlets"
 uuid = "4d443f37-8914-48d3-9d0d-9e555eaf7273"
 version = "0.1.0"
-authors = ["Contourlets.jl Contributors"]
+authors = ["Tamás Hakkel"]
 
 [workspace]
 projects = ["test", "docs", "benchmark"]

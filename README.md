@@ -3,6 +3,11 @@
 A Julia package implementing the Discrete Contourlet Transform (CT) and
 Nonsubsampled Contourlet Transform (NSCT) via a Pyramid Directional Filter Bank (PDFB).
 
+| Contourlet frequency tiling | NSCT denoising vs. wavelets |
+|:---:|:---:|
+| [![Contourlet frequency tiling](https://hakkelt.github.io/Contourlets.jl/dev/theory/ct_tiling.png)](https://hakkelt.github.io/Contourlets.jl/dev/theory/) | [![NSCT denoising](https://hakkelt.github.io/Contourlets.jl/dev/examples/nla_denoising/nla_denoise.png)](https://hakkelt.github.io/Contourlets.jl/dev/examples/nla_denoising/) |
+| Directional wedges tile the frequency plane ([Theory](https://hakkelt.github.io/Contourlets.jl/dev/theory/)). | NSCT recovers edges a separable wavelet smears ([Denoising example](https://hakkelt.github.io/Contourlets.jl/dev/examples/nla_denoising/)). |
+
 ## Features
 
 - **Laplacian Pyramid** multiscale decomposition with CDF 9/7 filters
@@ -58,3 +63,13 @@ This library was implemented with the assistance of [GitHub Copilot](https://git
 - Do & Vetterli (2005), "The Contourlet Transform: An Efficient Directional Multiresolution Image Representation"
 - da Cunha, Zhou & Do (2006), "The Nonsubsampled Contourlet Transform"
 - Phoong, Kim, Vaidyanathan & Ansari (1995), "A New Class of Two-Channel Biorthogonal Filter Banks"
+
+## Acknowledgments
+
+The directional filter bank and its "pkva" ladder filters are independent Julia
+reimplementations of algorithms from the BSD-licensed
+[MATLAB Contourlet Toolbox](https://www.mathworks.com/matlabcentral/fileexchange/8837-contourlet-toolbox)
+(© Minh N. Do) and
+[Nonsubsampled Contourlet Toolbox](https://www.mathworks.com/matlabcentral/fileexchange/10049-nonsubsampled-contourlet-toolbox)
+(© A. L. da Cunha, J. Zhou & M. N. Do).  No source code from those toolboxes is
+vendored here; see [`LICENSE`](LICENSE) for the retained attribution.

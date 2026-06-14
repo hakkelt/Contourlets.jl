@@ -17,7 +17,7 @@ Benchmarks are run over three image sizes: 64×64, 128×128, 256×256.
 using BenchmarkTools, Contourlets, Random
 
 # ╔════════════════════════════════════════════════════════════════════════════╗
-# ║ SUITE DEFINITION                                                          ║
+# ║ SUITE DEFINITION                                                           ║
 # ╚════════════════════════════════════════════════════════════════════════════╝
 
 const SUITE = BenchmarkGroup()
@@ -29,7 +29,7 @@ SUITE["NSDFB"] = BenchmarkGroup()
 SUITE["primitives"] = BenchmarkGroup()
 
 # ╔════════════════════════════════════════════════════════════════════════════╗
-# ║ SETUP: Random number generator & test sizes                              ║
+# ║ SETUP: Random number generator & test sizes                                ║
 # ╚════════════════════════════════════════════════════════════════════════════╝
 
 const RNG = MersenneTwister(1234)

@@ -44,13 +44,15 @@ function ct_forward(image::AbstractGPUMatrix, params::ContourletParams)
 end
 
 """
-    ct_inverse(coeffs::ContourletCoefficients, backend) -> GPU Matrix
+    ct_inverse(coeffs::ContourletCoefficients, device::AbstractGPUArray) -> GPU Matrix
 
-Inverse Contourlet Transform on GPU.  `backend` is a KernelAbstractions backend
-(e.g. `KernelAbstractions.get_backend(x)` for a device array `x`).  The
-directional reconstruction runs on the host; the pyramid synthesis on the device.
+Inverse Contourlet Transform on GPU.  Pass any device array `device` (e.g. the
+input image used for the forward pass); its KernelAbstractions backend selects
+the output device.  The directional reconstruction runs on the host; the pyramid
+synthesis on the device.
 """
-function ct_inverse(coeffs::ContourletCoefficients{T}, backend) where {T}
+function ct_inverse(coeffs::ContourletCoefficients{T}, device::AbstractGPUArray) where {T}
+    backend = _gpu_backend(device)
     J = coeffs.params.J
     fp = coeffs.params.lp_filters
     qfp = coeffs.params.dfb_filters
@@ -88,11 +90,13 @@ function nsct_forward(image::AbstractGPUMatrix, params::ContourletParams)
 end
 
 """
-    nsct_inverse(coeffs::NSCTCoefficients, backend) -> GPU Matrix
+    nsct_inverse(coeffs::NSCTCoefficients, device::AbstractGPUArray) -> GPU Matrix
 
-Inverse NSCT on GPU.  `backend` is a KernelAbstractions backend.
+Inverse NSCT on GPU.  Pass any device array `device`; its KernelAbstractions
+backend selects the output device.
 """
-function nsct_inverse(coeffs::NSCTCoefficients{T}, backend) where {T}
+function nsct_inverse(coeffs::NSCTCoefficients{T}, device::AbstractGPUArray) where {T}
+    backend = _gpu_backend(device)
     J = coeffs.params.J
     fp = coeffs.params.lp_filters
     qfp = coeffs.params.dfb_filters

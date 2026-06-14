@@ -3,7 +3,10 @@ name = "ContourletsBenchmarks"
 [deps]
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 Contourlets = "4d443f37-8914-48d3-9d0d-9e555eaf7273"
+GPUEnv = "78a0b619-6146-4252-b244-0f81c54be577"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 
 [compat]
 BenchmarkTools = "1"
+GPUEnv = "0.2"
 julia = "1.10"

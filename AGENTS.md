@@ -116,13 +116,16 @@ See `.github/skills/julia-long-test-workflow/SKILL.md` for:
   correctly-sized scratch buffer at each LP level without re-allocation.  Two
   scratch buffers (`tmp_buf`, `tmp_buf2`) are kept so separable convolutions run
   without allocating an intermediate.
-- **FFTW.MEASURE plans** — cached in `_PLAN_CACHE` (in `conv2d.jl`) keyed on
-  `(eltype, padded_dims)` behind a lock; plan execution uses caller-owned
-  buffers so it stays thread-safe.
+- **No FFTW plan cache** — FFTW's C library already caches its `MEASURE` wisdom
+  globally, so rebuilding a plan for a known size is cheap; the FFT path is only
+  used by the public `conv2d` for large kernels, never by the transforms.
 - **Test-only deps live in `test/Project.toml`** — Aqua, JET and TestItemRunner
   are *not* in the package `[deps]`; run the suite with `julia --project=test`.
 - **GPU = device pyramid + host directional** — the `ContourletsGPUExt`
-  extension kernelises the LP/NSP convolutions and the sampling/shearing
-  primitives; the recursive DFB/NSDFB resampling stage runs on the host, so
-  GPU `ct_forward`/`nsct_forward` are bit-identical to the CPU path.  Tests use
-  GPUEnv.jl to run on JLArrays (CI) and any real backend present (`:gpu` tag).
+  extension only kernelises the low-level primitives (separable convolution,
+  sampling, shearing).  The LP/NSP pyramid functions are *reused unchanged* from
+  the main package: their allocating methods are broadcast-based and dispatch to
+  the GPU primitives when given device arrays, so there are no GPU-specific
+  pyramid overloads.  The recursive DFB/NSDFB resampling stage runs on the host,
+  so GPU `ct_forward`/`nsct_forward` are bit-identical to the CPU path.  Tests
+  use GPUEnv.jl on JLArrays (CI) and any real backend present (`:gpu` tag).

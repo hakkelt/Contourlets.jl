@@ -63,7 +63,7 @@ function nsdfb_decompose(
     tree_level >= 1 || throw(ArgumentError("tree_level must be ≥ 1"))
     l_levels == 0 && return [copy(bandpass)]
     T = promote_type(eltype(bandpass), eltype(qfp))
-    img = T.(bandpass)
+    img = T === eltype(bandpass) ? bandpass : T.(bandpass)
     qup = _upsample_qfp_1d(qfp, 2^(tree_level - 1), T)
     return _nsdfb_split(img, l_levels, 1, qup)
 end

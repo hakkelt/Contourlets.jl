@@ -36,7 +36,7 @@ function nsct_forward(
         coeffs = similar_nsct_coefficients(params, size(image))
         return nsct_forward!(coeffs, image, workspace)
     end
-    img = T.(image)
+    img = T === eltype(image) ? image : T.(image)
     coarse = img
     J = params.J
     L = params.L_array

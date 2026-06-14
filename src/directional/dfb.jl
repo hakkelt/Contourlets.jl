@@ -9,10 +9,10 @@
 #    resampling/backsampling so that the 2ᴸ subbands tile the frequency plane
 #    into genuine directional wedges.  Perfect reconstruction is structural.
 #
-#  • Legacy shear path (used for modulation-mode pairs, e.g. a user-supplied
-#    Haar pair) — the simpler shear + 1-D split tree.  It is perfect-
-#    reconstructing but only weakly directional; it exists for backwards
-#    compatibility with custom modulation-mode filter pairs.
+#  • Modulation-mode shear path (used for modulation-mode pairs, e.g. a
+#    user-supplied Haar pair) — the simpler shear + 1-D split tree.  It is
+#    perfect-reconstructing but only weakly directional; it is the only decimated
+#    DFB available for custom modulation-mode filter pairs.
 #
 # Subband sizes after l levels (input n₁ × n₂):
 #   l=1: 2 subbands  n₁ × n₂/2
@@ -193,7 +193,7 @@ function _sefilter2(x::AbstractMatrix{T}, f::Vector{T}, shift1::Int, shift2::Int
     m, n = size(x)
     # Separable valid convolution with f along both dims (conv flips the filter).
     tmp = Matrix{T}(undef, m, size(ext, 2))
-    @inbounds for j in 1:size(ext, 2), i in 1:m
+    @inbounds for j in axes(ext, 2), i in 1:m
         acc = zero(T)
         for a in 1:L
             acc += f[a] * ext[i + L - a, j]
@@ -412,7 +412,7 @@ function dfb_reconstruct(
     return _dfb_merge(subbands, l_levels, 1, _convert_qfp(T, qfp))
 end
 
-# ── Legacy shear path (modulation-mode pairs only) ────────────────────────────
+# ── Modulation-mode shear path (modulation-mode pairs only) ───────────────────
 
 function _dfb_split(
         img::AbstractMatrix, remaining::Int, depth::Int,

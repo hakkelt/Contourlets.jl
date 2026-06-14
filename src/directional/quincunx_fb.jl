@@ -46,10 +46,13 @@ julia> size(sb0), size(sb0_r)
 ```
 """
 function qfb_decompose(image::AbstractMatrix, qfp::QuincunxFilterPair; dir::Symbol = :col)
+    T = promote_type(eltype(image), eltype(qfp))
+    img = T === eltype(image) ? image : T.(image)
+    qfpT = _convert_qfp(T, qfp)
     if dir === :col
-        return _qfb_col_decompose(image, qfp)
+        return _qfb_col_decompose(img, qfpT)
     else
-        sb0_t, sb1_t = _qfb_col_decompose(image', qfp)
+        sb0_t, sb1_t = _qfb_col_decompose(img', qfpT)
         return collect(sb0_t'), collect(sb1_t')
     end
 end
@@ -99,10 +102,14 @@ function qfb_reconstruct(
         sb0::AbstractMatrix, sb1::AbstractMatrix,
         qfp::QuincunxFilterPair; dir::Symbol = :col
     )
+    T = promote_type(eltype(sb0), eltype(sb1), eltype(qfp))
+    sb0T = T === eltype(sb0) ? sb0 : T.(sb0)
+    sb1T = T === eltype(sb1) ? sb1 : T.(sb1)
+    qfpT = _convert_qfp(T, qfp)
     if dir === :col
-        return _qfb_col_reconstruct(sb0, sb1, qfp)
+        return _qfb_col_reconstruct(sb0T, sb1T, qfpT)
     else
-        rec_t = _qfb_col_reconstruct(collect(sb0'), collect(sb1'), qfp)
+        rec_t = _qfb_col_reconstruct(collect(sb0T'), collect(sb1T'), qfpT)
         return collect(rec_t')
     end
 end
@@ -128,14 +135,14 @@ end
 
 # ── Internal column-direction implementation ──────────────────────────────────
 
-function _qfb_col_decompose(image::AbstractMatrix, qfp::QuincunxFilterPair)
-    T = promote_type(eltype(image), eltype(qfp))
-    img = T.(image)
+# Internal: callers (the public `qfb_decompose`) pass an `img`/`qfp` already
+# promoted to a common element type `T`.
+function _qfb_col_decompose(img::AbstractMatrix{T}, qfp::QuincunxFilterPair{T}) where {T}
     n1, n2 = size(img)
     d2 = n2 ÷ 2
     sb0 = zeros(T, n1, d2)
     sb1 = zeros(T, n1, d2)
-    return _qfb_col_decompose!(sb0, sb1, img, _convert_qfp(T, qfp))
+    return _qfb_col_decompose!(sb0, sb1, img, qfp)
 end
 
 function _qfb_col_decompose!(
@@ -157,7 +164,6 @@ end
 
 @inline function _qfb_col_decompose_kernel!(sb0, sb1, img, h, c_h, n1, n2, d2)
     K = length(h)
-    bv = Val(:symmetric)
     return @inbounds for k2 in 1:d2
         j = 2k2   # keep even columns (j=2,4,6,…)
         for i in 1:n1
@@ -166,8 +172,8 @@ end
             for l in 1:K
                 dc = l - c_h          # column offset (may be negative)
                 jj = j - dc           # column to read from image
-                # symmetric boundary extension
-                jj = _sym_idx(jj, n2)
+                # symmetric boundary extension (shared helper from conv2d.jl)
+                jj = _clamp_idx(jj, n2, Val(:symmetric))
                 xval = img[i, jj]
                 lp_val += h[l] * xval
                 # HP = LP modulated by (-1)^dc
@@ -179,15 +185,16 @@ end
     end
 end
 
+# Internal: callers (the public `qfb_reconstruct`) pass `sb0`/`sb1`/`qfp` already
+# promoted to a common element type `T`.
 function _qfb_col_reconstruct(
-        sb0::AbstractMatrix, sb1::AbstractMatrix,
-        qfp::QuincunxFilterPair
-    )
-    T = promote_type(eltype(sb0), eltype(sb1), eltype(qfp))
+        sb0::AbstractMatrix{T}, sb1::AbstractMatrix{T},
+        qfp::QuincunxFilterPair{T}
+    ) where {T}
     n1 = size(sb0, 1)
     n2 = size(sb0, 2) * 2
     out = zeros(T, n1, n2)
-    return _qfb_col_reconstruct!(out, T.(sb0), T.(sb1), _convert_qfp(T, qfp))
+    return _qfb_col_reconstruct!(out, sb0, sb1, qfp)
 end
 
 function _qfb_col_reconstruct!(
@@ -301,14 +308,4 @@ end
             end
         end
     end
-end
-
-# Symmetric (reflect) boundary: _sym_idx(j, n) for j ∈ any integer, n ≥ 1.
-@inline function _sym_idx(j::Int, n::Int)
-    j < 1 && (j = 2 - j)
-    j > n && (j = 2n - j)
-    # Handle further out-of-bounds with a simple clamp
-    j < 1 && (j = 1)
-    j > n && (j = n)
-    return j
 end

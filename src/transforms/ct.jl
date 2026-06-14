@@ -41,7 +41,7 @@ function ct_forward(
         return ct_forward!(coeffs, image, workspace)
     end
     T_out = float(eltype(image))   # preserve image precision
-    img = T_out.(image)
+    img = T_out === eltype(image) ? image : T_out.(image)
     J = params.J
     L = params.L_array
     fp = FilterPair{T_out}(T_out.(params.lp_filters.h), T_out.(params.lp_filters.g))
@@ -167,7 +167,7 @@ end
 Per-subband `(rows, cols)` sizes produced by an `l`-level DFB applied to an
 `n1 × n2` bandpass image.  For the ladder (default) DFB the first `2^(l-1)`
 subbands form the horizontal mosaic and the remaining `2^(l-1)` the vertical
-mosaic; for the legacy modulation-mode DFB all subbands are equal-sized.
+mosaic; for the modulation-mode DFB all subbands are equal-sized.
 """
 function dfb_subband_sizes(n1::Int, n2::Int, l::Int; ladder::Bool = true)
     l <= 0 && return [(n1, n2)]

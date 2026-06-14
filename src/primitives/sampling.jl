@@ -25,9 +25,7 @@ julia> rect_downsample(x)
 ```
 """
 function rect_downsample!(dst::AbstractMatrix{T}, src::AbstractMatrix{T}) where {T}
-    n1, n2 = size(src)
-    d1, d2 = size(dst)
-    @inbounds for j in 1:d2, i in 1:d1
+    @inbounds for j in axes(dst, 2), i in axes(dst, 1)
         dst[i, j] = src[2i - 1, 2j - 1]
     end
     return dst
@@ -64,8 +62,7 @@ julia> rect_upsample([1.0 2.0; 3.0 4.0])
 """
 function rect_upsample!(dst::AbstractMatrix{T}, src::AbstractMatrix{T}) where {T}
     fill!(dst, zero(T))
-    d1, d2 = size(src)
-    @inbounds for j in 1:d2, i in 1:d1
+    @inbounds for j in axes(src, 2), i in axes(src, 1)
         dst[2i - 1, 2j - 1] = src[i, j]
     end
     return dst

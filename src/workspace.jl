@@ -15,32 +15,36 @@
 # zero allocations after the first.  Buffers are handed out by a monotonic cursor
 # (never released mid-transform), so all live intermediates are distinct.
 
-mutable struct ScratchArena{T}
-    bufs::Vector{Matrix{T}}
+# Parametrised on the stored matrix type `M` so the same pool serves host
+# (`Matrix`) and device (`CuMatrix`, …) buffers; new buffers are made with
+# `similar(ref, …)` from a caller-supplied reference array.
+mutable struct ScratchArena{M <: AbstractMatrix}
+    bufs::Vector{M}
     cursor::Int
 end
-ScratchArena{T}() where {T} = ScratchArena{T}(Matrix{T}[], 0)
+ScratchArena{M}() where {M <: AbstractMatrix} = ScratchArena{M}(M[], 0)
 
 _arena_reset!(a::ScratchArena) = (a.cursor = 0; return a)
 
-# Hand out a scratch `m×n` matrix, growing/resizing the pool as needed.
-function _arena_take!(a::ScratchArena{T}, m::Int, n::Int) where {T}
+# Hand out a scratch `m×n` matrix shaped like `ref`, growing/resizing as needed.
+function _arena_take!(a::ScratchArena{M}, ref, m::Int, n::Int) where {M}
     a.cursor += 1
     if a.cursor > length(a.bufs)
-        push!(a.bufs, Matrix{T}(undef, m, n))
+        push!(a.bufs, similar(ref, m, n)::M)
     elseif size(a.bufs[a.cursor]) != (m, n)
-        a.bufs[a.cursor] = Matrix{T}(undef, m, n)
+        a.bufs[a.cursor] = similar(ref, m, n)::M
     end
     return a.bufs[a.cursor]
 end
 
-# Task-local "active" arena.  The decimated-DFB tree is a deep recursion of
-# shared (CPU+GPU) functions, so rather than thread an arena argument through all
-# of them — which would touch the GPU kernels too — the CPU host primitives
-# (`_resamp`, `_extend2`, `_sefilter2`) draw transient buffers from whatever arena
-# is active on the current task.  GPU methods are separate and never consult it,
-# and when no arena is active `_scratch` falls back to a fresh allocation (so the
-# non-workspace and GPU paths are unchanged).  Task-local ⇒ thread-safe.
+# Task-local "active" arena.  The directional tree is a deep recursion of shared
+# functions, so rather than thread an arena argument through all of them the host
+# primitives (`_resamp`, `_extend2`, `_sefilter2`, the lifting broadcasts) draw
+# transient buffers from whatever arena is active on the current task, via
+# `_scratch_like`.  When no matching arena is active `_scratch_like` falls back to
+# `similar` (so the non-workspace and GPU paths are unchanged).  The arena is
+# typed on its matrix type, so a host arena only serves host arrays.
+# Task-local ⇒ thread-safe.
 
 _active_arena() = get(task_local_storage(), :_contourlets_scratch, nothing)
 
@@ -55,15 +59,14 @@ function _with_arena(f, arena)
     end
 end
 
-# A scratch `m×n` matrix shaped like `ref`: drawn from the active arena only when
-# `ref` is a plain host `Array` (and the arena element type matches); otherwise
-# `similar(ref, m, n)`.  The `Array` guard keeps device arrays (CuArray/JLArray),
-# which reuse the same generic directional code, on `similar` — never the
-# host-only arena.
-function _scratch_like(ref::AbstractArray, m::Int, n::Int)
+# A scratch `m×n` matrix shaped like `ref`: drawn from the active arena when its
+# stored matrix type matches `typeof(ref)`, otherwise `similar(ref, m, n)`.  The
+# type match means a host arena only ever serves host arrays and a device arena
+# only device arrays, so mixed/absent arenas fall back to `similar` safely.
+function _scratch_like(ref::R, m::Int, n::Int) where {R <: AbstractMatrix}
     a = _active_arena()
-    if ref isa Array && a isa ScratchArena{eltype(ref)}
-        return _arena_take!(a, m, n)
+    if a isa ScratchArena{R}
+        return _arena_take!(a, ref, m, n)
     end
     return similar(ref, m, n)
 end
@@ -93,7 +96,7 @@ struct ContourletWorkspace{Td <: Number, Tf <: AbstractFloat}
     current::Matrix{Td}              # running coarse (size changes per level for CT)
 
     # Grow-once pool for the directional-stage transients (DFB / NSDFB).
-    scratch::ScratchArena{Td}
+    scratch::ScratchArena{Matrix{Td}}
 end
 
 """
@@ -145,7 +148,7 @@ function make_workspace(
     current = zeros(Td, n1, n2)
     p2 = _convert_params(Tf, params)
     return ContourletWorkspace{Td, Tf}(
-        p2, image_size, coarse_bufs, bp_bufs, tmp_buf, tmp_buf2, current, ScratchArena{Td}()
+        p2, image_size, coarse_bufs, bp_bufs, tmp_buf, tmp_buf2, current, ScratchArena{Matrix{Td}}()
     )
 end
 
@@ -180,7 +183,7 @@ function make_nsct_workspace(
     current = zeros(Td, n1, n2)
     p2 = _convert_params(Tf, params)
     return ContourletWorkspace{Td, Tf}(
-        p2, image_size, coarse_bufs, bp_bufs, tmp_buf, tmp_buf2, current, ScratchArena{Td}()
+        p2, image_size, coarse_bufs, bp_bufs, tmp_buf, tmp_buf2, current, ScratchArena{Matrix{Td}}()
     )
 end
 

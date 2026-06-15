@@ -145,8 +145,8 @@ function _nsdfb_split_into!(out, oi::Int, img, remaining::Int, depth::Int, qup, 
         return out
     end
     n1, n2 = size(img)
-    sb0 = _arena_take!(arena, n1, n2)
-    sb1 = _arena_take!(arena, n1, n2)
+    sb0 = _arena_take!(arena, img, n1, n2)
+    sb1 = _arena_take!(arena, img, n1, n2)
     _nsqfb_decompose!(sb0, sb1, img, qup, dir)
     half = 2^(remaining - 1)
     _nsdfb_split_into!(out, oi, sb0, remaining - 1, depth + 1, qup, arena)
@@ -174,8 +174,8 @@ function _nsdfb_merge_into!(dest, sbs, lo::Int, hi::Int, l::Int, depth::Int, qup
         return dest
     end
     n1, n2 = size(dest)
-    sb0 = _arena_take!(arena, n1, n2)
-    sb1 = _arena_take!(arena, n1, n2)
+    sb0 = _arena_take!(arena, dest, n1, n2)
+    sb1 = _arena_take!(arena, dest, n1, n2)
     half = (hi - lo + 1) ÷ 2
     _nsdfb_merge_into!(sb0, sbs, lo, lo + half - 1, l - 1, depth + 1, qup, arena)
     _nsdfb_merge_into!(sb1, sbs, lo + half, hi, l - 1, depth + 1, qup, arena)

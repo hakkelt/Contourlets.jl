@@ -26,11 +26,12 @@ julia> size(c), size(bp) == size(x)
 ```
 """
 function lp_decompose(image::AbstractMatrix, fp::FilterPair)
-    T = float(eltype(image))   # preserve image precision (Float32 → Float32)
+    Td = _data_eltype(image)   # data type (preserves complex)
+    Tf = _filter_eltype(Td)    # real filter precision
     # Convert only when the element type actually differs (T.(x) always copies).
-    im = T === eltype(image) ? image : T.(image)
-    h = T === eltype(fp) ? fp.h : T.(fp.h)
-    g = T === eltype(fp) ? fp.g : T.(fp.g)
+    im = Td === eltype(image) ? image : Td.(image)
+    h = Tf === eltype(fp) ? fp.h : Tf.(fp.h)
+    g = Tf === eltype(fp) ? fp.g : Tf.(fp.g)
     coarse = rect_downsample(conv2d_sep(im, h, h))
     pred = conv2d_sep(rect_upsample(coarse), g, g)
     bandpass = im .- pred
@@ -53,9 +54,9 @@ function lp_decompose!(
     )
     all(iseven, size(image)) ||
         throw(ArgumentError("lp_decompose! requires even image dimensions; use lp_decompose"))
-    Ti = eltype(image)
-    h = Ti === eltype(fp) ? fp.h : Ti.(fp.h)
-    g = Ti === eltype(fp) ? fp.g : Ti.(fp.g)
+    Tf = _filter_eltype(eltype(image))
+    h = Tf === eltype(fp) ? fp.h : Tf.(fp.h)
+    g = Tf === eltype(fp) ? fp.g : Tf.(fp.g)
     conv2d_sep!(tmp, image, h, h; tmp = tmp2)
     rect_downsample!(coarse, tmp)
     rect_upsample!(tmp, coarse)
@@ -92,10 +93,11 @@ function lp_reconstruct(
         coarse::AbstractMatrix, bandpass::AbstractMatrix,
         fp::FilterPair
     )
-    T = promote_type(eltype(coarse), eltype(bandpass))  # preserve image precision
-    g = T === eltype(fp) ? fp.g : T.(fp.g)
-    coarse_T = T === eltype(coarse) ? coarse : T.(coarse)
-    bandpass_T = T === eltype(bandpass) ? bandpass : T.(bandpass)
+    Td = promote_type(eltype(coarse), eltype(bandpass))  # data type
+    Tf = _filter_eltype(Td)                              # real filter precision
+    g = Tf === eltype(fp) ? fp.g : Tf.(fp.g)
+    coarse_T = Td === eltype(coarse) ? coarse : Td.(coarse)
+    bandpass_T = Td === eltype(bandpass) ? bandpass : Td.(bandpass)
     pred = conv2d_sep(rect_upsample(coarse_T), g, g)
     return bandpass_T .+ pred
 end
@@ -113,8 +115,8 @@ function lp_reconstruct!(
         tmp::AbstractMatrix = similar(image),
         tmp2::AbstractMatrix = similar(image)
     )
-    Ti = eltype(image)
-    g = Ti === eltype(fp) ? fp.g : Ti.(fp.g)
+    Tf = _filter_eltype(eltype(image))
+    g = Tf === eltype(fp) ? fp.g : Tf.(fp.g)
     n1, n2 = size(bandpass)
     rect_upsample!(tmp, coarse)
     conv2d_sep!(image, tmp, g, g; tmp = tmp2)

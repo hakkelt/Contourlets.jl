@@ -8,27 +8,28 @@
 #   4. Backward compatibility: non-! functions always allocate; workspace is opt-in.
 
 """
-    ContourletWorkspace{T}
+    ContourletWorkspace{Td, Tf}
 
-Preallocated temporary buffers for the Contourlet and NSCT transforms.  Create
-with `make_workspace`; reuse across iterations with the mutating `!` entry points.
+Preallocated temporary buffers (data type `Td`, real filter precision `Tf`) for the
+Contourlet and NSCT transforms.  Create with `make_workspace`; reuse across
+iterations with the mutating `!` entry points.
 
 !!! warning "Thread safety"
     A `ContourletWorkspace` is **not thread-safe**.  Create a separate workspace
     per thread (e.g., `[make_workspace(params, sz) for _ in 1:Threads.nthreads()]`).
 """
-struct ContourletWorkspace{T <: AbstractFloat}
-    params::ContourletParams{T}
+struct ContourletWorkspace{Td <: Number, Tf <: AbstractFloat}
+    params::ContourletParams{Tf}     # real filter precision Tf
     image_size::Tuple{Int, Int}
 
-    # Per-level intermediate buffers (length = J)
-    coarse_bufs::Vector{Matrix{T}}   # coarse at each LP level
-    bp_bufs::Vector{Matrix{T}}       # bandpass at each LP level
+    # Per-level intermediate buffers (length = J), at the data type Td.
+    coarse_bufs::Vector{Matrix{Td}}  # coarse at each LP level
+    bp_bufs::Vector{Matrix{Td}}      # bandpass at each LP level
 
     # Scratch buffers for separable conv and reconstruction
-    tmp_buf::Matrix{T}               # size = image_size (for in-place conv)
-    tmp_buf2::Matrix{T}              # second scratch (separable-conv intermediate)
-    current::Matrix{T}               # running coarse (size changes per level for CT)
+    tmp_buf::Matrix{Td}              # size = image_size (for in-place conv)
+    tmp_buf2::Matrix{Td}             # second scratch (separable-conv intermediate)
+    current::Matrix{Td}              # running coarse (size changes per level for CT)
 end
 
 """
@@ -48,11 +49,11 @@ julia> p = ContourletParams(J = 2, L_array = [1, 2]);
 julia> ws = make_workspace(p, (64, 64));
 
 julia> typeof(ws)
-ContourletWorkspace{Float64}
+ContourletWorkspace{Float64, Float64}
 ```
 """
 make_workspace(
-    T::Type{<:AbstractFloat}, image_size::Tuple{Int, Int},
+    T::Type{<:Number}, image_size::Tuple{Int, Int},
     params::ContourletParams
 ) =
     make_workspace(params, image_size; T = T)
@@ -60,32 +61,26 @@ make_workspace(
 function make_workspace(
         params::ContourletParams{Tp},
         image_size::Tuple{Int, Int};
-        T::Type{<:AbstractFloat} = Float64
+        T::Type{<:Number} = Float64
     ) where {Tp}
-    Tout = promote_type(Tp, T)
+    Td = promote_type(Tp, T)         # data buffer type (may be complex)
+    Tf = _filter_eltype(Td)          # real filter precision
     J = params.J
     n1, n2 = image_size
-    coarse_bufs = Vector{Matrix{Tout}}(undef, J)
-    bp_bufs = Vector{Matrix{Tout}}(undef, J)
+    coarse_bufs = Vector{Matrix{Td}}(undef, J)
+    bp_bufs = Vector{Matrix{Td}}(undef, J)
     c1, c2 = n1, n2
     for j in 1:J
         d1, d2 = cld(c1, 2), cld(c2, 2)
-        coarse_bufs[j] = zeros(Tout, d1, d2)
-        bp_bufs[j] = zeros(Tout, c1, c2)
+        coarse_bufs[j] = zeros(Td, d1, d2)
+        bp_bufs[j] = zeros(Td, c1, c2)
         c1, c2 = d1, d2
     end
-    tmp_buf = zeros(Tout, n1, n2)
-    tmp_buf2 = zeros(Tout, n1, n2)
-    current = zeros(Tout, n1, n2)
-    p2 = ContourletParams{Tout}(
-        params.J, params.L_array,
-        FilterPair{Tout}(
-            Tout.(params.lp_filters.h),
-            Tout.(params.lp_filters.g)
-        ),
-        _convert_qfp(Tout, params.dfb_filters)
-    )
-    return ContourletWorkspace{Tout}(
+    tmp_buf = zeros(Td, n1, n2)
+    tmp_buf2 = zeros(Td, n1, n2)
+    current = zeros(Td, n1, n2)
+    p2 = _convert_params(Tf, params)
+    return ContourletWorkspace{Td, Tf}(
         p2, image_size, coarse_bufs, bp_bufs, tmp_buf, tmp_buf2, current
     )
 end
@@ -100,7 +95,7 @@ since the NSCT performs no downsampling.
 The second form is a convenience overload with the element type as the first positional argument.
 """
 make_nsct_workspace(
-    T::Type{<:AbstractFloat}, image_size::Tuple{Int, Int},
+    T::Type{<:Number}, image_size::Tuple{Int, Int},
     params::ContourletParams
 ) =
     make_nsct_workspace(params, image_size; T = T)
@@ -108,25 +103,19 @@ make_nsct_workspace(
 function make_nsct_workspace(
         params::ContourletParams{Tp},
         image_size::Tuple{Int, Int};
-        T::Type{<:AbstractFloat} = Float64
+        T::Type{<:Number} = Float64
     ) where {Tp}
-    Tout = promote_type(Tp, T)
+    Td = promote_type(Tp, T)         # data buffer type (may be complex)
+    Tf = _filter_eltype(Td)          # real filter precision
     J = params.J
     n1, n2 = image_size
-    coarse_bufs = [zeros(Tout, n1, n2) for _ in 1:J]
-    bp_bufs = [zeros(Tout, n1, n2) for _ in 1:J]
-    tmp_buf = zeros(Tout, n1, n2)
-    tmp_buf2 = zeros(Tout, n1, n2)
-    current = zeros(Tout, n1, n2)
-    p2 = ContourletParams{Tout}(
-        params.J, params.L_array,
-        FilterPair{Tout}(
-            Tout.(params.lp_filters.h),
-            Tout.(params.lp_filters.g)
-        ),
-        _convert_qfp(Tout, params.dfb_filters)
-    )
-    return ContourletWorkspace{Tout}(
+    coarse_bufs = [zeros(Td, n1, n2) for _ in 1:J]
+    bp_bufs = [zeros(Td, n1, n2) for _ in 1:J]
+    tmp_buf = zeros(Td, n1, n2)
+    tmp_buf2 = zeros(Td, n1, n2)
+    current = zeros(Td, n1, n2)
+    p2 = _convert_params(Tf, params)
+    return ContourletWorkspace{Td, Tf}(
         p2, image_size, coarse_bufs, bp_bufs, tmp_buf, tmp_buf2, current
     )
 end

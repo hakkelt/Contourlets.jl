@@ -186,8 +186,9 @@ function _extend2(x::AbstractMatrix{T}, ru::Int, rd::Int, cl::Int, cr::Int, extm
     end
 end
 
-# y = X * F1(z1) * F2(z2) * z1^shift1 * z2^shift2, same size as x
-function _sefilter2(x::AbstractMatrix{T}, f::Vector{T}, shift1::Int, shift2::Int, extmod::Symbol) where {T}
+# y = X * F1(z1) * F2(z2) * z1^shift1 * z2^shift2, same size as x.
+# Real filter `f` (Tf) applied to data `x` (Td, real or complex); `acc` is Td.
+function _sefilter2(x::AbstractMatrix{Td}, f::Vector{Tf}, shift1::Int, shift2::Int, extmod::Symbol) where {Td, Tf}
     L = length(f)
     lf = (L - 1) / 2
     ru = floor(Int, lf) + shift1
@@ -202,10 +203,10 @@ function _sefilter2(x::AbstractMatrix{T}, f::Vector{T}, shift1::Int, shift2::Int
     sym = _is_symmetric(f, L)
     half = (L + 1) ÷ 2
     # Separable valid convolution with f along both dims (conv flips the filter).
-    tmp = Matrix{T}(undef, m, size(ext, 2))
+    tmp = Matrix{Td}(undef, m, size(ext, 2))
     if sym
         @inbounds for j in axes(ext, 2), i in 1:m
-            acc = zero(T)
+            acc = zero(Td)
             for a in 1:half
                 acc += f[a] * (ext[i + L - a, j] + ext[i + a - 1, j])
             end
@@ -214,17 +215,17 @@ function _sefilter2(x::AbstractMatrix{T}, f::Vector{T}, shift1::Int, shift2::Int
         end
     else
         @inbounds for j in axes(ext, 2), i in 1:m
-            acc = zero(T)
+            acc = zero(Td)
             for a in 1:L
                 acc += f[a] * ext[i + L - a, j]
             end
             tmp[i, j] = acc
         end
     end
-    out = Matrix{T}(undef, m, n)
+    out = Matrix{Td}(undef, m, n)
     if sym
         @inbounds for j in 1:n, i in 1:m
-            acc = zero(T)
+            acc = zero(Td)
             for b in 1:half
                 acc += f[b] * (tmp[i, j + L - b] + tmp[i, j + b - 1])
             end
@@ -233,7 +234,7 @@ function _sefilter2(x::AbstractMatrix{T}, f::Vector{T}, shift1::Int, shift2::Int
         end
     else
         @inbounds for j in 1:n, i in 1:m
-            acc = zero(T)
+            acc = zero(Td)
             for b in 1:L
                 acc += f[b] * tmp[i, j + L - b]
             end
@@ -257,17 +258,17 @@ end
 _poly_dec(x, kind::Symbol, t) = kind === :q ? _qpdec(x, t) : _ppdec(x, t)
 _poly_rec(p0, p1, kind::Symbol, t) = kind === :q ? _qprec(p0, p1, t) : _pprec(p0, p1, t)
 
-function _fbdec_l(x::AbstractMatrix{T}, f::Vector{T}, kind::Symbol, t, extmod::Symbol = :per) where {T}
+function _fbdec_l(x::AbstractMatrix{Td}, f::Vector{Tf}, kind::Symbol, t, extmod::Symbol = :per) where {Td, Tf}
     p0, p1 = _poly_dec(x, kind, t)
-    s2 = sqrt(T(2))
+    s2 = sqrt(Tf(2))
     y0 = (p0 .- _sefilter2(p1, f, 1, 1, extmod)) ./ s2
     y1 = (-s2) .* p1 .- _sefilter2(y0, f, 0, 0, extmod)
     return y0, y1
 end
 
-function _fbrec_l(y0::AbstractMatrix{T}, y1::AbstractMatrix{T}, f::Vector{T}, kind::Symbol, t, extmod::Symbol = :per) where {T}
-    s2 = sqrt(T(2))
-    p1 = (-(one(T) / s2)) .* (y1 .+ _sefilter2(y0, f, 0, 0, extmod))
+function _fbrec_l(y0::AbstractMatrix{Td}, y1::AbstractMatrix{Td}, f::Vector{Tf}, kind::Symbol, t, extmod::Symbol = :per) where {Td, Tf}
+    s2 = sqrt(Tf(2))
+    p1 = (-(one(Tf) / s2)) .* (y1 .+ _sefilter2(y0, f, 0, 0, extmod))
     p0 = s2 .* y0 .+ _sefilter2(p1, f, 1, 1, extmod)
     return _poly_rec(p0, p1, kind, t)
 end
@@ -320,7 +321,7 @@ end
 
 # ── Ladder DFB decomposition / reconstruction ─────────────────────────────────
 
-function _dfbdec_l(x::AbstractMatrix{T}, f::Vector{T}, n::Int) where {T}
+function _dfbdec_l(x::AbstractMatrix{Td}, f::Vector{Tf}, n::Int) where {Td, Tf}
     n == 0 && return [copy(x)]
     if n == 1
         y0, y1 = _fbdec_l(x, f, :q, :q1r, :qper_col)
@@ -351,7 +352,7 @@ function _dfbdec_l(x::AbstractMatrix{T}, f::Vector{T}, n::Int) where {T}
     return y
 end
 
-function _dfbrec_l(y::Vector{<:AbstractMatrix{T}}, f::Vector{T}) where {T}
+function _dfbrec_l(y::Vector{<:AbstractMatrix{Td}}, f::Vector{Tf}) where {Td, Tf}
     n = round(Int, log2(length(y)))
     n == 0 && return copy(y[1])
     y = copy(y)
@@ -410,12 +411,14 @@ function dfb_decompose(
     )
     l_levels >= 0 || throw(ArgumentError("l_levels must be ≥ 0"))
     l_levels == 0 && return [copy(bandpass)]
-    T = promote_type(eltype(bandpass), eltype(qfp))
-    img = T === eltype(bandpass) ? bandpass : T.(bandpass)
+    Td = _data_eltype(bandpass)      # data type (real or complex)
+    Tf = _filter_eltype(Td)          # real filter precision
+    img = Td === eltype(bandpass) ? bandpass : Td.(bandpass)
     if is_ladder(qfp)
-        return _dfbdec_l(img, T.(qfp.f_ladder), l_levels)
+        f = Tf === eltype(qfp) ? qfp.f_ladder : Tf.(qfp.f_ladder)
+        return _dfbdec_l(img, f, l_levels)
     end
-    return _dfb_split(img, l_levels, 1, _convert_qfp(T, qfp))
+    return _dfb_split(img, l_levels, 1, _convert_qfp(Tf, qfp))
 end
 
 """
@@ -445,13 +448,15 @@ function dfb_reconstruct(
     n >= 1   || throw(ArgumentError("subbands must be non-empty"))
     ispow2(n) || throw(ArgumentError("number of subbands must be a power of 2"))
     n == 1 && return copy(subbands[1])
-    T = promote_type(eltype(subbands[1]), eltype(qfp))
+    Td = _data_eltype(subbands[1])   # data type (real or complex)
+    Tf = _filter_eltype(Td)          # real filter precision
     if is_ladder(qfp)
-        sbs = eltype(subbands[1]) === T ? subbands : [T.(s) for s in subbands]
-        return _dfbrec_l(sbs, T.(qfp.f_ladder))
+        sbs = eltype(subbands[1]) === Td ? subbands : [Td.(s) for s in subbands]
+        f = Tf === eltype(qfp) ? qfp.f_ladder : Tf.(qfp.f_ladder)
+        return _dfbrec_l(sbs, f)
     end
     l_levels = round(Int, log2(n))
-    return _dfb_merge(subbands, l_levels, 1, _convert_qfp(T, qfp))
+    return _dfb_merge(subbands, l_levels, 1, _convert_qfp(Tf, qfp))
 end
 
 # ── Modulation-mode shear path (modulation-mode pairs only) ───────────────────

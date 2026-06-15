@@ -33,13 +33,14 @@ true
 """
 function nsp_decompose(image::AbstractMatrix, fp::FilterPair, level::Int)
     level >= 1 || throw(ArgumentError("level must be ≥ 1"))
-    T = promote_type(eltype(image), eltype(fp))
-    im = T === eltype(image) ? image : T.(image)
+    Td = _data_eltype(image)   # data type (preserves complex)
+    Tf = _filter_eltype(Td)    # real filter precision
+    im = Td === eltype(image) ? image : Td.(image)
     factor = 2^(level - 1)
     h_up = upsample_filter(fp.h, factor)
-    h_j = T === eltype(h_up) ? h_up : T.(h_up)
+    h_j = Tf === eltype(h_up) ? h_up : Tf.(h_up)
     g_up = upsample_filter(fp.g, factor)
-    g_j = T(_NSP_SYNTH_SCALE) .* (T === eltype(g_up) ? g_up : T.(g_up))
+    g_j = Tf(_NSP_SYNTH_SCALE) .* (Tf === eltype(g_up) ? g_up : Tf.(g_up))
     coarse = conv2d_sep(im, h_j, h_j; boundary = :periodic)
     pred = conv2d_sep(coarse, g_j, g_j; boundary = :periodic)
     bp = im .- pred
@@ -61,12 +62,12 @@ function nsp_decompose!(
         tmp2::AbstractMatrix = similar(image)
     )
     factor = 2^(level - 1)
-    T = eltype(coarse)
+    Tf = _filter_eltype(eltype(coarse))
     # upsample_filter already returns a fresh vector; convert only on type mismatch.
     h_up = upsample_filter(fp.h, factor)
-    h_j = T === eltype(h_up) ? h_up : T.(h_up)
+    h_j = Tf === eltype(h_up) ? h_up : Tf.(h_up)
     g_up = upsample_filter(fp.g, factor)
-    g_j = T(_NSP_SYNTH_SCALE) .* (T === eltype(g_up) ? g_up : T.(g_up))
+    g_j = Tf(_NSP_SYNTH_SCALE) .* (Tf === eltype(g_up) ? g_up : Tf.(g_up))
     conv2d_sep!(coarse, image, h_j, h_j; boundary = :periodic, tmp = tmp2)
     conv2d_sep!(tmp, coarse, g_j, g_j; boundary = :periodic, tmp = tmp2)
     n1, n2 = size(image)
@@ -99,12 +100,13 @@ function nsp_reconstruct(
         coarse::AbstractMatrix, bandpass::AbstractMatrix,
         fp::FilterPair, level::Int
     )
-    T = promote_type(eltype(coarse), eltype(bandpass), eltype(fp))
-    coarse_T = T === eltype(coarse) ? coarse : T.(coarse)
-    bandpass_T = T === eltype(bandpass) ? bandpass : T.(bandpass)
+    Td = promote_type(eltype(coarse), eltype(bandpass))  # data type
+    Tf = _filter_eltype(Td)                              # real filter precision
+    coarse_T = Td === eltype(coarse) ? coarse : Td.(coarse)
+    bandpass_T = Td === eltype(bandpass) ? bandpass : Td.(bandpass)
     factor = 2^(level - 1)
     g_up = upsample_filter(fp.g, factor)
-    g_j = T(_NSP_SYNTH_SCALE) .* (T === eltype(g_up) ? g_up : T.(g_up))
+    g_j = Tf(_NSP_SYNTH_SCALE) .* (Tf === eltype(g_up) ? g_up : Tf.(g_up))
     pred = conv2d_sep(coarse_T, g_j, g_j; boundary = :periodic)
     return bandpass_T .+ pred
 end
@@ -122,10 +124,10 @@ function nsp_reconstruct!(
         tmp::AbstractMatrix = similar(image),
         tmp2::AbstractMatrix = similar(image)
     )
-    T = eltype(image)
+    Tf = _filter_eltype(eltype(image))
     factor = 2^(level - 1)
     g_up = upsample_filter(fp.g, factor)
-    g_j = T(_NSP_SYNTH_SCALE) .* (T === eltype(g_up) ? g_up : T.(g_up))
+    g_j = Tf(_NSP_SYNTH_SCALE) .* (Tf === eltype(g_up) ? g_up : Tf.(g_up))
     conv2d_sep!(tmp, coarse, g_j, g_j; boundary = :periodic, tmp = tmp2)
     n1, n2 = size(bandpass)
     @inbounds for j in 1:n2, i in 1:n1

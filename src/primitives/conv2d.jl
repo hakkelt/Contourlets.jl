@@ -50,12 +50,12 @@ In-place time-domain 2-D convolution.  `origin` is the (row, col) 1-based index
 of the zero-lag tap in `kernel`.  Column-major traversal for cache efficiency.
 """
 function _conv2d_direct!(
-        dst::AbstractMatrix{T},
-        src::AbstractMatrix{T},
-        kernel::AbstractMatrix{T},
+        dst::AbstractMatrix{Td},
+        src::AbstractMatrix{Td},
+        kernel::AbstractMatrix{Tf},
         origin::Tuple{Int, Int};
         boundary::Symbol = :symmetric
-    ) where {T}
+    ) where {Td, Tf}
     if boundary === :symmetric
         _conv2d_direct_impl!(dst, src, kernel, origin, Val(:symmetric))
     elseif boundary === :periodic
@@ -67,19 +67,19 @@ function _conv2d_direct!(
 end
 
 @inline function _conv2d_direct_impl!(
-        dst::AbstractMatrix{T},
-        src::AbstractMatrix{T},
-        kernel::AbstractMatrix{T},
+        dst::AbstractMatrix{Td},
+        src::AbstractMatrix{Td},
+        kernel::AbstractMatrix{Tf},
         origin::Tuple{Int, Int},
         bv::Val{B}
-    ) where {T, B}
+    ) where {Td, Tf, B}
     n1, n2 = size(src)
     kn1, kn2 = size(kernel)
     o1, o2 = origin
 
     @inbounds for j in 1:n2
         for i in 1:n1
-            acc = zero(T)
+            acc = zero(Td)
             for l in 1:kn2
                 dl = l - o2
                 jj = j - dl
@@ -202,20 +202,23 @@ In-place 2-D convolution of `src` with `kernel`, result written to `dst`.
 Uses the FFTW backend when `length(kernel) > 25`, the direct backend otherwise.
 """
 function conv2d!(
-        dst::AbstractMatrix{T},
-        src::AbstractMatrix{T},
-        kernel::AbstractMatrix{T},
+        dst::AbstractMatrix{Td},
+        src::AbstractMatrix{Td},
+        kernel::AbstractMatrix{Tf},
         origin::Tuple{Int, Int} = (
             ceil(Int, size(kernel, 1) / 2),
             ceil(Int, size(kernel, 2) / 2),
         );
         boundary::Symbol = :symmetric
-    ) where {T <: AbstractFloat}
+    ) where {Td <: Number, Tf <: AbstractFloat}
     size(dst) == size(src) || throw(DimensionMismatch("dst and src must have the same size"))
-    if length(kernel) <= 25
+    # The FFTW backend is real-only (plan_rfft) and needs data == kernel type, so
+    # fall back to the direct backend for small kernels, complex data, or mixed
+    # precision.
+    if length(kernel) <= 25 || !(Td <: AbstractFloat && Td === Tf)
         _conv2d_direct!(dst, src, kernel, origin; boundary = boundary)
     else
-        ws = _make_fftw_workspace(size(src), size(kernel), T)
+        ws = _make_fftw_workspace(size(src), size(kernel), Td)
         _conv2d_fftw!(dst, src, kernel, origin, ws; boundary = boundary)
     end
     return dst
@@ -227,14 +230,14 @@ end
 Allocating wrapper around `conv2d!`.
 """
 function conv2d(
-        src::AbstractMatrix{T},
-        kernel::AbstractMatrix{T},
+        src::AbstractMatrix{Td},
+        kernel::AbstractMatrix{Tf},
         origin::Tuple{Int, Int} = (
             ceil(Int, size(kernel, 1) / 2),
             ceil(Int, size(kernel, 2) / 2),
         );
         boundary::Symbol = :symmetric
-    ) where {T <: AbstractFloat}
+    ) where {Td <: Number, Tf <: AbstractFloat}
     dst = similar(src)
     return conv2d!(dst, src, kernel, origin; boundary = boundary)
 end
@@ -250,13 +253,13 @@ Pass a preallocated `tmp` buffer (same size as `src`, distinct from `dst` and
 This is the workhorse for the Laplacian Pyramid stage.
 """
 function conv2d_sep!(
-        dst::AbstractMatrix{T},
-        src::AbstractMatrix{T},
-        h_row::AbstractVector{T},
-        h_col::AbstractVector{T};
+        dst::AbstractMatrix{Td},
+        src::AbstractMatrix{Td},
+        h_row::AbstractVector{Tf},
+        h_col::AbstractVector{Tf};
         boundary::Symbol = :symmetric,
-        tmp::AbstractMatrix{T} = similar(src)
-    ) where {T}
+        tmp::AbstractMatrix{Td} = similar(src)
+    ) where {Td, Tf}
     if boundary === :symmetric
         _conv2d_sep_impl!(dst, src, h_row, h_col, tmp, Val(:symmetric))
     elseif boundary === :periodic
@@ -268,23 +271,24 @@ function conv2d_sep!(
 end
 
 @inline function _conv2d_sep_impl!(
-        dst::AbstractMatrix{T},
-        src::AbstractMatrix{T},
-        h_row::AbstractVector{T},
-        h_col::AbstractVector{T},
-        tmp::AbstractMatrix{T},
+        dst::AbstractMatrix{Td},
+        src::AbstractMatrix{Td},
+        h_row::AbstractVector{Tf},
+        h_col::AbstractVector{Tf},
+        tmp::AbstractMatrix{Td},
         bv::Val{B}
-    ) where {T, B}
+    ) where {Td, Tf, B}
     n1, n2 = size(src)
     lr = length(h_row)
     lc = length(h_col)
     cr = (lr + 1) ÷ 2   # centre of row filter
     cc = (lc + 1) ÷ 2   # centre of col filter
 
-    # Filter along columns (axis-1) first — accesses memory column-major
+    # Filter along columns (axis-1) first — accesses memory column-major.
+    # `acc` carries the data type Td (real filter × Td data → Td).
     @inbounds for j in 1:n2
         for i in 1:n1
-            acc = zero(T)
+            acc = zero(Td)
             for k in 1:lc
                 acc += h_col[k] * _get(src, i - (k - cc), j, n1, n2, bv)
             end
@@ -294,7 +298,7 @@ end
     # Filter along rows (axis-2)
     @inbounds for j in 1:n2
         for i in 1:n1
-            acc = zero(T)
+            acc = zero(Td)
             for k in 1:lr
                 acc += h_row[k] * _get(tmp, i, j - (k - cr), n1, n2, bv)
             end
@@ -310,11 +314,11 @@ end
 Allocating version of `conv2d_sep!`.
 """
 function conv2d_sep(
-        src::AbstractMatrix{T},
-        h_row::AbstractVector{T},
-        h_col::AbstractVector{T};
+        src::AbstractMatrix{Td},
+        h_row::AbstractVector{Tf},
+        h_col::AbstractVector{Tf};
         boundary::Symbol = :symmetric
-    ) where {T}
+    ) where {Td, Tf}
     dst = similar(src)
     return conv2d_sep!(dst, src, h_row, h_col; boundary = boundary)
 end

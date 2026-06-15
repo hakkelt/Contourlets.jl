@@ -46,9 +46,10 @@ julia> size(sb0), size(sb0_r)
 ```
 """
 function qfb_decompose(image::AbstractMatrix, qfp::QuincunxFilterPair; dir::Symbol = :col)
-    T = promote_type(eltype(image), eltype(qfp))
-    img = T === eltype(image) ? image : T.(image)
-    qfpT = _convert_qfp(T, qfp)
+    Td = _data_eltype(image)         # data type (real or complex)
+    Tf = _filter_eltype(Td)          # real filter precision
+    img = Td === eltype(image) ? image : Td.(image)
+    qfpT = _convert_qfp(Tf, qfp)
     if dir === :col
         return _qfb_col_decompose(img, qfpT)
     else
@@ -102,10 +103,11 @@ function qfb_reconstruct(
         sb0::AbstractMatrix, sb1::AbstractMatrix,
         qfp::QuincunxFilterPair; dir::Symbol = :col
     )
-    T = promote_type(eltype(sb0), eltype(sb1), eltype(qfp))
-    sb0T = T === eltype(sb0) ? sb0 : T.(sb0)
-    sb1T = T === eltype(sb1) ? sb1 : T.(sb1)
-    qfpT = _convert_qfp(T, qfp)
+    Td = _data_eltype(promote_type(eltype(sb0), eltype(sb1)))  # data type
+    Tf = _filter_eltype(Td)                                    # real filter precision
+    sb0T = Td === eltype(sb0) ? sb0 : Td.(sb0)
+    sb1T = Td === eltype(sb1) ? sb1 : Td.(sb1)
+    qfpT = _convert_qfp(Tf, qfp)
     if dir === :col
         return _qfb_col_reconstruct(sb0T, sb1T, qfpT)
     else
@@ -135,13 +137,13 @@ end
 
 # ── Internal column-direction implementation ──────────────────────────────────
 
-# Internal: callers (the public `qfb_decompose`) pass an `img`/`qfp` already
-# promoted to a common element type `T`.
-function _qfb_col_decompose(img::AbstractMatrix{T}, qfp::QuincunxFilterPair{T}) where {T}
+# Internal: callers (the public `qfb_decompose`) pass `img` at the data type `Td`
+# and a real `qfp` at the filter precision `Tf`.
+function _qfb_col_decompose(img::AbstractMatrix{Td}, qfp::QuincunxFilterPair{Tf}) where {Td, Tf}
     n1, n2 = size(img)
     d2 = n2 ÷ 2
-    sb0 = zeros(T, n1, d2)
-    sb1 = zeros(T, n1, d2)
+    sb0 = zeros(Td, n1, d2)
+    sb1 = zeros(Td, n1, d2)
     return _qfb_col_decompose!(sb0, sb1, img, qfp)
 end
 
@@ -188,12 +190,12 @@ end
 # Internal: callers (the public `qfb_reconstruct`) pass `sb0`/`sb1`/`qfp` already
 # promoted to a common element type `T`.
 function _qfb_col_reconstruct(
-        sb0::AbstractMatrix{T}, sb1::AbstractMatrix{T},
-        qfp::QuincunxFilterPair{T}
-    ) where {T}
+        sb0::AbstractMatrix{Td}, sb1::AbstractMatrix{Td},
+        qfp::QuincunxFilterPair{Tf}
+    ) where {Td, Tf}
     n1 = size(sb0, 1)
     n2 = size(sb0, 2) * 2
-    out = zeros(T, n1, n2)
+    out = zeros(Td, n1, n2)
     return _qfb_col_reconstruct!(out, sb0, sb1, qfp)
 end
 

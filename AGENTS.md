@@ -98,6 +98,17 @@ Conventions that are non-obvious or specific to this package's API contract:
   as `Vector{T}`. `QuincunxFilterPair{T}` stores `h_q`, `g_q` as `Matrix{T}`
   (1×N by convention). Filter constants are defined once in `src/filters/` and
   referenced by value — never rebuild filter arrays inside hot loops.
+- **Element types: real filters, real-or-complex data.** Filters are always real
+  (`FilterPair`/`QuincunxFilterPair`/`ContourletParams` are `Tf <: AbstractFloat`);
+  image data may be complex (`Td <: Number`). The two flow independently —
+  `Td = _data_eltype(image)`, `Tf = _filter_eltype(Td) = real(float(Td))` — so a
+  complex image is filtered as complex·real (never complex·complex). Multiply
+  kernels (`conv2d_sep!`, `conv2d` direct, `_sefilter2`, `_nsqfb_*`, `qfb`) take
+  `src::{Td}` / filter `::{Tf}` separately and accumulate in `Td`; coefficient and
+  workspace containers are 2-param `{Td, Tf}` (dispatch annotations `{T}` bind the
+  first param = data type). The transform is real-linear, so `T(x + i·y)` equals
+  `T(x) + i·T(y)` bit-for-bit — a useful correctness invariant. The FFTW conv
+  backend is real-only; complex data routes through the direct backend.
 - **In-place companions.** Every public `f(args...)` has an `f!(dst, args...)`
   that writes into `dst` without allocating; the allocating wrapper is
   `f(args...) = f!(similar(first_output(args...)), args...)`. Allocating

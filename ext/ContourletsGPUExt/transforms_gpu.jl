@@ -44,7 +44,7 @@ function ct_forward(image::AbstractGPUMatrix, params::ContourletParams)
         subbands[j] = [Array(s) for s in dev_sb]         # subbands → host
         coarse = coarse_j
     end
-    return ContourletCoefficients{T_out}(Array(coarse), subbands, p)
+    return ContourletCoefficients(Array(coarse), subbands, p)
 end
 
 """
@@ -91,7 +91,7 @@ function nsct_forward(image::AbstractGPUMatrix, params::ContourletParams)
         subbands[j] = [Array(s) for s in dev_sb]                   # subbands → host
         coarse = coarse_j
     end
-    return NSCTCoefficients{T_out}(Array(coarse), subbands, p)
+    return NSCTCoefficients(Array(coarse), subbands, p)
 end
 
 """

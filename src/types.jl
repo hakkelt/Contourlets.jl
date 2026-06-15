@@ -2,6 +2,20 @@
 # FilterPair: 1-D biorthogonal filter pair (used for the Laplacian Pyramid stage).
 # QuincunxFilterPair: 2-D quincunx filter pair (used for the DFB stage).
 # ContourletParams / ContourletCoefficients / NSCTCoefficients: top-level descriptors.
+#
+# Element-type convention: filters are always real (`Tf <: AbstractFloat`); image
+# data may be real or complex (`Td <: Number`).  The transforms thread the two
+# independently — `Td = _data_eltype(image)` and `Tf = _filter_eltype(Td)` — so
+# complex images are filtered by real kernels (complex·real, not complex·complex).
+
+# Data (sample) element type: preserves complex, promotes integers to float
+# (Int → Float64, Float32 → Float32, ComplexF32 → ComplexF32).
+_data_eltype(x::AbstractArray) = float(eltype(x))
+_data_eltype(::Type{T}) where {T <: Number} = float(T)
+
+# Real filter precision matching a data element type (real part of the float
+# type): Float64 → Float64, ComplexF64 → Float64, ComplexF32 → Float32.
+_filter_eltype(::Type{Td}) where {Td <: Number} = real(float(Td))
 
 """
     FilterPair{T}
@@ -133,36 +147,64 @@ function ContourletParams(;
     )
 end
 
+Base.eltype(::ContourletParams{T}) where {T} = T
+
 function Base.show(io::IO, p::ContourletParams)
     return print(io, "ContourletParams(J=$(p.J), L_array=$(p.L_array), …)")
 end
 
-"""
-    ContourletCoefficients{T}
+# Convert a ContourletParams to real filter precision `Tf` (no-op when already Tf).
+_convert_params(::Type{Tf}, p::ContourletParams{Tf}) where {Tf} = p
+_convert_params(::Type{Tf}, p::ContourletParams) where {Tf <: AbstractFloat} =
+    ContourletParams{Tf}(
+        p.J, p.L_array,
+        FilterPair{Tf}(Tf.(p.lp_filters.h), Tf.(p.lp_filters.g)),
+        _convert_qfp(Tf, p.dfb_filters)
+    )
 
-Output of `ct_forward`.  Contains:
-- `coarse`: the low-pass residual `Matrix{T}` after `J` LP stages.
+"""
+    ContourletCoefficients{Td, Tf}
+
+Output of `ct_forward`.  `Td` is the data element type (real or complex), `Tf` the
+real filter precision.  Contains:
+- `coarse`: the low-pass residual `Matrix{Td}` after `J` LP stages.
 - `subbands`: `Vector` of length `J`; `subbands[j]` is a `Vector` of `2^L_array[j]`
   directional subband matrices.
-- `params`: the `ContourletParams` used to produce these coefficients.
+- `params`: the `ContourletParams{Tf}` (real filters) used to produce these.
 """
-struct ContourletCoefficients{T <: AbstractFloat}
-    coarse::Matrix{T}
-    subbands::Vector{Vector{Matrix{T}}}   # [scale][direction]
-    params::ContourletParams{T}
+struct ContourletCoefficients{Td <: Number, Tf <: AbstractFloat}
+    coarse::Matrix{Td}                      # data type Td (real or complex)
+    subbands::Vector{Vector{Matrix{Td}}}    # [scale][direction]
+    params::ContourletParams{Tf}            # real filter precision Tf
 end
 
-"""
-    NSCTCoefficients{T}
+# Infer (Td, Tf) from the arguments.
+ContourletCoefficients(
+    coarse::AbstractMatrix{Td},
+    subbands::Vector{Vector{Matrix{Td}}},
+    params::ContourletParams{Tf}
+) where {Td <: Number, Tf <: AbstractFloat} =
+    ContourletCoefficients{Td, Tf}(coarse, subbands, params)
 
-Output of `nsct_forward`.  Same structure as `ContourletCoefficients` but each subband
-matrix has the same spatial size as the input image (no downsampling).
 """
-struct NSCTCoefficients{T <: AbstractFloat}
-    coarse::Matrix{T}
-    subbands::Vector{Vector{Matrix{T}}}
-    params::ContourletParams{T}
+    NSCTCoefficients{Td, Tf}
+
+Output of `nsct_forward`.  Same structure as `ContourletCoefficients` (data type `Td`,
+real filter precision `Tf`) but each subband matrix has the same spatial size as the
+input image (no downsampling).
+"""
+struct NSCTCoefficients{Td <: Number, Tf <: AbstractFloat}
+    coarse::Matrix{Td}
+    subbands::Vector{Vector{Matrix{Td}}}
+    params::ContourletParams{Tf}
 end
+
+NSCTCoefficients(
+    coarse::AbstractMatrix{Td},
+    subbands::Vector{Vector{Matrix{Td}}},
+    params::ContourletParams{Tf}
+) where {Td <: Number, Tf <: AbstractFloat} =
+    NSCTCoefficients{Td, Tf}(coarse, subbands, params)
 
 """
     parabolic_levels(J, l_j0=1) -> Vector{Int}

@@ -33,20 +33,23 @@ julia> length(coeffs.subbands[2])
 ```
 """
 function ct_forward(
-        image::AbstractMatrix, params::ContourletParams{T};
+        image::AbstractMatrix, params::ContourletParams;
         workspace::Union{ContourletWorkspace, Nothing} = nothing
-    ) where {T}
+    )
     if workspace !== nothing
-        coeffs = similar_coefficients(params, size(image))
-        return ct_forward!(coeffs, image, workspace)
+        Tw = eltype(workspace.tmp_buf)   # the workspace dictates the data type
+        coeffs = similar_coefficients(params, size(image); Td = Tw)
+        img = Tw === eltype(image) ? image : Tw.(image)
+        return ct_forward!(coeffs, img, workspace)
     end
-    T_out = float(eltype(image))   # preserve image precision
-    img = T_out === eltype(image) ? image : T_out.(image)
+    Td = _data_eltype(image)       # data type (real or complex)
+    Tf = _filter_eltype(Td)        # real filter precision
+    img = Td === eltype(image) ? image : Td.(image)
     J = params.J
     L = params.L_array
-    fp = FilterPair{T_out}(T_out.(params.lp_filters.h), T_out.(params.lp_filters.g))
-    qfp = _convert_qfp(T_out, params.dfb_filters)
-    subbands = Vector{Vector{Matrix{T_out}}}(undef, J)
+    p_out = _convert_params(Tf, params)   # real filters at precision Tf
+    fp, qfp = p_out.lp_filters, p_out.dfb_filters
+    subbands = Vector{Vector{Matrix{Td}}}(undef, J)
 
     coarse = img
     for j in 1:J
@@ -54,8 +57,7 @@ function ct_forward(
         subbands[j] = dfb_decompose(bp_j, L[j], qfp)
         coarse = coarse_j
     end
-    p_out = ContourletParams{T_out}(J, L, fp, qfp)
-    return ContourletCoefficients{T_out}(coarse, subbands, p_out)
+    return ContourletCoefficients(coarse, subbands, p_out)
 end
 
 """
@@ -191,21 +193,22 @@ image of size `image_size`, without computing any transform.  Useful together wi
 `ct_forward!` in iterative algorithms.
 """
 function similar_coefficients(
-        params::ContourletParams{T},
-        image_size::Tuple{Int, Int}
-    ) where {T}
+        params::ContourletParams{Tf},
+        image_size::Tuple{Int, Int};
+        Td::Type = Tf
+    ) where {Tf}
     J = params.J
     L = params.L_array
     n1, n2 = image_size
     ladder = is_ladder(params.dfb_filters)
-    subbands = Vector{Vector{Matrix{T}}}(undef, J)
+    subbands = Vector{Vector{Matrix{Td}}}(undef, J)
     cur_n1, cur_n2 = n1, n2
     for j in 1:J
         szs = dfb_subband_sizes(cur_n1, cur_n2, L[j]; ladder = ladder)
-        subbands[j] = [zeros(T, s...) for s in szs]
+        subbands[j] = [zeros(Td, s...) for s in szs]
         cur_n1 = cld(cur_n1, 2)
         cur_n2 = cld(cur_n2, 2)
     end
-    coarse = zeros(T, cur_n1, cur_n2)
-    return ContourletCoefficients{T}(coarse, subbands, params)
+    coarse = zeros(Td, cur_n1, cur_n2)
+    return ContourletCoefficients(coarse, subbands, params)
 end

@@ -34,6 +34,40 @@ function _arena_take!(a::ScratchArena{T}, m::Int, n::Int) where {T}
     return a.bufs[a.cursor]
 end
 
+# Task-local "active" arena.  The decimated-DFB tree is a deep recursion of
+# shared (CPU+GPU) functions, so rather than thread an arena argument through all
+# of them — which would touch the GPU kernels too — the CPU host primitives
+# (`_resamp`, `_extend2`, `_sefilter2`) draw transient buffers from whatever arena
+# is active on the current task.  GPU methods are separate and never consult it,
+# and when no arena is active `_scratch` falls back to a fresh allocation (so the
+# non-workspace and GPU paths are unchanged).  Task-local ⇒ thread-safe.
+
+_active_arena() = get(task_local_storage(), :_contourlets_scratch, nothing)
+
+function _with_arena(f, arena)
+    store = task_local_storage()
+    prev = get(store, :_contourlets_scratch, nothing)
+    store[:_contourlets_scratch] = arena
+    try
+        return f()
+    finally
+        store[:_contourlets_scratch] = prev
+    end
+end
+
+# A scratch `m×n` matrix shaped like `ref`: drawn from the active arena only when
+# `ref` is a plain host `Array` (and the arena element type matches); otherwise
+# `similar(ref, m, n)`.  The `Array` guard keeps device arrays (CuArray/JLArray),
+# which reuse the same generic directional code, on `similar` — never the
+# host-only arena.
+function _scratch_like(ref::AbstractArray, m::Int, n::Int)
+    a = _active_arena()
+    if ref isa Array && a isa ScratchArena{eltype(ref)}
+        return _arena_take!(a, m, n)
+    end
+    return similar(ref, m, n)
+end
+
 """
     ContourletWorkspace{Td, Tf}
 

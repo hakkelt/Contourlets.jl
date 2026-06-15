@@ -29,7 +29,7 @@
 
 function _resamp(x::AbstractMatrix{T}, type::Int, shift::Int = 1) where {T}
     m, n = size(x)
-    y = similar(x)
+    y = _scratch_like(x, m, n)
     if type == 1
         @inbounds for j in 1:n, i in 1:m
             y[i, j] = x[mod1(i + shift * (j - 1), m), j]
@@ -148,14 +148,14 @@ end
 function _extend2(x::AbstractMatrix{T}, ru::Int, rd::Int, cl::Int, cr::Int, extmod::Symbol) where {T}
     m, n = size(x)
     if extmod === :per
-        out = Matrix{T}(undef, m + ru + rd, n + cl + cr)
+        out = _scratch_like(x, m + ru + rd, n + cl + cr)
         @inbounds for j in 1:(n + cl + cr), i in 1:(m + ru + rd)
             out[i, j] = x[mod1(i - ru, m), mod1(j - cl, n)]
         end
         return out
     elseif extmod === :qper_row
         m2 = round(Int, m / 2)
-        out = Matrix{T}(undef, m + ru + rd, n + cl + cr)
+        out = _scratch_like(x, m + ru + rd, n + cl + cr)
         @inbounds for j in 1:(n + cl + cr), i in 1:(m + ru + rd)
             ii = mod1(i - ru, m)
             jj = j - cl
@@ -169,7 +169,7 @@ function _extend2(x::AbstractMatrix{T}, ru::Int, rd::Int, cl::Int, cr::Int, extm
         return out
     elseif extmod === :qper_col
         n2 = round(Int, n / 2)
-        out = Matrix{T}(undef, m + ru + rd, n + cl + cr)
+        out = _scratch_like(x, m + ru + rd, n + cl + cr)
         @inbounds for j in 1:(n + cl + cr), i in 1:(m + ru + rd)
             ii = i - ru
             jj = mod1(j - cl, n)
@@ -203,7 +203,7 @@ function _sefilter2(x::AbstractMatrix{Td}, f::Vector{Tf}, shift1::Int, shift2::I
     sym = _is_symmetric(f, L)
     half = (L + 1) ÷ 2
     # Separable valid convolution with f along both dims (conv flips the filter).
-    tmp = Matrix{Td}(undef, m, size(ext, 2))
+    tmp = _scratch_like(x, m, size(ext, 2))
     if sym
         @inbounds for j in axes(ext, 2), i in 1:m
             acc = zero(Td)
@@ -222,7 +222,7 @@ function _sefilter2(x::AbstractMatrix{Td}, f::Vector{Tf}, shift1::Int, shift2::I
             tmp[i, j] = acc
         end
     end
-    out = Matrix{Td}(undef, m, n)
+    out = _scratch_like(x, m, n)
     if sym
         @inbounds for j in 1:n, i in 1:m
             acc = zero(Td)
@@ -261,15 +261,23 @@ _poly_rec(p0, p1, kind::Symbol, t) = kind === :q ? _qprec(p0, p1, t) : _pprec(p0
 function _fbdec_l(x::AbstractMatrix{Td}, f::Vector{Tf}, kind::Symbol, t, extmod::Symbol = :per) where {Td, Tf}
     p0, p1 = _poly_dec(x, kind, t)
     s2 = sqrt(Tf(2))
-    y0 = (p0 .- _sefilter2(p1, f, 1, 1, extmod)) ./ s2
-    y1 = (-s2) .* p1 .- _sefilter2(y0, f, 0, 0, extmod)
+    sef = _sefilter2(p1, f, 1, 1, extmod)              # arena scratch (transient)
+    y0 = _scratch_like(p0, size(p0, 1), size(p0, 2))
+    @. y0 = (p0 - sef) / s2
+    sef = _sefilter2(y0, f, 0, 0, extmod)
+    y1 = _scratch_like(p1, size(p1, 1), size(p1, 2))
+    @. y1 = (-s2) * p1 - sef
     return y0, y1
 end
 
 function _fbrec_l(y0::AbstractMatrix{Td}, y1::AbstractMatrix{Td}, f::Vector{Tf}, kind::Symbol, t, extmod::Symbol = :per) where {Td, Tf}
     s2 = sqrt(Tf(2))
-    p1 = (-(one(Tf) / s2)) .* (y1 .+ _sefilter2(y0, f, 0, 0, extmod))
-    p0 = s2 .* y0 .+ _sefilter2(p1, f, 1, 1, extmod)
+    sef = _sefilter2(y0, f, 0, 0, extmod)
+    p1 = _scratch_like(y1, size(y1, 1), size(y1, 2))
+    @. p1 = (-(one(Tf) / s2)) * (y1 + sef)
+    sef = _sefilter2(p1, f, 1, 1, extmod)
+    p0 = _scratch_like(y0, size(y0, 1), size(y0, 2))
+    @. p0 = s2 * y0 + sef
     return _poly_rec(p0, p1, kind, t)
 end
 

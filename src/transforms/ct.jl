@@ -79,17 +79,22 @@ function ct_forward!(
     # ws.current holds the full-size copy for level 1; levels 2..J use coarse_bufs[j-1]
     copyto!(ws.current, image)
 
-    for j in 1:J
-        input_j = (j == 1) ? ws.current : ws.coarse_bufs[j - 1]
-        n1, n2 = size(input_j)
-        tmp_j = @view ws.tmp_buf[1:n1, 1:n2]    # same-size scratch
-        tmp2_j = @view ws.tmp_buf2[1:n1, 1:n2]
+    # Activate the scratch arena for the whole call: the DFB transients
+    # (`_resamp`/`_sefilter2`/`_extend2`) draw from it. Reset once — the per-call
+    # allocation sequence is deterministic, so subsequent calls reuse the buffers.
+    _arena_reset!(ws.scratch)
+    _with_arena(ws.scratch) do
+        for j in 1:J
+            input_j = (j == 1) ? ws.current : ws.coarse_bufs[j - 1]
+            n1, n2 = size(input_j)
+            tmp_j = @view ws.tmp_buf[1:n1, 1:n2]    # same-size scratch
+            tmp2_j = @view ws.tmp_buf2[1:n1, 1:n2]
 
-        lp_decompose!(ws.coarse_bufs[j], ws.bp_bufs[j], input_j, fp; tmp = tmp_j, tmp2 = tmp2_j)
-        # DFB in-place would need per-level workspace; use allocating for now
-        sbs = dfb_decompose(ws.bp_bufs[j], L[j], qfp)
-        for (k, sb) in enumerate(sbs)
-            copyto!(coeffs.subbands[j][k], sb)
+            lp_decompose!(ws.coarse_bufs[j], ws.bp_bufs[j], input_j, fp; tmp = tmp_j, tmp2 = tmp2_j)
+            sbs = dfb_decompose(ws.bp_bufs[j], L[j], qfp)   # DFB transients use the arena
+            for (k, sb) in enumerate(sbs)
+                copyto!(coeffs.subbands[j][k], sb)
+            end
         end
     end
     copyto!(coeffs.coarse, ws.coarse_bufs[J])
@@ -147,17 +152,20 @@ function ct_inverse!(
     # Seed coarse_bufs[J] from the stored coarse coefficients
     copyto!(ws.coarse_bufs[J], coeffs.coarse)
 
-    for j in J:-1:1
-        bp = dfb_reconstruct(coeffs.subbands[j], qfp)
-        n1, n2 = size(bp)
-        tmp_j = @view ws.tmp_buf[1:n1, 1:n2]
-        tmp2_j = @view ws.tmp_buf2[1:n1, 1:n2]
-        if j > 1
-            # Output of reconstruction at level j is coarse input for level j-1.
-            # coarse_bufs[j-1] has exactly that size: (n1/2^(j-1), n2/2^(j-1)).
-            lp_reconstruct!(ws.coarse_bufs[j - 1], ws.coarse_bufs[j], bp, fp; tmp = tmp_j, tmp2 = tmp2_j)
-        else
-            lp_reconstruct!(image, ws.coarse_bufs[j], bp, fp; tmp = tmp_j, tmp2 = tmp2_j)
+    _arena_reset!(ws.scratch)
+    _with_arena(ws.scratch) do
+        for j in J:-1:1
+            bp = dfb_reconstruct(coeffs.subbands[j], qfp)   # DFB transients use the arena
+            n1, n2 = size(bp)
+            tmp_j = @view ws.tmp_buf[1:n1, 1:n2]
+            tmp2_j = @view ws.tmp_buf2[1:n1, 1:n2]
+            if j > 1
+                # Output of reconstruction at level j is coarse input for level j-1.
+                # coarse_bufs[j-1] has exactly that size: (n1/2^(j-1), n2/2^(j-1)).
+                lp_reconstruct!(ws.coarse_bufs[j - 1], ws.coarse_bufs[j], bp, fp; tmp = tmp_j, tmp2 = tmp2_j)
+            else
+                lp_reconstruct!(image, ws.coarse_bufs[j], bp, fp; tmp = tmp_j, tmp2 = tmp2_j)
+            end
         end
     end
     return image

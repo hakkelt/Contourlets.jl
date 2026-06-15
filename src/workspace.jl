@@ -7,6 +7,33 @@
 #   3. Thread-safety: one workspace per thread; NOT safe for concurrent reuse.
 #   4. Backward compatibility: non-! functions always allocate; workspace is opt-in.
 
+# ── Scratch arena ─────────────────────────────────────────────────────────────
+# A grow-once pool of `Matrix{T}` scratch buffers for the directional stage,
+# whose transient buffers vary in number/size per node.  The allocation sequence
+# is deterministic for fixed params + image size, so `reset!` at the start of a
+# transform and `acquire!` hand back the same buffers on every subsequent call —
+# zero allocations after the first.  Buffers are handed out by a monotonic cursor
+# (never released mid-transform), so all live intermediates are distinct.
+
+mutable struct ScratchArena{T}
+    bufs::Vector{Matrix{T}}
+    cursor::Int
+end
+ScratchArena{T}() where {T} = ScratchArena{T}(Matrix{T}[], 0)
+
+_arena_reset!(a::ScratchArena) = (a.cursor = 0; return a)
+
+# Hand out a scratch `m×n` matrix, growing/resizing the pool as needed.
+function _arena_take!(a::ScratchArena{T}, m::Int, n::Int) where {T}
+    a.cursor += 1
+    if a.cursor > length(a.bufs)
+        push!(a.bufs, Matrix{T}(undef, m, n))
+    elseif size(a.bufs[a.cursor]) != (m, n)
+        a.bufs[a.cursor] = Matrix{T}(undef, m, n)
+    end
+    return a.bufs[a.cursor]
+end
+
 """
     ContourletWorkspace{Td, Tf}
 
@@ -30,6 +57,9 @@ struct ContourletWorkspace{Td <: Number, Tf <: AbstractFloat}
     tmp_buf::Matrix{Td}              # size = image_size (for in-place conv)
     tmp_buf2::Matrix{Td}             # second scratch (separable-conv intermediate)
     current::Matrix{Td}              # running coarse (size changes per level for CT)
+
+    # Grow-once pool for the directional-stage transients (DFB / NSDFB).
+    scratch::ScratchArena{Td}
 end
 
 """
@@ -81,7 +111,7 @@ function make_workspace(
     current = zeros(Td, n1, n2)
     p2 = _convert_params(Tf, params)
     return ContourletWorkspace{Td, Tf}(
-        p2, image_size, coarse_bufs, bp_bufs, tmp_buf, tmp_buf2, current
+        p2, image_size, coarse_bufs, bp_bufs, tmp_buf, tmp_buf2, current, ScratchArena{Td}()
     )
 end
 
@@ -116,7 +146,7 @@ function make_nsct_workspace(
     current = zeros(Td, n1, n2)
     p2 = _convert_params(Tf, params)
     return ContourletWorkspace{Td, Tf}(
-        p2, image_size, coarse_bufs, bp_bufs, tmp_buf, tmp_buf2, current
+        p2, image_size, coarse_bufs, bp_bufs, tmp_buf, tmp_buf2, current, ScratchArena{Td}()
     )
 end
 

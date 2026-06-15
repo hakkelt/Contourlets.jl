@@ -82,10 +82,8 @@ function nsct_forward!(
             ws.coarse_bufs[j], ws.bp_bufs[j], input_j, fp, j;
             tmp = ws.tmp_buf, tmp2 = ws.tmp_buf2
         )
-        sbs = nsdfb_decompose(ws.bp_bufs[j], L[j], qfp, j)
-        for (k, sb) in enumerate(sbs)
-            copyto!(coeffs.subbands[j][k], sb)
-        end
+        _arena_reset!(ws.scratch)
+        _nsdfb_decompose_into!(coeffs.subbands[j], ws.bp_bufs[j], L[j], qfp, j, ws.scratch)
     end
     copyto!(coeffs.coarse, ws.coarse_bufs[J])
     return coeffs
@@ -143,7 +141,8 @@ function nsct_inverse!(
     copyto!(ws.coarse_bufs[J], coeffs.coarse)
 
     for j in J:-1:1
-        bp = nsdfb_reconstruct(coeffs.subbands[j], qfp, j)
+        _arena_reset!(ws.scratch)
+        bp = _nsdfb_reconstruct_into!(ws.bp_bufs[j], coeffs.subbands[j], qfp, j, ws.scratch)
         if j > 1
             nsp_reconstruct!(
                 ws.coarse_bufs[j - 1], ws.coarse_bufs[j], bp, fp, j;

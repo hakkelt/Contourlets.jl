@@ -122,6 +122,67 @@ function _nsdfb_merge(sbs::Vector{<:AbstractMatrix}, l::Int, depth::Int, qup)
     return _nsqfb_reconstruct(sb0, sb1, qup, _nsdfb_direction(depth))
 end
 
+# ── Allocation-free NSDFB (writes into pre-allocated `out`; `arena` supplies the
+# internal-node scratch).  Used by the workspace `!` transform paths. ─────────
+
+# Analysis: decompose `bandpass` into its `2^l_levels` subbands, written into the
+# pre-allocated `out[1:2^l_levels]` (all the same size as `bandpass`).
+function _nsdfb_decompose_into!(
+        out::Vector{<:AbstractMatrix}, bandpass::AbstractMatrix,
+        l_levels::Int, qfp::QuincunxFilterPair, tree_level::Int, arena
+    )
+    l_levels == 0 && return (copyto!(out[1], bandpass); out)
+    Tf = _filter_eltype(eltype(bandpass))
+    qup = _upsample_qfp_1d(qfp, 2^(tree_level - 1), Tf)
+    _nsdfb_split_into!(out, 1, bandpass, l_levels, 1, qup, arena)
+    return out
+end
+
+function _nsdfb_split_into!(out, oi::Int, img, remaining::Int, depth::Int, qup, arena)
+    dir = _nsdfb_direction(depth)
+    if remaining == 1
+        _nsqfb_decompose!(out[oi], out[oi + 1], img, qup, dir)
+        return out
+    end
+    n1, n2 = size(img)
+    sb0 = _arena_take!(arena, n1, n2)
+    sb1 = _arena_take!(arena, n1, n2)
+    _nsqfb_decompose!(sb0, sb1, img, qup, dir)
+    half = 2^(remaining - 1)
+    _nsdfb_split_into!(out, oi, sb0, remaining - 1, depth + 1, qup, arena)
+    _nsdfb_split_into!(out, oi + half, sb1, remaining - 1, depth + 1, qup, arena)
+    return out
+end
+
+# Synthesis: reconstruct the bandpass from `subbands` into the pre-allocated `dest`.
+function _nsdfb_reconstruct_into!(
+        dest::AbstractMatrix, subbands::Vector{<:AbstractMatrix},
+        qfp::QuincunxFilterPair, tree_level::Int, arena
+    )
+    n = length(subbands)
+    n == 1 && return (copyto!(dest, subbands[1]); dest)
+    Tf = _filter_eltype(eltype(subbands[1]))
+    qup = _upsample_qfp_1d(qfp, 2^(tree_level - 1), Tf)
+    _nsdfb_merge_into!(dest, subbands, 1, n, round(Int, log2(n)), 1, qup, arena)
+    return dest
+end
+
+function _nsdfb_merge_into!(dest, sbs, lo::Int, hi::Int, l::Int, depth::Int, qup, arena)
+    dir = _nsdfb_direction(depth)
+    if l == 1
+        _nsqfb_reconstruct!(dest, sbs[lo], sbs[lo + 1], qup, dir)
+        return dest
+    end
+    n1, n2 = size(dest)
+    sb0 = _arena_take!(arena, n1, n2)
+    sb1 = _arena_take!(arena, n1, n2)
+    half = (hi - lo + 1) ÷ 2
+    _nsdfb_merge_into!(sb0, sbs, lo, lo + half - 1, l - 1, depth + 1, qup, arena)
+    _nsdfb_merge_into!(sb1, sbs, lo + half, hi, l - 1, depth + 1, qup, arena)
+    _nsqfb_reconstruct!(dest, sb0, sb1, qup, dir)
+    return dest
+end
+
 # ── Non-decimated 1-D directional filter bank ────────────────────────────────
 #
 # `qup` is a NamedTuple (h0, c0, h1, c1, g0, cg0, g1, cg1, scale) holding the
@@ -140,18 +201,24 @@ end
 #     follows from the decimated PR identity G₀H₀ + G₁H₁ = 2).
 # Both identities are invariant under à trous upsampling (z → z^{2^l}).
 
-function _nsqfb_decompose(image::AbstractMatrix, qup, dir::Tuple{Int, Int})
+_nsqfb_decompose(image::AbstractMatrix, qup, dir::Tuple{Int, Int}) =
+    _nsqfb_decompose!(similar(image), similar(image), image, qup, dir)
+
+function _nsqfb_decompose!(
+        sb0::AbstractMatrix, sb1::AbstractMatrix, image::AbstractMatrix,
+        qup, dir::Tuple{Int, Int}
+    )
     h0, c0, h1, c1 = qup.h0, qup.c0, qup.h1, qup.c1
     di, dj = dir
     n1, n2 = size(image)
-    sb0 = similar(image); sb1 = similar(image)
+    T = eltype(sb0)
     @inbounds for j in 1:n2, i in 1:n1
-        acc0 = zero(eltype(image))
+        acc0 = zero(T)
         for m in eachindex(h0)
             d = m - c0
             acc0 += h0[m] * image[mod1(i - di * d, n1), mod1(j - dj * d, n2)]
         end
-        acc1 = zero(eltype(image))
+        acc1 = zero(T)
         for m in eachindex(h1)
             d = m - c1
             acc1 += h1[m] * image[mod1(i - di * d, n1), mod1(j - dj * d, n2)]
@@ -162,16 +229,19 @@ function _nsqfb_decompose(image::AbstractMatrix, qup, dir::Tuple{Int, Int})
     return sb0, sb1
 end
 
-function _nsqfb_reconstruct(
-        sb0::AbstractMatrix, sb1::AbstractMatrix, qup,
+_nsqfb_reconstruct(sb0::AbstractMatrix, sb1::AbstractMatrix, qup, dir::Tuple{Int, Int}) =
+    _nsqfb_reconstruct!(similar(sb0), sb0, sb1, qup, dir)
+
+function _nsqfb_reconstruct!(
+        out::AbstractMatrix, sb0::AbstractMatrix, sb1::AbstractMatrix, qup,
         dir::Tuple{Int, Int}
     )
     g0, cg0, g1, cg1 = qup.g0, qup.cg0, qup.g1, qup.cg1
     di, dj = dir
     n1, n2 = size(sb0)
-    out = zeros(eltype(sb0), n1, n2)
+    T = eltype(out)
     @inbounds for j in 1:n2, i in 1:n1
-        acc = zero(eltype(sb0))
+        acc = zero(T)
         for m in eachindex(g0)
             d = m - cg0
             acc += g0[m] * sb0[mod1(i - di * d, n1), mod1(j - dj * d, n2)]

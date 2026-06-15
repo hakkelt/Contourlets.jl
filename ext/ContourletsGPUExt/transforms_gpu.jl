@@ -9,9 +9,11 @@
 #    `_sefilter2` kernels.
 #  • NSCT — the NSDFB (`nsdfb_gpu.jl`): a per-pixel directional convolution.
 #
-# Only the final subbands are copied to the host `Matrix{T}` coefficient
-# containers.  Each device kernel reproduces the CPU reduction order, so results
-# match the host path (including the shift-invariant NSCT).
+# Each device kernel reproduces the CPU reduction order, so results match the
+# host path (including the shift-invariant NSCT).  Coefficients are returned with
+# their arrays still on the device (the containers carry a generic
+# `A <: AbstractMatrix` storage type), so nothing is implicitly transferred to the
+# host; use `Array(·)` or `Adapt.adapt(Array, coeffs)` to bring them back.
 
 # ── Contourlet Transform ──────────────────────────────────────────────────────
 
@@ -19,8 +21,9 @@
     ct_forward(image::AbstractGPUMatrix, params::ContourletParams) -> ContourletCoefficients
 
 GPU Discrete Contourlet Transform forward pass.  Both the Laplacian-pyramid and
-the directional filter-bank stages run on the device.  The returned coefficients
-are host `Matrix` objects (matching the CPU `ct_forward` to Float32 precision).
+the directional filter-bank stages run on the device, and the returned
+coefficients keep their arrays on the device (matching the CPU `ct_forward` to
+Float32 precision).  `ct_inverse(coeffs)` then reconstructs on the device too.
 """
 function ct_forward(image::AbstractGPUMatrix, params::ContourletParams)
     Td = Contourlets._data_eltype(image)        # data type (real or complex)
@@ -30,15 +33,16 @@ function ct_forward(image::AbstractGPUMatrix, params::ContourletParams)
     J, L = p.J, p.L_array
     img = Td === eltype(image) ? image : Td.(image)
 
-    subbands = Vector{Vector{Matrix{Td}}}(undef, J)
+    local subbands
     coarse = img
     for j in 1:J
         coarse_j, bp_j = lp_decompose(coarse, fp)        # GPU
-        dev_sb = dfb_decompose(bp_j, L[j], qfp)          # GPU DFB
-        subbands[j] = [Array(s) for s in dev_sb]         # subbands → host
+        dev_sb = dfb_decompose(bp_j, L[j], qfp)          # GPU DFB — stays on device
+        j == 1 && (subbands = Vector{typeof(dev_sb)}(undef, J))
+        subbands[j] = dev_sb
         coarse = coarse_j
     end
-    return ContourletCoefficients(Array(coarse), subbands, p)
+    return ContourletCoefficients(coarse, subbands, p)   # device-resident coeffs
 end
 
 """
@@ -78,15 +82,16 @@ function nsct_forward(image::AbstractGPUMatrix, params::ContourletParams)
     J, L = p.J, p.L_array
     img = Td === eltype(image) ? image : Td.(image)
 
-    subbands = Vector{Vector{Matrix{Td}}}(undef, J)
+    local subbands
     coarse = img
     for j in 1:J
         coarse_j, bp_j = nsp_decompose(coarse, fp, j)              # GPU
-        dev_sb = nsdfb_decompose(bp_j, L[j], qfp, j)               # GPU NSDFB
-        subbands[j] = [Array(s) for s in dev_sb]                   # subbands → host
+        dev_sb = nsdfb_decompose(bp_j, L[j], qfp, j)               # GPU NSDFB — stays on device
+        j == 1 && (subbands = Vector{typeof(dev_sb)}(undef, J))
+        subbands[j] = dev_sb
         coarse = coarse_j
     end
-    return NSCTCoefficients(Array(coarse), subbands, p)
+    return NSCTCoefficients(coarse, subbands, p)   # device-resident coeffs
 end
 
 """
@@ -107,4 +112,25 @@ function nsct_inverse(coeffs::NSCTCoefficients{T}, device::AbstractGPUArray) whe
         coarse = nsp_reconstruct(coarse, bp, fp, j)               # GPU
     end
     return coarse
+end
+
+# ── Moving whole coefficient sets between host and device ─────────────────────
+# `Adapt.adapt(CuArray, coeffs)` moves the data arrays to the device and
+# `Adapt.adapt(Array, coeffs)` brings them back; the real filters in `params`
+# stay on the host either way.
+
+function Adapt.adapt_structure(to, c::ContourletCoefficients)
+    return ContourletCoefficients(
+        Adapt.adapt(to, c.coarse),
+        [[Adapt.adapt(to, s) for s in lvl] for lvl in c.subbands],
+        c.params,
+    )
+end
+
+function Adapt.adapt_structure(to, c::NSCTCoefficients)
+    return NSCTCoefficients(
+        Adapt.adapt(to, c.coarse),
+        [[Adapt.adapt(to, s) for s in lvl] for lvl in c.subbands],
+        c.params,
+    )
 end

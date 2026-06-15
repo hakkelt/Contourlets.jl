@@ -192,10 +192,14 @@ under `.temp/`, which is git-ignored.
   DFB via GPU `_resamp`/`_sefilter2` (`dfb_gpu.jl`) plus the type-generic
   polyphase tree, and the NSDFB via per-pixel `_nsqfb_*` kernels (`nsdfb_gpu.jl`).
   Each device kernel reproduces the CPU reduction order, so GPU
-  `ct_forward`/`nsct_forward` match the CPU path (to Float32 precision); only the
-  final subbands are copied to the host `Matrix` coefficient containers. Complex
-  device arrays work too: the GPU kernels keep filters real (`real(T)`) and
-  accumulate in the data type, mirroring the CPU split. Shared src must stay
+  `ct_forward`/`nsct_forward` match the CPU path (to Float32 precision). Results
+  stay on the device: the coefficient containers carry a storage-type parameter
+  (`ContourletCoefficients{Td,Tf,A}`, `A<:AbstractMatrix`), so a GPU forward
+  returns device-resident coeffs and the single-arg `ct_inverse(coeffs)`
+  reconstructs on the device (the `(coeffs, device)` overload remains for host
+  coeffs). Use `Array(·)` / `Adapt.adapt` to move coeffs across. Complex device
+  arrays work too: the GPU kernels keep filters real (`real(T)`) and accumulate
+  in the data type, mirroring the CPU split. Shared src must stay
   device-portable — allocate scratch with `_zeros_like`/`similar` (not `zeros`),
   avoid index-vector gathers (use `circshift`), and size work vectors from the
   actual array type, not `Matrix{T}`. Tests use GPUEnv.jl on JLArrays (CI) and

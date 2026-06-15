@@ -94,10 +94,10 @@ end
     for backend in GPUBackends.backends
         xg = to_gpu(backend, x)
         cgpu = ct_forward(xg, p)
-        # Forward result is host-side and must be bit-identical to the CPU path.
-        @test maximum(abs, cgpu.coarse .- ccpu.coarse) < 1.0e-12
+        # Coefficients stay on the device; bring them back to compare to the CPU path.
+        @test maximum(abs, Array(cgpu.coarse) .- ccpu.coarse) < 1.0e-12
         for j in 1:2, k in eachindex(ccpu.subbands[j])
-            @test maximum(abs, cgpu.subbands[j][k] .- ccpu.subbands[j][k]) < 1.0e-12
+            @test maximum(abs, Array(cgpu.subbands[j][k]) .- ccpu.subbands[j][k]) < 1.0e-12
         end
         rec = ct_inverse(cgpu, xg)
         @test maximum(abs, Array(rec) .- x) < 1.0e-11
@@ -113,9 +113,9 @@ end
     for backend in GPUBackends.backends
         xg = to_gpu(backend, x)
         ngpu = nsct_forward(xg, p)
-        @test maximum(abs, ngpu.coarse .- ncpu.coarse) < 1.0e-12
+        @test maximum(abs, Array(ngpu.coarse) .- ncpu.coarse) < 1.0e-12
         for j in 1:2, k in eachindex(ncpu.subbands[j])
-            @test maximum(abs, ngpu.subbands[j][k] .- ncpu.subbands[j][k]) < 1.0e-12
+            @test maximum(abs, Array(ngpu.subbands[j][k]) .- ncpu.subbands[j][k]) < 1.0e-12
         end
         rec = nsct_inverse(ngpu, xg)
         @test maximum(abs, Array(rec) .- x) < 1.0e-11
@@ -138,12 +138,39 @@ end
 
         cgpu = ct_forward(zg, p)
         @test eltype(cgpu.coarse) <: Complex
-        @test maximum(abs, cgpu.coarse .- ccpu.coarse) < 1.0e-12
+        @test maximum(abs, Array(cgpu.coarse) .- ccpu.coarse) < 1.0e-12
         @test maximum(abs, Array(ct_inverse(cgpu, zg)) .- z) < 1.0e-11
 
         ngpu = nsct_forward(zg, p)
         @test eltype(ngpu.coarse) <: Complex
-        @test maximum(abs, ngpu.coarse .- ncpu.coarse) < 1.0e-12
+        @test maximum(abs, Array(ngpu.coarse) .- ncpu.coarse) < 1.0e-12
         @test maximum(abs, Array(nsct_inverse(ngpu, zg)) .- z) < 1.0e-11
+    end
+end
+
+@testitem "GPU coefficients stay on the device" tags = [:gpu] setup = [GPUBackends] begin
+    using GPUEnv, Random
+    Random.seed!(56)
+    x = randn(32, 32)
+    p = ContourletParams(J = 2, L_array = [2, 3])
+    for backend in GPUBackends.backends
+        xg = to_gpu(backend, x)
+        DT = typeof(xg)
+
+        c = ct_forward(xg, p)
+        @test !(c.coarse isa Array)            # not transferred to host
+        @test c.coarse isa DT
+        @test all(s isa DT for lvl in c.subbands for s in lvl)
+        # single-arg inverse reconstructs on the device (no `device` argument)
+        r = ct_inverse(c)
+        @test !(r isa Array)
+        @test maximum(abs, Array(r) .- x) < 1.0e-11
+
+        nc = nsct_forward(xg, p)
+        @test !(nc.coarse isa Array)
+        @test all(s isa DT for lvl in nc.subbands for s in lvl)
+        nr = nsct_inverse(nc)
+        @test !(nr isa Array)
+        @test maximum(abs, Array(nr) .- x) < 1.0e-11
     end
 end

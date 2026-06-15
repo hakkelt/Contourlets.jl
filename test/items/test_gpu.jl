@@ -125,3 +125,25 @@ end
         @test maximum(abs, nshift.subbands[2][1] .- circshift(ngpu.subbands[2][1], s)) < 1.0e-11
     end
 end
+
+@testitem "GPU complex CT/NSCT match CPU (real filters on device)" tags = [:gpu] setup = [GPUBackends] begin
+    using GPUEnv, Random
+    Random.seed!(55)
+    z = complex.(randn(32, 32), randn(32, 32))
+    p = ContourletParams(J = 2, L_array = [2, 3])
+    ccpu = ct_forward(z, p)
+    ncpu = nsct_forward(z, p)
+    for backend in GPUBackends.backends
+        zg = to_gpu(backend, z)
+
+        cgpu = ct_forward(zg, p)
+        @test eltype(cgpu.coarse) <: Complex
+        @test maximum(abs, cgpu.coarse .- ccpu.coarse) < 1.0e-12
+        @test maximum(abs, Array(ct_inverse(cgpu, zg)) .- z) < 1.0e-11
+
+        ngpu = nsct_forward(zg, p)
+        @test eltype(ngpu.coarse) <: Complex
+        @test maximum(abs, ngpu.coarse .- ncpu.coarse) < 1.0e-12
+        @test maximum(abs, Array(nsct_inverse(ngpu, zg)) .- z) < 1.0e-11
+    end
+end

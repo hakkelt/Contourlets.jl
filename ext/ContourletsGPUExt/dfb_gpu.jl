@@ -83,8 +83,8 @@ end
 end
 
 function Contourlets._sefilter2(
-        x::AbstractGPUMatrix{T}, f::Vector{T}, shift1::Int, shift2::Int, extmod::Symbol
-    ) where {T}
+        x::AbstractGPUMatrix{Td}, f::Vector{Tf}, shift1::Int, shift2::Int, extmod::Symbol
+    ) where {Td, Tf}
     backend = _gpu_backend(x)
     L = length(f)
     lf = (L - 1) / 2
@@ -106,14 +106,14 @@ function Contourlets._sefilter2(
     n2 = round(Int, n / 2)
     f_d = _ensure_gpu(backend, f)
 
-    ext = KernelAbstractions.allocate(backend, T, m + ru + rd, n + cl + cr)
+    ext = KernelAbstractions.allocate(backend, Td, m + ru + rd, n + cl + cr)
     _extend2_kernel!(backend, (16, 16))(ext, x, ru, cl, m, n, mode, m2, n2; ndrange = size(ext))
 
     ncols = n + cl + cr
-    tmp = KernelAbstractions.allocate(backend, T, m, ncols)
+    tmp = KernelAbstractions.allocate(backend, Td, m, ncols)
     _sef_pass1_kernel!(backend, (16, 16))(tmp, ext, f_d, L; ndrange = (m, ncols))
 
-    out = KernelAbstractions.allocate(backend, T, m, n)
+    out = KernelAbstractions.allocate(backend, Td, m, n)
     _sef_pass2_kernel!(backend, (16, 16))(out, tmp, f_d, L; ndrange = (m, n))
     return out
 end

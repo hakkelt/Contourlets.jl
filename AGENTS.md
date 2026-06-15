@@ -193,8 +193,10 @@ under `.temp/`, which is git-ignored.
   polyphase tree, and the NSDFB via per-pixel `_nsqfb_*` kernels (`nsdfb_gpu.jl`).
   Each device kernel reproduces the CPU reduction order, so GPU
   `ct_forward`/`nsct_forward` match the CPU path (to Float32 precision); only the
-  final subbands are copied to the host `Matrix` coefficient containers. Shared
-  src must stay device-portable — allocate scratch with `_zeros_like`/`similar`
-  (not `zeros`), avoid index-vector gathers (use `circshift`), and size work
-  vectors from the actual array type, not `Matrix{T}`. Tests use GPUEnv.jl on
-  JLArrays (CI) and any real backend present (`:gpu` tag).
+  final subbands are copied to the host `Matrix` coefficient containers. Complex
+  device arrays work too: the GPU kernels keep filters real (`real(T)`) and
+  accumulate in the data type, mirroring the CPU split. Shared src must stay
+  device-portable — allocate scratch with `_zeros_like`/`similar` (not `zeros`),
+  avoid index-vector gathers (use `circshift`), and size work vectors from the
+  actual array type, not `Matrix{T}`. Tests use GPUEnv.jl on JLArrays (CI) and
+  any real backend present (`:gpu` tag).

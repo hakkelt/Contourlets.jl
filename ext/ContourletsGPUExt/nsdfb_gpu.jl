@@ -105,10 +105,11 @@ function nsdfb_decompose(
     l_levels >= 0 || throw(ArgumentError("l_levels must be ≥ 0"))
     tree_level >= 1 || throw(ArgumentError("tree_level must be ≥ 1"))
     l_levels == 0 && return [copy(bandpass)]
-    T = promote_type(eltype(bandpass), eltype(qfp))
-    img = T === eltype(bandpass) ? bandpass : T.(bandpass)
+    Td = Contourlets._data_eltype(bandpass)      # data type (real or complex)
+    Tf = Contourlets._filter_eltype(Td)          # real filter precision
+    img = Td === eltype(bandpass) ? bandpass : Td.(bandpass)
     backend = _gpu_backend(bandpass)
-    qup = _qup_to_device(backend, Contourlets._upsample_qfp_1d(qfp, 2^(tree_level - 1), T))
+    qup = _qup_to_device(backend, Contourlets._upsample_qfp_1d(qfp, 2^(tree_level - 1), Tf))
     return Contourlets._nsdfb_split(img, l_levels, 1, qup)
 end
 
@@ -119,9 +120,10 @@ function nsdfb_reconstruct(
     n = length(subbands)
     ispow2(n) || throw(ArgumentError("number of subbands must be a power of 2"))
     n == 1 && return copy(subbands[1])
-    T = promote_type(eltype(subbands[1]), eltype(qfp))
+    Td = Contourlets._data_eltype(subbands[1])   # data type (real or complex)
+    Tf = Contourlets._filter_eltype(Td)          # real filter precision
     backend = _gpu_backend(subbands[1])
-    qup = _qup_to_device(backend, Contourlets._upsample_qfp_1d(qfp, 2^(tree_level - 1), T))
+    qup = _qup_to_device(backend, Contourlets._upsample_qfp_1d(qfp, 2^(tree_level - 1), Tf))
     l_levels = round(Int, log2(n))
     return Contourlets._nsdfb_merge(subbands, l_levels, 1, qup)
 end

@@ -13,13 +13,6 @@
 # containers.  Each device kernel reproduces the CPU reduction order, so results
 # match the host path (including the shift-invariant NSCT).
 
-# Convert params to element type `T`, preserving the ladder filter.
-function _params_as(::Type{T}, params::ContourletParams) where {T}
-    fp = FilterPair{T}(T.(params.lp_filters.h), T.(params.lp_filters.g))
-    qfp = Contourlets._convert_qfp(T, params.dfb_filters)
-    return ContourletParams{T}(params.J, params.L_array, fp, qfp)
-end
-
 # ── Contourlet Transform ──────────────────────────────────────────────────────
 
 """
@@ -30,13 +23,14 @@ the directional filter-bank stages run on the device.  The returned coefficients
 are host `Matrix` objects (matching the CPU `ct_forward` to Float32 precision).
 """
 function ct_forward(image::AbstractGPUMatrix, params::ContourletParams)
-    T_out = float(eltype(image))
-    p = _params_as(T_out, params)
+    Td = Contourlets._data_eltype(image)        # data type (real or complex)
+    Tf = Contourlets._filter_eltype(Td)         # real filter precision
+    p = Contourlets._convert_params(Tf, params)
     fp, qfp = p.lp_filters, p.dfb_filters
     J, L = p.J, p.L_array
-    img = T_out.(image)
+    img = Td === eltype(image) ? image : Td.(image)
 
-    subbands = Vector{Vector{Matrix{T_out}}}(undef, J)
+    subbands = Vector{Vector{Matrix{Td}}}(undef, J)
     coarse = img
     for j in 1:J
         coarse_j, bp_j = lp_decompose(coarse, fp)        # GPU
@@ -77,13 +71,14 @@ end
 GPU Nonsubsampled Contourlet Transform forward pass (GPU pyramid + GPU NSDFB).
 """
 function nsct_forward(image::AbstractGPUMatrix, params::ContourletParams)
-    T_out = float(eltype(image))
-    p = _params_as(T_out, params)
+    Td = Contourlets._data_eltype(image)        # data type (real or complex)
+    Tf = Contourlets._filter_eltype(Td)         # real filter precision
+    p = Contourlets._convert_params(Tf, params)
     fp, qfp = p.lp_filters, p.dfb_filters
     J, L = p.J, p.L_array
-    img = T_out.(image)
+    img = Td === eltype(image) ? image : Td.(image)
 
-    subbands = Vector{Vector{Matrix{T_out}}}(undef, J)
+    subbands = Vector{Vector{Matrix{Td}}}(undef, J)
     coarse = img
     for j in 1:J
         coarse_j, bp_j = nsp_decompose(coarse, fp, j)              # GPU

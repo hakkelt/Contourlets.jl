@@ -79,8 +79,11 @@ function conv2d_sep!(
     cc = (lc + 1) ÷ 2
     cr = (lr + 1) ÷ 2
 
-    h_col_d = _ensure_gpu(backend, T.(h_col))
-    h_row_d = _ensure_gpu(backend, T.(h_row))
+    # Keep filters real (Tf); the kernels accumulate in the data type Td (= T)
+    # so real·complex stays complex without promoting the filter.
+    Tf = real(T)
+    h_col_d = _ensure_gpu(backend, Tf.(h_col))
+    h_row_d = _ensure_gpu(backend, Tf.(h_row))
 
     tmp = KernelAbstractions.allocate(backend, T, n1, n2)
 

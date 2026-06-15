@@ -126,14 +126,13 @@ end
 # internal-node scratch).  Used by the workspace `!` transform paths. ─────────
 
 # Analysis: decompose `bandpass` into its `2^l_levels` subbands, written into the
-# pre-allocated `out[1:2^l_levels]` (all the same size as `bandpass`).
+# pre-allocated `out[1:2^l_levels]` (all the same size as `bandpass`).  `qup` is the
+# precomputed upsampled filter bundle (from the workspace cache).
 function _nsdfb_decompose_into!(
         out::Vector{<:AbstractMatrix}, bandpass::AbstractMatrix,
-        l_levels::Int, qfp::QuincunxFilterPair, tree_level::Int, arena
+        l_levels::Int, qup, arena
     )
     l_levels == 0 && return (copyto!(out[1], bandpass); out)
-    Tf = _filter_eltype(eltype(bandpass))
-    qup = _upsample_qfp_1d(qfp, 2^(tree_level - 1), Tf)
     _nsdfb_split_into!(out, 1, bandpass, l_levels, 1, qup, arena)
     return out
 end
@@ -155,14 +154,13 @@ function _nsdfb_split_into!(out, oi::Int, img, remaining::Int, depth::Int, qup, 
 end
 
 # Synthesis: reconstruct the bandpass from `subbands` into the pre-allocated `dest`.
+# `qup` is the precomputed upsampled filter bundle (from the workspace cache).
 function _nsdfb_reconstruct_into!(
         dest::AbstractMatrix, subbands::Vector{<:AbstractMatrix},
-        qfp::QuincunxFilterPair, tree_level::Int, arena
+        qup, arena
     )
     n = length(subbands)
     n == 1 && return (copyto!(dest, subbands[1]); dest)
-    Tf = _filter_eltype(eltype(subbands[1]))
-    qup = _upsample_qfp_1d(qfp, 2^(tree_level - 1), Tf)
     _nsdfb_merge_into!(dest, subbands, 1, n, round(Int, log2(n)), 1, qup, arena)
     return dest
 end

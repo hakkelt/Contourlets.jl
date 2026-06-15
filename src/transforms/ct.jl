@@ -171,6 +171,17 @@ function ct_inverse!(
     return image
 end
 
+# Grow the workspace scratch arena to its steady-state size by running one forward
+# + inverse pass on zeros, so the first real call allocates nothing.  Called from
+# `make_workspace(...; prewarm=true)`.
+function _prewarm_ct!(ws::ContourletWorkspace{Td}) where {Td}
+    img = zeros(Td, ws.image_size)
+    coeffs = similar_coefficients(ws.params, ws.image_size; Td = Td)
+    ct_forward!(coeffs, img, ws)
+    ct_inverse!(img, coeffs, ws)
+    return ws
+end
+
 """
     dfb_subband_sizes(n1, n2, l; ladder=true) -> Vector{Tuple{Int,Int}}
 

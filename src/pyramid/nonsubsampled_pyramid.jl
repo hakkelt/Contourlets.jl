@@ -59,15 +59,21 @@ function nsp_decompose!(
         coarse::AbstractMatrix, bandpass::AbstractMatrix,
         image::AbstractMatrix, fp::FilterPair, level::Int;
         tmp::AbstractMatrix = similar(image),
-        tmp2::AbstractMatrix = similar(image)
+        tmp2::AbstractMatrix = similar(image),
+        h_j::Union{AbstractVector, Nothing} = nothing,
+        g_j::Union{AbstractVector, Nothing} = nothing
     )
-    factor = 2^(level - 1)
-    Tf = _filter_eltype(eltype(coarse))
-    # upsample_filter already returns a fresh vector; convert only on type mismatch.
-    h_up = upsample_filter(fp.h, factor)
-    h_j = Tf === eltype(h_up) ? h_up : Tf.(h_up)
-    g_up = upsample_filter(fp.g, factor)
-    g_j = Tf(_NSP_SYNTH_SCALE) .* (Tf === eltype(g_up) ? g_up : Tf.(g_up))
+    # Use caller-supplied (workspace-cached) à trous filters when given; otherwise
+    # build them here.  The cached `g_j` already carries the synthesis rescale.
+    if h_j === nothing || g_j === nothing
+        factor = 2^(level - 1)
+        Tf = _filter_eltype(eltype(coarse))
+        # upsample_filter already returns a fresh vector; convert only on type mismatch.
+        h_up = upsample_filter(fp.h, factor)
+        h_j = Tf === eltype(h_up) ? h_up : Tf.(h_up)
+        g_up = upsample_filter(fp.g, factor)
+        g_j = Tf(_NSP_SYNTH_SCALE) .* (Tf === eltype(g_up) ? g_up : Tf.(g_up))
+    end
     conv2d_sep!(coarse, image, h_j, h_j; boundary = :periodic, tmp = tmp2)
     conv2d_sep!(tmp, coarse, g_j, g_j; boundary = :periodic, tmp = tmp2)
     n1, n2 = size(image)
@@ -122,12 +128,16 @@ function nsp_reconstruct!(
         image::AbstractMatrix, coarse::AbstractMatrix,
         bandpass::AbstractMatrix, fp::FilterPair, level::Int;
         tmp::AbstractMatrix = similar(image),
-        tmp2::AbstractMatrix = similar(image)
+        tmp2::AbstractMatrix = similar(image),
+        g_j::Union{AbstractVector, Nothing} = nothing
     )
-    Tf = _filter_eltype(eltype(image))
-    factor = 2^(level - 1)
-    g_up = upsample_filter(fp.g, factor)
-    g_j = Tf(_NSP_SYNTH_SCALE) .* (Tf === eltype(g_up) ? g_up : Tf.(g_up))
+    # Use the caller-supplied (workspace-cached) synthesis filter when given.
+    if g_j === nothing
+        Tf = _filter_eltype(eltype(image))
+        factor = 2^(level - 1)
+        g_up = upsample_filter(fp.g, factor)
+        g_j = Tf(_NSP_SYNTH_SCALE) .* (Tf === eltype(g_up) ? g_up : Tf.(g_up))
+    end
     conv2d_sep!(tmp, coarse, g_j, g_j; boundary = :periodic, tmp = tmp2)
     n1, n2 = size(bandpass)
     @inbounds for j in 1:n2, i in 1:n1

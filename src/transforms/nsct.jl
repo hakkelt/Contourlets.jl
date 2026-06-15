@@ -64,13 +64,12 @@ In-place NSCT forward pass.
 function nsct_forward!(
         coeffs::NSCTCoefficients{T},
         image::AbstractMatrix,
-        ws::ContourletWorkspace{T}
-    ) where {T}
+        ws::ContourletWorkspace{T, Tf}
+    ) where {T, Tf}
     params = coeffs.params
     J = params.J
     L = params.L_array
     fp = params.lp_filters
-    qfp = params.dfb_filters
 
     copyto!(ws.current, image)
 
@@ -80,10 +79,11 @@ function nsct_forward!(
         input_j = (j == 1) ? ws.current : ws.coarse_bufs[j - 1]
         nsp_decompose!(
             ws.coarse_bufs[j], ws.bp_bufs[j], input_j, fp, j;
-            tmp = ws.tmp_buf, tmp2 = ws.tmp_buf2
+            tmp = ws.tmp_buf, tmp2 = ws.tmp_buf2,
+            h_j = ws.lp_h_cache[j], g_j = ws.lp_g_cache[j]
         )
         _arena_reset!(ws.scratch)
-        _nsdfb_decompose_into!(coeffs.subbands[j], ws.bp_bufs[j], L[j], qfp, j, ws.scratch)
+        _nsdfb_decompose_into!(coeffs.subbands[j], ws.bp_bufs[j], L[j], ws.qup_cache[j], ws.scratch)
     end
     copyto!(coeffs.coarse, ws.coarse_bufs[J])
     return coeffs
@@ -130,32 +130,43 @@ In-place NSCT inverse pass.
 function nsct_inverse!(
         image::AbstractMatrix{T},
         coeffs::NSCTCoefficients{T},
-        ws::ContourletWorkspace{T}
-    ) where {T}
+        ws::ContourletWorkspace{T, Tf}
+    ) where {T, Tf}
     params = coeffs.params
     J = params.J
     fp = params.lp_filters
-    qfp = params.dfb_filters
 
     # Seed coarse_bufs[J] from stored coefficients.
     copyto!(ws.coarse_bufs[J], coeffs.coarse)
 
     for j in J:-1:1
         _arena_reset!(ws.scratch)
-        bp = _nsdfb_reconstruct_into!(ws.bp_bufs[j], coeffs.subbands[j], qfp, j, ws.scratch)
+        bp = _nsdfb_reconstruct_into!(ws.bp_bufs[j], coeffs.subbands[j], ws.qup_cache[j], ws.scratch)
         if j > 1
             nsp_reconstruct!(
                 ws.coarse_bufs[j - 1], ws.coarse_bufs[j], bp, fp, j;
-                tmp = ws.tmp_buf, tmp2 = ws.tmp_buf2
+                tmp = ws.tmp_buf, tmp2 = ws.tmp_buf2, g_j = ws.lp_g_cache[j]
             )
         else
             nsp_reconstruct!(
                 image, ws.coarse_bufs[j], bp, fp, j;
-                tmp = ws.tmp_buf, tmp2 = ws.tmp_buf2
+                tmp = ws.tmp_buf, tmp2 = ws.tmp_buf2, g_j = ws.lp_g_cache[j]
             )
         end
     end
     return image
+end
+
+# Grow the workspace scratch arena to its steady-state size by running one forward
+# + inverse pass on zeros (the per-call allocation sequence is deterministic, so
+# afterwards the first real call allocates nothing).  Called from
+# `make_nsct_workspace(...; prewarm=true)`.
+function _prewarm_nsct!(ws::ContourletWorkspace{Td}) where {Td}
+    img = zeros(Td, ws.image_size)
+    coeffs = similar_nsct_coefficients(ws.params, ws.image_size; Td = Td)
+    nsct_forward!(coeffs, img, ws)
+    nsct_inverse!(img, coeffs, ws)
+    return ws
 end
 
 """

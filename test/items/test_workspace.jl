@@ -80,6 +80,27 @@ end
     @test ws isa ContourletWorkspace{Float64}
 end
 
+@testitem "NSCT workspace path is allocation-free" begin
+    using Random
+    Random.seed!(43)
+    x = randn(64, 64)
+    p = ContourletParams(J = 2, L_array = [2, 3])
+    # Prewarm (default) grows the scratch arena and caches the à trous filters,
+    # so the workspace forward/inverse paths allocate nothing per call.
+    ws = make_nsct_workspace(Float64, (64, 64), p)
+    coeffs = similar_nsct_coefficients(p, (64, 64))
+    out = similar(x)
+    # One untimed call to ensure everything is compiled for these argument types.
+    nsct_forward!(coeffs, x, ws)
+    nsct_inverse!(out, coeffs, ws)
+    @test (@allocated nsct_forward!(coeffs, x, ws)) == 0
+    @test (@allocated nsct_inverse!(out, coeffs, ws)) == 0
+    # Results still match the allocating reference exactly (real-linear, bit-for-bit).
+    ref = nsct_forward(x, p)
+    @test coeffs.coarse == ref.coarse
+    @test all(coeffs.subbands[j][k] == ref.subbands[j][k] for j in 1:2 for k in eachindex(ref.subbands[j]))
+end
+
 @testitem "CT workspace PR after workspace_clear!" begin
     using Random
     Random.seed!(41)

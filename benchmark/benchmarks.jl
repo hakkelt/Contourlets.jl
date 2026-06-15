@@ -80,15 +80,24 @@ for sz in TEST_SIZES
 
     # Setup NSCT with J=2, L_array=[2, 3]
     p_nsct = ContourletParams(J = 2, L_array = [2, 3])
+    ws_nsct = make_nsct_workspace(Float64, (sz, sz), p_nsct)
+    coeffs_nsct_alloc = similar_nsct_coefficients(p_nsct, (sz, sz))
 
     # NSCT Forward: allocating version
     SUITE["NSCT"][sz_str]["forward"] = @benchmarkable nsct_forward($img, $p_nsct)
+
+    # NSCT Forward: in-place with workspace
+    SUITE["NSCT"][sz_str]["forward!"] = @benchmarkable nsct_forward!($coeffs_nsct_alloc, $img, $ws_nsct)
 
     # Get NSCT coefficients for inverse benchmark
     coeffs_nsct = nsct_forward(img, p_nsct)
 
     # NSCT Inverse: allocating version
     SUITE["NSCT"][sz_str]["inverse"] = @benchmarkable nsct_inverse($coeffs_nsct)
+
+    # NSCT Inverse: in-place with workspace
+    img_out_nsct = similar(img)
+    SUITE["NSCT"][sz_str]["inverse!"] = @benchmarkable nsct_inverse!($img_out_nsct, $coeffs_nsct, $ws_nsct)
 
     # ────────────────────────────────────────────────────────────────────────────
     # Laplacian Pyramid (LP): decomposition and reconstruction

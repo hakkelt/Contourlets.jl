@@ -73,7 +73,14 @@ for n in SIZES
     x = randn(Float32, n, n)
     xg = to_gpu(GPU_BACKEND, x)
     p = ContourletParams(J = 3, L_array = parabolic_levels(3))
+    
+    ws_cpu = make_workspace(x, p)
+    ws_gpu = make_workspace(xg, p)
+    c_cpu_alloc = similar_coefficients(p, (n, n), Td=Float32, M=typeof(x))
+    c_gpu_alloc = similar_coefficients(p, (n, n), Td=Float32, M=typeof(xg))
+
     benchmark_case("ct forward", "$(n)x$(n)", () -> ct_forward(x, p), () -> ct_forward(xg, p))
+    benchmark_case("ct forward!", "$(n)x$(n)", () -> ct_forward!(c_cpu_alloc, x, ws_cpu), () -> ct_forward!(c_gpu_alloc, xg, ws_gpu))
 end
 
 print_header("Contourlet Transform — inverse")
@@ -81,12 +88,25 @@ for n in SIZES
     x = randn(Float32, n, n)
     xg = to_gpu(GPU_BACKEND, x)
     p = ContourletParams(J = 3, L_array = parabolic_levels(3))
+    
+    ws_cpu = make_workspace(x, p)
+    ws_gpu = make_workspace(xg, p)
+    
     c_cpu = ct_forward(x, p)
     c_gpu = ct_forward(xg, p)
+    
+    x_out_cpu = similar(x)
+    x_out_gpu = similar(xg)
+    
     benchmark_case(
         "ct inverse", "$(n)x$(n)",
         () -> ct_inverse(c_cpu),
         () -> ct_inverse(c_gpu, xg),
+    )
+    benchmark_case(
+        "ct inverse!", "$(n)x$(n)",
+        () -> ct_inverse!(x_out_cpu, c_cpu, ws_cpu),
+        () -> ct_inverse!(x_out_gpu, c_gpu, ws_gpu),
     )
 end
 
@@ -95,7 +115,14 @@ for n in SIZES
     x = randn(Float32, n, n)
     xg = to_gpu(GPU_BACKEND, x)
     p = ContourletParams(J = 2, L_array = [2, 3])
+    
+    ws_cpu = make_nsct_workspace(x, p)
+    ws_gpu = make_nsct_workspace(xg, p)
+    c_cpu_alloc = similar_nsct_coefficients(p, (n, n), Td=Float32, M=typeof(x))
+    c_gpu_alloc = similar_nsct_coefficients(p, (n, n), Td=Float32, M=typeof(xg))
+    
     benchmark_case("nsct forward", "$(n)x$(n)", () -> nsct_forward(x, p), () -> nsct_forward(xg, p))
+    benchmark_case("nsct forward!", "$(n)x$(n)", () -> nsct_forward!(c_cpu_alloc, x, ws_cpu), () -> nsct_forward!(c_gpu_alloc, xg, ws_gpu))
 end
 
 print_header("Nonsubsampled Contourlet Transform — inverse")
@@ -103,12 +130,25 @@ for n in SIZES
     x = randn(Float32, n, n)
     xg = to_gpu(GPU_BACKEND, x)
     p = ContourletParams(J = 2, L_array = [2, 3])
+    
+    ws_cpu = make_nsct_workspace(x, p)
+    ws_gpu = make_nsct_workspace(xg, p)
+    
     c_cpu = nsct_forward(x, p)
     c_gpu = nsct_forward(xg, p)
+    
+    x_out_cpu = similar(x)
+    x_out_gpu = similar(xg)
+    
     benchmark_case(
         "nsct inverse", "$(n)x$(n)",
         () -> nsct_inverse(c_cpu),
         () -> nsct_inverse(c_gpu, xg),
+    )
+    benchmark_case(
+        "nsct inverse!", "$(n)x$(n)",
+        () -> nsct_inverse!(x_out_cpu, c_cpu, ws_cpu),
+        () -> nsct_inverse!(x_out_gpu, c_gpu, ws_gpu),
     )
 end
 

@@ -12,6 +12,11 @@ are not repeated here.
    are doing (performance, benchmarking, JET, packaging, docs).
 3. **Honour the invariants** in the table below — every change must keep them.
 
+## Agent Rules
+
+- **Commit Message Formatting**: Follow the "Conventional Commits" format with the structure `type(scope): subject`. For complex changes, provide a detailed description (including performance numbers or context) separated by a blank line. For simple commits, a detailed description is optional.
+- **Committing Changes**: ONLY commit code upon explicit instruction from the user.
+
 ---
 
 ## Skills (`.agents/skills/`)
@@ -153,15 +158,20 @@ Run from the package root. For general benchmarking/JET workflow see the
 `julia-bench` / `julia-jet` skills; the commands below are the project entry
 points.
 
-**Tests** (filtered to this package via TestItemRunner):
+**Tests**:
+Run tests through `test/runtests.jl`. It supports filtering by name and tag using a comma-separated argument.
+
 ```bash
-julia --project=. --startup-file=no -e '
-using TestItemRunner
-@run_package_tests filter=ti -> contains(ti.filename, "Contourlets/test/") verbose=true
-'
+# Run all tests
+julia --project -e 'using Pkg; Pkg.test()'
+# OR
+julia --project=test test/runtests.jl
+
+# Run focused tests by passing tags (starting with :) or names
+julia --project=test test/runtests.jl :ct,:gpu
+julia --project=test test/runtests.jl "make_nsct_workspace (type-first positional API)"
 ```
-Swap the filter for a single file (`contains(ti.filename, "test_transforms")`),
-a tag (`:ct in ti.tags`), or quality-only (`:quality in ti.tags`).
+Enable verbose output by setting `CONTOURLETS_TEST_VERBOSE=true`.
 
 **Benchmarks** — smoke test, then revision comparison:
 ```bash

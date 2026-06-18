@@ -63,9 +63,13 @@ end
 # stored matrix type matches `typeof(ref)`, otherwise `similar(ref, m, n)`.  The
 # type match means a host arena only ever serves host arrays and a device arena
 # only device arrays, so mixed/absent arenas fall back to `similar` safely.
+_base_array_type(::Type{T}) where {T} = T
+_base_array_type(::Type{SubArray{T, N, P, I, L}}) where {T, N, P, I, L} = _base_array_type(P)
+
 function _scratch_like(ref::R, m::Int, n::Int) where {R <: AbstractMatrix}
     a = _active_arena()
-    if a isa ScratchArena{R}
+    B = _base_array_type(R)
+    if a isa ScratchArena{B}
         return _arena_take!(a, ref, m, n)
     end
     return similar(ref, m, n)
@@ -91,25 +95,20 @@ iterations with the mutating `!` entry points.
     A `ContourletWorkspace` is **not thread-safe**.  Create a separate workspace
     per thread (e.g., `[make_workspace(params, sz) for _ in 1:Threads.nthreads()]`).
 """
-struct ContourletWorkspace{Td <: Number, Tf <: AbstractFloat}
+struct ContourletWorkspace{Td <: Number, Tf <: AbstractFloat, M <: AbstractMatrix{Td}}
     params::ContourletParams{Tf}     # real filter precision Tf
     image_size::Tuple{Int, Int}
 
-    # Per-level intermediate buffers (length = J), at the data type Td.
-    coarse_bufs::Vector{Matrix{Td}}  # coarse at each LP level
-    bp_bufs::Vector{Matrix{Td}}      # bandpass at each LP level
-
-    # Scratch buffers for separable conv and reconstruction
-    tmp_buf::Matrix{Td}              # size = image_size (for in-place conv)
-    tmp_buf2::Matrix{Td}             # second scratch (separable-conv intermediate)
-    current::Matrix{Td}              # running coarse (size changes per level for CT)
-
-    # Grow-once pool for the directional-stage transients (DFB / NSDFB).
-    scratch::ScratchArena{Matrix{Td}}
+    # Grow-once pool for all temporary buffers (LP coarse/bandpass, transients).
+    # Separate arenas for forward and inverse passes because they traverse the
+    # pyramid levels in opposite orders, yielding different buffer size sequences.
+    fwd_scratch::ScratchArena{M}
+    inv_scratch::ScratchArena{M}
 
     # Per-level upsampled NSDFB filters (empty for a CT workspace, which uses the
     # un-upsampled ladder filter directly).  Precomputed once at construction.
     qup_cache::Vector{_QupNT{Tf}}
+
 
     # Per-level à trous upsampled LP analysis/synthesis filters for the NSP stage
     # (the scaled synthesis `g` serves both decompose and reconstruct).  Empty for
@@ -117,6 +116,8 @@ struct ContourletWorkspace{Td <: Number, Tf <: AbstractFloat}
     lp_h_cache::Vector{Vector{Tf}}
     lp_g_cache::Vector{Vector{Tf}}
 end
+
+Base.eltype(::ContourletWorkspace{Td}) where {Td} = Td
 
 """
     make_workspace(params::ContourletParams, image_size::Tuple{Int,Int}; T=Float64)
@@ -135,7 +136,7 @@ julia> p = ContourletParams(J = 2, L_array = [1, 2]);
 julia> ws = make_workspace(p, (64, 64));
 
 julia> typeof(ws)
-ContourletWorkspace{Float64, Float64}
+ContourletWorkspace{Float64, Float64, Matrix{Float64}}
 ```
 """
 make_workspace(
@@ -144,34 +145,32 @@ make_workspace(
 ) =
     make_workspace(params, image_size; T = T, kwargs...)
 
+"""
+    make_workspace(image::AbstractMatrix, params::ContourletParams) -> ContourletWorkspace
+
+Allocate a `ContourletWorkspace` using the array type and element type of `image`.
+This is required for allocation-free execution on GPU arrays.
+"""
+make_workspace(
+    image::AbstractMatrix, params::ContourletParams{Tp}; kwargs...
+) where {Tp} =
+    make_workspace(params, size(image); T = eltype(image), M = typeof(similar(image, promote_type(Tp, eltype(image)), 0, 0)), kwargs...)
+
 function make_workspace(
         params::ContourletParams{Tp},
         image_size::Tuple{Int, Int};
         T::Type{<:Number} = Float64,
+        M::Type{<:AbstractMatrix} = Matrix{promote_type(Tp, T)},
         prewarm::Bool = true
     ) where {Tp}
     Td = promote_type(Tp, T)         # data buffer type (may be complex)
     Tf = _filter_eltype(Td)          # real filter precision
-    J = params.J
-    n1, n2 = image_size
-    coarse_bufs = Vector{Matrix{Td}}(undef, J)
-    bp_bufs = Vector{Matrix{Td}}(undef, J)
-    c1, c2 = n1, n2
-    for j in 1:J
-        d1, d2 = cld(c1, 2), cld(c2, 2)
-        coarse_bufs[j] = zeros(Td, d1, d2)
-        bp_bufs[j] = zeros(Td, c1, c2)
-        c1, c2 = d1, d2
-    end
-    tmp_buf = zeros(Td, n1, n2)
-    tmp_buf2 = zeros(Td, n1, n2)
-    current = zeros(Td, n1, n2)
     p2 = _convert_params(Tf, params)
     # CT uses the un-upsampled ladder/LP filters directly, so no per-level filter
     # caches are needed.
-    ws = ContourletWorkspace{Td, Tf}(
-        p2, image_size, coarse_bufs, bp_bufs, tmp_buf, tmp_buf2, current,
-        ScratchArena{Matrix{Td}}(), _QupNT{Tf}[], Vector{Tf}[], Vector{Tf}[]
+    ws = ContourletWorkspace{Td, Tf, M}(
+        p2, image_size, ScratchArena{M}(), ScratchArena{M}(),
+        _QupNT{Tf}[], Vector{Tf}[], Vector{Tf}[]
     )
     # Grow the scratch arena to its steady-state size now (forward + inverse), so
     # the first user call is already allocation-free.
@@ -198,27 +197,22 @@ function make_nsct_workspace(
         params::ContourletParams{Tp},
         image_size::Tuple{Int, Int};
         T::Type{<:Number} = Float64,
+        M::Type{<:AbstractMatrix} = Matrix{promote_type(Tp, T)},
         prewarm::Bool = true
     ) where {Tp}
     Td = promote_type(Tp, T)         # data buffer type (may be complex)
     Tf = _filter_eltype(Td)          # real filter precision
-    J = params.J
-    n1, n2 = image_size
-    coarse_bufs = [zeros(Td, n1, n2) for _ in 1:J]
-    bp_bufs = [zeros(Td, n1, n2) for _ in 1:J]
-    tmp_buf = zeros(Td, n1, n2)
-    tmp_buf2 = zeros(Td, n1, n2)
-    current = zeros(Td, n1, n2)
     p2 = _convert_params(Tf, params)
+    J = p2.J
     # Precompute the à trous upsampled NSDFB and LP filters once per LP level (the
     # à trous factor is 2^(j-1)); the `!` paths then never rebuild them per call.
     qup_cache = _QupNT{Tf}[_upsample_qfp_1d(p2.dfb_filters, 2^(j - 1), Tf) for j in 1:J]
     lp = p2.lp_filters
     lp_h_cache = Vector{Tf}[upsample_filter(lp.h, 2^(j - 1)) for j in 1:J]
     lp_g_cache = Vector{Tf}[Tf(_NSP_SYNTH_SCALE) .* upsample_filter(lp.g, 2^(j - 1)) for j in 1:J]
-    ws = ContourletWorkspace{Td, Tf}(
-        p2, image_size, coarse_bufs, bp_bufs, tmp_buf, tmp_buf2, current,
-        ScratchArena{Matrix{Td}}(), qup_cache, lp_h_cache, lp_g_cache
+    ws = ContourletWorkspace{Td, Tf, M}(
+        p2, image_size, ScratchArena{M}(), ScratchArena{M}(),
+        qup_cache, lp_h_cache, lp_g_cache
     )
     prewarm && _prewarm_nsct!(ws)
     return ws
@@ -254,23 +248,4 @@ function estimate_workspace_size(
     end
     total += 3 * n1 * n2    # tmp_buf + tmp_buf2 + current
     return total
-end
-
-"""
-    workspace_clear!(ws::ContourletWorkspace)
-
-Zero all numeric buffers in `ws`.  Call this when the algorithmic state should be
-reset (e.g., when switching to a different image in the same iterative loop).
-"""
-function workspace_clear!(ws::ContourletWorkspace{T}) where {T}
-    fill!(ws.tmp_buf, zero(T))
-    fill!(ws.tmp_buf2, zero(T))
-    fill!(ws.current, zero(T))
-    for b in ws.coarse_bufs
-        fill!(b, zero(T))
-    end
-    for b in ws.bp_bufs
-        fill!(b, zero(T))
-    end
-    return ws
 end

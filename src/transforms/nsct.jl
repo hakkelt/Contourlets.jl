@@ -33,7 +33,7 @@ function nsct_forward(
         workspace::Union{ContourletWorkspace, Nothing} = nothing
     )
     if workspace !== nothing
-        Tw = eltype(workspace.tmp_buf)   # the workspace dictates the data type
+        Tw = eltype(workspace)   # the workspace dictates the data type
         coeffs = similar_nsct_coefficients(params, size(image); Td = Tw)
         img = Tw === eltype(image) ? image : Tw.(image)
         return nsct_forward!(coeffs, img, workspace)
@@ -71,21 +71,26 @@ function nsct_forward!(
     L = params.L_array
     fp = params.lp_filters
 
-    copyto!(ws.current, image)
+    _arena_reset!(ws.fwd_scratch)
+    _with_arena(ws.fwd_scratch) do
+        current = image
+        for j in 1:J
+            n1, n2 = size(current)
+            coarse_j = _scratch_like(current, n1, n2)
+            bp_j = _scratch_like(current, n1, n2)
+            tmp_j = _scratch_like(current, n1, n2)
+            tmp2_j = _scratch_like(current, n1, n2)
 
-    for j in 1:J
-        # Use coarse_bufs[j] as output to avoid aliasing ws.current with itself.
-        # For j=1 input is ws.current; for j>1 input is coarse_bufs[j-1].
-        input_j = (j == 1) ? ws.current : ws.coarse_bufs[j - 1]
-        nsp_decompose!(
-            ws.coarse_bufs[j], ws.bp_bufs[j], input_j, fp, j;
-            tmp = ws.tmp_buf, tmp2 = ws.tmp_buf2,
-            h_j = ws.lp_h_cache[j], g_j = ws.lp_g_cache[j]
-        )
-        _arena_reset!(ws.scratch)
-        _nsdfb_decompose_into!(coeffs.subbands[j], ws.bp_bufs[j], L[j], ws.qup_cache[j], ws.scratch)
+            nsp_decompose!(
+                coarse_j, bp_j, current, fp, j;
+                tmp = tmp_j, tmp2 = tmp2_j,
+                h_j = ws.lp_h_cache[j], g_j = ws.lp_g_cache[j]
+            )
+            _nsdfb_decompose_into!(coeffs.subbands[j], bp_j, L[j], ws.qup_cache[j], ws.fwd_scratch)
+            current = coarse_j
+        end
+        copyto!(coeffs.coarse, current)
     end
-    copyto!(coeffs.coarse, ws.coarse_bufs[J])
     return coeffs
 end
 
@@ -136,22 +141,32 @@ function nsct_inverse!(
     J = params.J
     fp = params.lp_filters
 
-    # Seed coarse_bufs[J] from stored coefficients.
-    copyto!(ws.coarse_bufs[J], coeffs.coarse)
+    _arena_reset!(ws.inv_scratch)
+    _with_arena(ws.inv_scratch) do
+        current = _scratch_like(image, size(coeffs.coarse, 1), size(coeffs.coarse, 2))
+        copyto!(current, coeffs.coarse)
 
-    for j in J:-1:1
-        _arena_reset!(ws.scratch)
-        bp = _nsdfb_reconstruct_into!(ws.bp_bufs[j], coeffs.subbands[j], ws.qup_cache[j], ws.scratch)
-        if j > 1
-            nsp_reconstruct!(
-                ws.coarse_bufs[j - 1], ws.coarse_bufs[j], bp, fp, j;
-                tmp = ws.tmp_buf, tmp2 = ws.tmp_buf2, g_j = ws.lp_g_cache[j]
-            )
-        else
-            nsp_reconstruct!(
-                image, ws.coarse_bufs[j], bp, fp, j;
-                tmp = ws.tmp_buf, tmp2 = ws.tmp_buf2, g_j = ws.lp_g_cache[j]
-            )
+        for j in J:-1:1
+            n1, n2 = size(current)
+            bp = _scratch_like(current, n1, n2)
+            _nsdfb_reconstruct_into!(bp, coeffs.subbands[j], ws.qup_cache[j], ws.inv_scratch)
+
+            tmp_j = _scratch_like(current, n1, n2)
+            tmp2_j = _scratch_like(current, n1, n2)
+
+            if j > 1
+                next_coarse = _scratch_like(current, n1, n2)
+                nsp_reconstruct!(
+                    next_coarse, current, bp, fp, j;
+                    tmp = tmp_j, tmp2 = tmp2_j, g_j = ws.lp_g_cache[j]
+                )
+                current = next_coarse
+            else
+                nsp_reconstruct!(
+                    image, current, bp, fp, j;
+                    tmp = tmp_j, tmp2 = tmp2_j, g_j = ws.lp_g_cache[j]
+                )
+            end
         end
     end
     return image

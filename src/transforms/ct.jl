@@ -37,7 +37,7 @@ function ct_forward(
         workspace::Union{ContourletWorkspace, Nothing} = nothing
     )
     if workspace !== nothing
-        Tw = eltype(workspace.tmp_buf)   # the workspace dictates the data type
+        Tw = eltype(workspace)   # the workspace dictates the data type
         coeffs = similar_coefficients(params, size(image); Td = Tw)
         img = Tw === eltype(image) ? image : Tw.(image)
         return ct_forward!(coeffs, img, workspace)
@@ -76,28 +76,25 @@ function ct_forward!(
     fp = params.lp_filters
     qfp = params.dfb_filters
 
-    # ws.current holds the full-size copy for level 1; levels 2..J use coarse_bufs[j-1]
-    copyto!(ws.current, image)
-
-    # Activate the scratch arena for the whole call: the DFB transients
-    # (`_resamp`/`_sefilter2`/`_extend2`) draw from it. Reset once — the per-call
-    # allocation sequence is deterministic, so subsequent calls reuse the buffers.
-    _arena_reset!(ws.scratch)
-    _with_arena(ws.scratch) do
+    _arena_reset!(ws.fwd_scratch)
+    _with_arena(ws.fwd_scratch) do
+        current = image
         for j in 1:J
-            input_j = (j == 1) ? ws.current : ws.coarse_bufs[j - 1]
-            n1, n2 = size(input_j)
-            tmp_j = @view ws.tmp_buf[1:n1, 1:n2]    # same-size scratch
-            tmp2_j = @view ws.tmp_buf2[1:n1, 1:n2]
+            n1, n2 = size(current)
+            coarse_j = _scratch_like(current, cld(n1, 2), cld(n2, 2))
+            bp_j = _scratch_like(current, n1, n2)
+            tmp_j = _scratch_like(current, n1, n2)
+            tmp2_j = _scratch_like(current, n1, n2)
 
-            lp_decompose!(ws.coarse_bufs[j], ws.bp_bufs[j], input_j, fp; tmp = tmp_j, tmp2 = tmp2_j)
-            sbs = dfb_decompose(ws.bp_bufs[j], L[j], qfp)   # DFB transients use the arena
+            lp_decompose!(coarse_j, bp_j, current, fp; tmp = tmp_j, tmp2 = tmp2_j)
+            sbs = dfb_decompose(bp_j, L[j], qfp)   # DFB transients use the arena
             for (k, sb) in enumerate(sbs)
                 copyto!(coeffs.subbands[j][k], sb)
             end
+            current = coarse_j
         end
+        copyto!(coeffs.coarse, current)
     end
-    copyto!(coeffs.coarse, ws.coarse_bufs[J])
     return coeffs
 end
 
@@ -149,22 +146,22 @@ function ct_inverse!(
     fp = params.lp_filters
     qfp = params.dfb_filters
 
-    # Seed coarse_bufs[J] from the stored coarse coefficients
-    copyto!(ws.coarse_bufs[J], coeffs.coarse)
+    _arena_reset!(ws.inv_scratch)
+    _with_arena(ws.inv_scratch) do
+        current = _scratch_like(image, size(coeffs.coarse, 1), size(coeffs.coarse, 2))
+        copyto!(current, coeffs.coarse)
 
-    _arena_reset!(ws.scratch)
-    _with_arena(ws.scratch) do
         for j in J:-1:1
             bp = dfb_reconstruct(coeffs.subbands[j], qfp)   # DFB transients use the arena
             n1, n2 = size(bp)
-            tmp_j = @view ws.tmp_buf[1:n1, 1:n2]
-            tmp2_j = @view ws.tmp_buf2[1:n1, 1:n2]
+            tmp_j = _scratch_like(current, n1, n2)
+            tmp2_j = _scratch_like(current, n1, n2)
             if j > 1
-                # Output of reconstruction at level j is coarse input for level j-1.
-                # coarse_bufs[j-1] has exactly that size: (n1/2^(j-1), n2/2^(j-1)).
-                lp_reconstruct!(ws.coarse_bufs[j - 1], ws.coarse_bufs[j], bp, fp; tmp = tmp_j, tmp2 = tmp2_j)
+                next_coarse = _scratch_like(current, n1, n2)
+                lp_reconstruct!(next_coarse, current, bp, fp; tmp = tmp_j, tmp2 = tmp2_j)
+                current = next_coarse
             else
-                lp_reconstruct!(image, ws.coarse_bufs[j], bp, fp; tmp = tmp_j, tmp2 = tmp2_j)
+                lp_reconstruct!(image, current, bp, fp; tmp = tmp_j, tmp2 = tmp2_j)
             end
         end
     end

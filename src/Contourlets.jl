@@ -91,6 +91,6 @@ export
 
     # Workspace
     make_workspace, make_nsct_workspace,
-    estimate_workspace_size, workspace_clear!
+    estimate_workspace_size
 
 end # module

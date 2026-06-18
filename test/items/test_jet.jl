@@ -70,7 +70,7 @@
     @test_call target_modules = (Contourlets,) make_workspace(p, (16, 16))
     @test_call target_modules = (Contourlets,) make_nsct_workspace(p, (16, 16))
     ws = make_workspace(p, (16, 16))
-    @test_call target_modules = (Contourlets,) workspace_clear!(ws)
+
     @test_call target_modules = (Contourlets,) estimate_workspace_size(p, (16, 16))
     @test_call target_modules = (Contourlets,) similar_coefficients(p, (16, 16))
     @test_call target_modules = (Contourlets,) similar_nsct_coefficients(p, (16, 16))

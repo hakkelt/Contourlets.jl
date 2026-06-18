@@ -157,10 +157,10 @@ end
 _convert_params(::Type{Tf}, p::ContourletParams{Tf}) where {Tf} = p
 _convert_params(::Type{Tf}, p::ContourletParams) where {Tf <: AbstractFloat} =
     ContourletParams{Tf}(
-        p.J, p.L_array,
-        FilterPair{Tf}(Tf.(p.lp_filters.h), Tf.(p.lp_filters.g)),
-        _convert_qfp(Tf, p.dfb_filters)
-    )
+    p.J, p.L_array,
+    FilterPair{Tf}(Tf.(p.lp_filters.h), Tf.(p.lp_filters.g)),
+    _convert_qfp(Tf, p.dfb_filters)
+)
 
 """
     ContourletCoefficients{Td, Tf, A}

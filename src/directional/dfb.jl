@@ -55,25 +55,32 @@ end
 # Cyclic column/row roll: forward = x[:, [2:end; 1]]; back = x[:, [end; 1:end-1]].
 # Expressed via `circshift` so the roll is a single vectorised op (and avoids
 # index-vector gathers that would force scalar indexing on the GPU).
-_roll_cols(x; back::Bool = false) = circshift(x, (0, back ? 1 : -1))
-_roll_rows(x; back::Bool = false) = circshift(x, (back ? 1 : -1, 0))
+function _roll_cols(x; back::Bool = false)
+    y = _scratch_like(x, size(x, 1), size(x, 2))
+    return circshift!(y, x, (0, back ? 1 : -1))
+end
+
+function _roll_rows(x; back::Bool = false)
+    y = _scratch_like(x, size(x, 1), size(x, 2))
+    return circshift!(y, x, (back ? 1 : -1, 0))
+end
 
 # Zero matrix on the same device/array type as `ref` (so the polyphase
 # reconstructors stay on the GPU when given device arrays).
 _zeros_like(ref::AbstractArray, dims::Vararg{Int}) =
-    fill!(similar(ref, dims...), zero(eltype(ref)))
+    fill!(_scratch_like(ref, dims...), zero(eltype(ref)))
 
 # ── Quincunx polyphase (types '1r', '2c') ─────────────────────────────────────
 
 function _qpdec(x::AbstractMatrix, type::Symbol)
     if type === :q1r            # Q1 = R2 * D1 * R3
         y = _resamp(x, 2)
-        p0 = _resamp(y[1:2:end, :], 3)
-        p1 = _resamp(_roll_cols(y[2:2:end, :]), 3)
+        p0 = _resamp(@view(y[1:2:end, :]), 3)
+        p1 = _resamp(_roll_cols(@view(y[2:2:end, :])), 3)
     elseif type === :q2c        # Q2 = R4 * D2 * R1
         y = _resamp(x, 4)
-        p0 = _resamp(y[:, 1:2:end], 1)
-        p1 = _resamp(_roll_rows(y[:, 2:2:end]), 1)
+        p0 = _resamp(@view(y[:, 1:2:end]), 1)
+        p1 = _resamp(_roll_rows(@view(y[:, 2:2:end])), 1)
     else
         throw(ArgumentError("unsupported quincunx type $type"))
     end
@@ -102,17 +109,17 @@ end
 
 function _ppdec(x::AbstractMatrix, type::Int)
     if type == 1
-        p0 = _resamp(x[1:2:end, :], 3)
-        p1 = _resamp(_roll_cols(x[2:2:end, :]), 3)
+        p0 = _resamp(@view(x[1:2:end, :]), 3)
+        p1 = _resamp(_roll_cols(@view(x[2:2:end, :])), 3)
     elseif type == 2
-        p0 = _resamp(x[1:2:end, :], 4)
-        p1 = _resamp(x[2:2:end, :], 4)
+        p0 = _resamp(@view(x[1:2:end, :]), 4)
+        p1 = _resamp(@view(x[2:2:end, :]), 4)
     elseif type == 3
-        p0 = _resamp(x[:, 1:2:end], 1)
-        p1 = _resamp(_roll_rows(x[:, 2:2:end]), 1)
+        p0 = _resamp(@view(x[:, 1:2:end]), 1)
+        p1 = _resamp(_roll_rows(@view(x[:, 2:2:end])), 1)
     elseif type == 4
-        p0 = _resamp(x[:, 1:2:end], 2)
-        p1 = _resamp(x[:, 2:2:end], 2)
+        p0 = _resamp(@view(x[:, 1:2:end]), 2)
+        p1 = _resamp(@view(x[:, 2:2:end]), 2)
     else
         throw(ArgumentError("parallelogram type must be 1..4"))
     end
@@ -288,8 +295,8 @@ function _backsamp!(y::Vector{<:AbstractMatrix})
     if n == 1
         for k in 1:2
             yk = _resamp(y[k], 4)
-            yk[:, 1:2:end] = _resamp(yk[:, 1:2:end], 1)
-            yk[:, 2:2:end] = _resamp(yk[:, 2:2:end], 1)
+            yk[:, 1:2:end] = _resamp(@view(yk[:, 1:2:end]), 1)
+            yk[:, 2:2:end] = _resamp(@view(yk[:, 2:2:end]), 1)
             y[k] = yk
         end
     elseif n > 2
@@ -309,9 +316,9 @@ function _rebacksamp!(y::Vector{<:AbstractMatrix})
     n = round(Int, log2(length(y)))
     if n == 1
         for k in 1:2
-            yk = copy(y[k])
-            yk[:, 1:2:end] = _resamp(yk[:, 1:2:end], 2)
-            yk[:, 2:2:end] = _resamp(yk[:, 2:2:end], 2)
+            yk = copyto!(_scratch_like(y[k], size(y[k])...), y[k])
+            yk[:, 1:2:end] = _resamp(@view(yk[:, 1:2:end]), 2)
+            yk[:, 2:2:end] = _resamp(@view(yk[:, 2:2:end]), 2)
             y[k] = _resamp(yk, 3)
         end
     elseif n > 2
@@ -356,7 +363,7 @@ function _dfbdec_l(x::AbstractMatrix{Td}, f::Vector{Tf}, n::Int) where {Td, Tf}
     _backsamp!(y)
     # Flip the order of the second half channels.
     half = 2^(n - 1)
-    y[(half + 1):end] = reverse(y[(half + 1):end])
+    reverse!(@view y[(half + 1):end])
     return y
 end
 
@@ -366,7 +373,7 @@ function _dfbrec_l(y::Vector{<:AbstractMatrix{Td}}, f::Vector{Tf}) where {Td, Tf
     y = copy(y)
     M = typeof(y[1])
     half = 2^(n - 1)
-    y[(half + 1):end] = reverse(y[(half + 1):end])
+    reverse!(@view y[(half + 1):end])
     _rebacksamp!(y)
     if n == 1
         return _fbrec_l(y[1], y[2], f, :q, :q1r, :qper_col)

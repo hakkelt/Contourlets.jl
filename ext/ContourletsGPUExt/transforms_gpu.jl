@@ -18,14 +18,14 @@
 # ── Contourlet Transform ──────────────────────────────────────────────────────
 
 """
-    ct_forward(image::AbstractGPUMatrix, params::ContourletParams) -> ContourletCoefficients
+    ct_forward(image::_AbstractGPUMatrix, params::ContourletParams) -> ContourletCoefficients
 
 GPU Discrete Contourlet Transform forward pass.  Both the Laplacian-pyramid and
 the directional filter-bank stages run on the device, and the returned
 coefficients keep their arrays on the device (matching the CPU `ct_forward` to
 Float32 precision).  `ct_inverse(coeffs)` then reconstructs on the device too.
 """
-function ct_forward(image::AbstractGPUMatrix, params::ContourletParams)
+function ct_forward(image::_AbstractGPUMatrix, params::ContourletParams)
     Td = Contourlets._data_eltype(image)        # data type (real or complex)
     Tf = Contourlets._filter_eltype(Td)         # real filter precision
     p = Contourlets._convert_params(Tf, params)
@@ -70,11 +70,11 @@ end
 # ── Nonsubsampled Contourlet Transform ────────────────────────────────────────
 
 """
-    nsct_forward(image::AbstractGPUMatrix, params::ContourletParams) -> NSCTCoefficients
+    nsct_forward(image::_AbstractGPUMatrix, params::ContourletParams) -> NSCTCoefficients
 
 GPU Nonsubsampled Contourlet Transform forward pass (GPU pyramid + GPU NSDFB).
 """
-function nsct_forward(image::AbstractGPUMatrix, params::ContourletParams)
+function nsct_forward(image::_AbstractGPUMatrix, params::ContourletParams)
     Td = Contourlets._data_eltype(image)        # data type (real or complex)
     Tf = Contourlets._filter_eltype(Td)         # real filter precision
     p = Contourlets._convert_params(Tf, params)

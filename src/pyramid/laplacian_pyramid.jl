@@ -63,10 +63,7 @@ function lp_decompose!(
     # `bandpass` doubles as the scratch buffer of the second separable pass;
     # it is fully overwritten by the difference loop below.
     conv2d_sep!(tmp2, tmp, g, g; tmp = bandpass)
-    n1, n2 = size(image)
-    @inbounds for j in 1:n2, i in 1:n1
-        bandpass[i, j] = image[i, j] - tmp2[i, j]
-    end
+    @. bandpass = image - tmp2
     return coarse, bandpass
 end
 
@@ -120,8 +117,6 @@ function lp_reconstruct!(
     n1, n2 = size(bandpass)
     rect_upsample!(tmp, coarse)
     conv2d_sep!(image, tmp, g, g; tmp = tmp2)
-    @inbounds for j in 1:n2, i in 1:n1
-        image[i, j] = bandpass[i, j] + image[i, j]
-    end
+    @. image = bandpass + image
     return image
 end

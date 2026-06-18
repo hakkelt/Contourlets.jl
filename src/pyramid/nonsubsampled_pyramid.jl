@@ -76,10 +76,7 @@ function nsp_decompose!(
     end
     conv2d_sep!(coarse, image, h_j, h_j; boundary = :periodic, tmp = tmp2)
     conv2d_sep!(tmp, coarse, g_j, g_j; boundary = :periodic, tmp = tmp2)
-    n1, n2 = size(image)
-    @inbounds for j in 1:n2, i in 1:n1
-        bandpass[i, j] = image[i, j] - tmp[i, j]
-    end
+    @. bandpass = image - tmp
     return coarse, bandpass
 end
 
@@ -137,11 +134,9 @@ function nsp_reconstruct!(
         factor = 2^(level - 1)
         g_up = upsample_filter(fp.g, factor)
         g_j = Tf(_NSP_SYNTH_SCALE) .* (Tf === eltype(g_up) ? g_up : Tf.(g_up))
+
     end
     conv2d_sep!(tmp, coarse, g_j, g_j; boundary = :periodic, tmp = tmp2)
-    n1, n2 = size(bandpass)
-    @inbounds for j in 1:n2, i in 1:n1
-        image[i, j] = bandpass[i, j] + tmp[i, j]
-    end
+    @. image = bandpass + tmp
     return image
 end

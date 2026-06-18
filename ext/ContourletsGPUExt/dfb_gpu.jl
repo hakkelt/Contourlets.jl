@@ -23,7 +23,7 @@
     end
 end
 
-function Contourlets._resamp(x::AbstractGPUMatrix{T}, type::Int, shift::Int = 1) where {T}
+function Contourlets._resamp(x::_AbstractGPUMatrix{T}, type::Int, shift::Int = 1) where {T}
     (1 <= type <= 4) || throw(ArgumentError("resamp type must be 1..4"))
     m, n = size(x)
     backend = _gpu_backend(x)
@@ -83,7 +83,7 @@ end
 end
 
 function Contourlets._sefilter2(
-        x::AbstractGPUMatrix{Td}, f::Vector{Tf}, shift1::Int, shift2::Int, extmod::Symbol
+        x::_AbstractGPUMatrix{Td}, f::Vector{Tf}, shift1::Int, shift2::Int, extmod::Symbol
     ) where {Td, Tf}
     backend = _gpu_backend(x)
     L = length(f)

@@ -1,7 +1,7 @@
 # GPU KernelAbstractions kernels for the Contourlet primitive operations.
 #
 # Each CPU primitive (conv2d_sep!, shear!, rect_downsample!, …) is overloaded
-# for AbstractGPUMatrix via a specialised @kernel that runs on any KA backend
+# for _AbstractGPUMatrix via a specialised @kernel that runs on any KA backend
 # (CUDA, AMDGPU, oneAPI, Metal, CPU).
 
 # ── Separable 2-D convolution ─────────────────────────────────────────────────
@@ -54,16 +54,17 @@ end
 """
     conv2d_sep!(dst, src, h_row, h_col; boundary=:symmetric)
 
-GPU-specialised separable convolution.  Dispatches via `AbstractGPUMatrix`.
+GPU-specialised separable convolution.  Dispatches via `_AbstractGPUMatrix`.
 The filters `h_row` / `h_col` may be CPU or GPU vectors; they are moved to the
 device automatically.  Supports `:symmetric` and `:periodic` boundaries.
 """
 function conv2d_sep!(
-        dst::AbstractGPUMatrix{T},
-        src::AbstractGPUMatrix,
+        dst::_AbstractGPUMatrix{T},
+        src::_AbstractGPUMatrix,
         h_row::AbstractVector,
         h_col::AbstractVector;
-        boundary::Symbol = :symmetric
+        boundary::Symbol = :symmetric,
+        tmp = nothing
     ) where {T}
     bmode = if boundary === :symmetric
         1
@@ -85,13 +86,13 @@ function conv2d_sep!(
     h_col_d = _ensure_gpu(backend, Tf.(h_col))
     h_row_d = _ensure_gpu(backend, Tf.(h_row))
 
-    tmp = KernelAbstractions.allocate(backend, T, n1, n2)
+    _tmp = tmp === nothing ? KernelAbstractions.allocate(backend, T, n1, n2) : tmp
 
     kernel1 = _conv_cols_kernel!(backend, (16, 16))
-    kernel1(tmp, src, h_col_d, n1, n2, lc, cc, bmode; ndrange = (n1, n2))
+    kernel1(_tmp, src, h_col_d, n1, n2, lc, cc, bmode; ndrange = (n1, n2))
 
     kernel2 = _conv_rows_kernel!(backend, (16, 16))
-    kernel2(dst, tmp, h_row_d, n1, n2, lr, cr, bmode; ndrange = (n1, n2))
+    kernel2(dst, _tmp, h_row_d, n1, n2, lr, cr, bmode; ndrange = (n1, n2))
 
     return dst
 end
@@ -119,8 +120,8 @@ end
 end
 
 function shear!(
-        dst::AbstractGPUMatrix{T},
-        src::AbstractGPUMatrix{T},
+        dst::_AbstractGPUMatrix{T},
+        src::_AbstractGPUMatrix{T},
         dir::Symbol
     ) where {T}
     n1, n2 = size(src)
@@ -139,8 +140,8 @@ function shear!(
 end
 
 function inv_shear!(
-        dst::AbstractGPUMatrix{T},
-        src::AbstractGPUMatrix{T},
+        dst::_AbstractGPUMatrix{T},
+        src::_AbstractGPUMatrix{T},
         dir::Symbol
     ) where {T}
     n1, n2 = size(src)
@@ -170,7 +171,7 @@ end
     @inbounds dst[2i - 1, 2j - 1] = src[i, j]
 end
 
-function rect_downsample!(dst::AbstractGPUMatrix{T}, src::AbstractGPUMatrix{T}) where {T}
+function rect_downsample!(dst::_AbstractGPUMatrix{T}, src::_AbstractGPUMatrix{T}) where {T}
     d1, d2 = size(dst)
     backend = _gpu_backend(src)
     fill!(dst, zero(T))
@@ -179,7 +180,7 @@ function rect_downsample!(dst::AbstractGPUMatrix{T}, src::AbstractGPUMatrix{T}) 
     return dst
 end
 
-function rect_upsample!(dst::AbstractGPUMatrix{T}, src::AbstractGPUMatrix{T}) where {T}
+function rect_upsample!(dst::_AbstractGPUMatrix{T}, src::_AbstractGPUMatrix{T}) where {T}
     d1, d2 = size(src)
     backend = _gpu_backend(src)
     fill!(dst, zero(T))
@@ -219,7 +220,7 @@ end
     end
 end
 
-function qx_downsample!(dst::AbstractGPUMatrix{T}, src::AbstractGPUMatrix{T}) where {T}
+function qx_downsample!(dst::_AbstractGPUMatrix{T}, src::_AbstractGPUMatrix{T}) where {T}
     n1, n2 = size(src)
     d1, d2 = size(dst)
     backend = _gpu_backend(src)
@@ -230,7 +231,7 @@ function qx_downsample!(dst::AbstractGPUMatrix{T}, src::AbstractGPUMatrix{T}) wh
     return dst
 end
 
-function qx_upsample!(dst::AbstractGPUMatrix{T}, src::AbstractGPUMatrix{T}) where {T}
+function qx_upsample!(dst::_AbstractGPUMatrix{T}, src::_AbstractGPUMatrix{T}) where {T}
     n1, n2 = size(dst)
     d1, d2 = size(src)
     backend = _gpu_backend(src)
@@ -242,9 +243,9 @@ function qx_upsample!(dst::AbstractGPUMatrix{T}, src::AbstractGPUMatrix{T}) wher
 end
 
 """
-    qx_downsample(src::AbstractGPUMatrix) -> GPU Matrix
+    qx_downsample(src::_AbstractGPUMatrix) -> GPU Matrix
 """
-function qx_downsample(src::AbstractGPUMatrix{T}) where {T}
+function qx_downsample(src::_AbstractGPUMatrix{T}) where {T}
     n1, n2 = size(src)
     d1 = n1
     d2 = max(1, n2 ÷ 2)
@@ -254,9 +255,9 @@ function qx_downsample(src::AbstractGPUMatrix{T}) where {T}
 end
 
 """
-    qx_upsample(src::AbstractGPUMatrix, out_size) -> GPU Matrix
+    qx_upsample(src::_AbstractGPUMatrix, out_size) -> GPU Matrix
 """
-function qx_upsample(src::AbstractGPUMatrix{T}, out_size::Tuple{Int, Int}) where {T}
+function qx_upsample(src::_AbstractGPUMatrix{T}, out_size::Tuple{Int, Int}) where {T}
     backend = _gpu_backend(src)
     dst = KernelAbstractions.zeros(backend, T, out_size...)
     return qx_upsample!(dst, src)
@@ -322,7 +323,7 @@ end
     end
 end
 
-function qfb_decompose(image::AbstractGPUMatrix, qfp::QuincunxFilterPair; dir::Symbol = :col)
+function qfb_decompose(image::_AbstractGPUMatrix, qfp::QuincunxFilterPair; dir::Symbol = :col)
     Contourlets.is_ladder(qfp) &&
         throw(ArgumentError("ladder-mode filter pairs (e.g. Q2345) are not yet supported on GPU"))
     T = promote_type(eltype(image), eltype(qfp))
@@ -347,7 +348,7 @@ function qfb_decompose(image::AbstractGPUMatrix, qfp::QuincunxFilterPair; dir::S
 end
 
 function qfb_reconstruct(
-        sb0::AbstractGPUMatrix, sb1::AbstractGPUMatrix,
+        sb0::_AbstractGPUMatrix, sb1::_AbstractGPUMatrix,
         qfp::QuincunxFilterPair; dir::Symbol = :col
     )
     Contourlets.is_ladder(qfp) &&

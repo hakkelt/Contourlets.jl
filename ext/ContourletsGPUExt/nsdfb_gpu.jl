@@ -65,7 +65,7 @@ end
 
 # ── Per-stage device methods (dispatched by the generic tree recursion) ───────
 
-function Contourlets._nsqfb_decompose(image::AbstractGPUMatrix, qup, dir::Tuple{Int, Int})
+function Contourlets._nsqfb_decompose(image::_AbstractGPUMatrix, qup, dir::Tuple{Int, Int})
     backend = _gpu_backend(image)
     T = eltype(image)
     di, dj = dir
@@ -81,7 +81,7 @@ function Contourlets._nsqfb_decompose(image::AbstractGPUMatrix, qup, dir::Tuple{
 end
 
 function Contourlets._nsqfb_reconstruct(
-        sb0::AbstractGPUMatrix, sb1::AbstractGPUMatrix, qup, dir::Tuple{Int, Int}
+        sb0::_AbstractGPUMatrix, sb1::_AbstractGPUMatrix, qup, dir::Tuple{Int, Int}
     )
     backend = _gpu_backend(sb0)
     T = eltype(sb0)
@@ -99,7 +99,7 @@ end
 # ── Public NSDFB entry points (device dispatch) ───────────────────────────────
 
 function nsdfb_decompose(
-        bandpass::AbstractGPUMatrix, l_levels::Int,
+        bandpass::_AbstractGPUMatrix, l_levels::Int,
         qfp::QuincunxFilterPair, tree_level::Int
     )
     l_levels >= 0 || throw(ArgumentError("l_levels must be ≥ 0"))
@@ -114,7 +114,7 @@ function nsdfb_decompose(
 end
 
 function nsdfb_reconstruct(
-        subbands::Vector{<:AbstractGPUMatrix},
+        subbands::Vector{<:_AbstractGPUMatrix},
         qfp::QuincunxFilterPair, tree_level::Int
     )
     n = length(subbands)

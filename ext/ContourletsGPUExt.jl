@@ -3,6 +3,9 @@ module ContourletsGPUExt
 using Contourlets
 using GPUArrays
 using GPUArrays: AbstractGPUMatrix, AbstractGPUArray
+
+const GPUSubArray{T, N} = SubArray{T, N, <:AbstractGPUArray}
+const _AbstractGPUMatrix{T} = Union{AbstractGPUMatrix{T}, GPUSubArray{T, 2}}
 using KernelAbstractions
 using KernelAbstractions: Adapt
 

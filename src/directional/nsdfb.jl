@@ -206,20 +206,48 @@ function _nsqfb_decompose!(
         sb0::AbstractMatrix, sb1::AbstractMatrix, image::AbstractMatrix,
         qup, dir::Tuple{Int, Int}
     )
-    h0, c0, h1, c1 = qup.h0, qup.c0, qup.h1, qup.c1
     di, dj = dir
     n1, n2 = size(image)
     T = eltype(sb0)
-    @inbounds for j in 1:n2, i in 1:n1
+    offs = qup.taps_h.offs
+    v0 = qup.taps_h.vals0
+    v1 = qup.taps_h.vals1
+    dmin, dmax = qup.taps_h.dmin, qup.taps_h.dmax
+
+    dimin = min(di * dmin, di * dmax)
+    dimax = max(di * dmin, di * dmax)
+    djmin = min(dj * dmin, dj * dmax)
+    djmax = max(dj * dmin, dj * dmax)
+
+    ilo = max(1, 1 + dimax)
+    ihi = min(n1, n1 + dimin)
+    jlo = max(1, 1 + djmax)
+    jhi = min(n2, n2 + djmin)
+
+    @inbounds for j in jlo:jhi, i in ilo:ihi
         acc0 = zero(T)
-        for m in eachindex(h0)
-            d = m - c0
-            acc0 += h0[m] * image[mod1(i - di * d, n1), mod1(j - dj * d, n2)]
-        end
         acc1 = zero(T)
-        for m in eachindex(h1)
-            d = m - c1
-            acc1 += h1[m] * image[mod1(i - di * d, n1), mod1(j - dj * d, n2)]
+        for t in eachindex(offs)
+            d = offs[t]
+            x = image[i - di * d, j - dj * d]
+            acc0 += v0[t] * x
+            acc1 += v1[t] * x
+        end
+        sb0[i, j] = acc0
+        sb1[i, j] = acc1
+    end
+
+    @inbounds for j in 1:n2, i in 1:n1
+        if ilo <= i <= ihi && jlo <= j <= jhi
+            continue
+        end
+        acc0 = zero(T)
+        acc1 = zero(T)
+        for t in eachindex(offs)
+            d = offs[t]
+            x = image[mod1(i - di * d, n1), mod1(j - dj * d, n2)]
+            acc0 += v0[t] * x
+            acc1 += v1[t] * x
         end
         sb0[i, j] = acc0
         sb1[i, j] = acc1
@@ -234,26 +262,76 @@ function _nsqfb_reconstruct!(
         out::AbstractMatrix, sb0::AbstractMatrix, sb1::AbstractMatrix, qup,
         dir::Tuple{Int, Int}
     )
-    g0, cg0, g1, cg1 = qup.g0, qup.cg0, qup.g1, qup.cg1
     di, dj = dir
     n1, n2 = size(sb0)
     T = eltype(out)
-    @inbounds for j in 1:n2, i in 1:n1
+    offs = qup.taps_g.offs
+    v0 = qup.taps_g.vals0
+    v1 = qup.taps_g.vals1
+    dmin, dmax = qup.taps_g.dmin, qup.taps_g.dmax
+    scale = qup.scale
+
+    dimin = min(di * dmin, di * dmax)
+    dimax = max(di * dmin, di * dmax)
+    djmin = min(dj * dmin, dj * dmax)
+    djmax = max(dj * dmin, dj * dmax)
+
+    ilo = max(1, 1 + dimax)
+    ihi = min(n1, n1 + dimin)
+    jlo = max(1, 1 + djmax)
+    jhi = min(n2, n2 + djmin)
+
+    @inbounds for j in jlo:jhi, i in ilo:ihi
         acc = zero(T)
-        for m in eachindex(g0)
-            d = m - cg0
-            acc += g0[m] * sb0[mod1(i - di * d, n1), mod1(j - dj * d, n2)]
+        for t in eachindex(offs)
+            d = offs[t]
+            x0 = sb0[i - di * d, j - dj * d]
+            x1 = sb1[i - di * d, j - dj * d]
+            acc += v0[t] * x0 + v1[t] * x1
         end
-        for m in eachindex(g1)
-            d = m - cg1
-            acc += g1[m] * sb1[mod1(i - di * d, n1), mod1(j - dj * d, n2)]
+        out[i, j] = scale * acc
+    end
+
+    @inbounds for j in 1:n2, i in 1:n1
+        if ilo <= i <= ihi && jlo <= j <= jhi
+            continue
         end
-        out[i, j] = qup.scale * acc
+        acc = zero(T)
+        for t in eachindex(offs)
+            d = offs[t]
+            x0 = sb0[mod1(i - di * d, n1), mod1(j - dj * d, n2)]
+            x1 = sb1[mod1(i - di * d, n1), mod1(j - dj * d, n2)]
+            acc += v0[t] * x0 + v1[t] * x1
+        end
+        out[i, j] = scale * acc
     end
     return out
 end
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+function _build_compact_taps(f0::Vector{T}, c0::Int, f1::Vector{T}, c1::Int, factor::Int) where {T}
+    dmin_lag = min(1 - c0, 1 - c1)
+    dmax_lag = max(length(f0) - c0, length(f1) - c1)
+
+    offs = Int[]
+    v0 = T[]
+    v1 = T[]
+    for d in dmin_lag:dmax_lag
+        m0 = d + c0
+        m1 = d + c1
+        val0 = (1 <= m0 <= length(f0)) ? f0[m0] : zero(T)
+        val1 = (1 <= m1 <= length(f1)) ? f1[m1] : zero(T)
+        if val0 != zero(T) || val1 != zero(T)
+            push!(offs, d * factor)
+            push!(v0, val0)
+            push!(v1, val1)
+        end
+    end
+    dmin = isempty(offs) ? 0 : minimum(offs)
+    dmax = isempty(offs) ? 0 : maximum(offs)
+    return _CompactTapsPair{T}(v0, v1, offs, dmin, dmax)
+end
 
 """
 Build the `qup` NamedTuple for the NSDFB at a given à trous `factor`.
@@ -280,6 +358,10 @@ function _upsample_qfp_1d(qfp::QuincunxFilterPair, factor::Int, ::Type{T}) where
         g1 = reverse(h1); cg1 = K + 1 - c1
         scale = one(T)
     end
+
+    taps_h = _build_compact_taps(h0, c0, h1, c1, factor)
+    taps_g = _build_compact_taps(g0, cg0, g1, cg1, factor)
+
     if factor > 1
         h0 = upsample_filter(h0, factor); c0 = (c0 - 1) * factor + 1
         h1 = upsample_filter(h1, factor); c1 = (c1 - 1) * factor + 1
@@ -289,5 +371,6 @@ function _upsample_qfp_1d(qfp::QuincunxFilterPair, factor::Int, ::Type{T}) where
     return (
         h0 = h0, c0 = c0, h1 = h1, c1 = c1,
         g0 = g0, cg0 = cg0, g1 = g1, cg1 = cg1, scale = scale,
+        taps_h = taps_h, taps_g = taps_g,
     )
 end

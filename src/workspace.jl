@@ -79,9 +79,18 @@ end
 # (analysis/synthesis equivalent filters + origins + reconstruction scale), at the
 # real filter precision `T`.  Cached per LP level in the NSCT workspace so the
 # `nsct_forward!`/`nsct_inverse!` paths never rebuild the à trous filters per call.
+struct _CompactTapsPair{T}
+    vals0::Vector{T}
+    vals1::Vector{T}
+    offs::Vector{Int}
+    dmin::Int
+    dmax::Int
+end
+
 const _QupNT{T} = @NamedTuple{
     h0::Vector{T}, c0::Int, h1::Vector{T}, c1::Int,
     g0::Vector{T}, cg0::Int, g1::Vector{T}, cg1::Int, scale::T,
+    taps_h::_CompactTapsPair{T}, taps_g::_CompactTapsPair{T},
 }
 
 """

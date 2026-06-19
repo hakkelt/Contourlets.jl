@@ -166,7 +166,7 @@ end
 
 @inline function _qfb_col_decompose_kernel!(sb0, sb1, img, h, c_h, n1, n2, d2)
     K = length(h)
-    return @inbounds for k2 in 1:d2
+    @inbounds for k2 in 1:d2
         j = 2k2   # keep even columns (j=2,4,6,…)
         for i in 1:n1
             lp_val = zero(eltype(h))
@@ -185,6 +185,7 @@ end
             sb1[i, k2] = hp_val
         end
     end
+    return nothing
 end
 
 # Internal: callers (the public `qfb_reconstruct`) pass `sb0`/`sb1`/`qfp` already
@@ -293,7 +294,7 @@ end
 
 @inline function _qfb_col_reconstruct_kernel!(out, sb0, sb1, g, c_g, n1, n2, d2)
     K = length(g)
-    return @inbounds for k2 in 1:d2
+    for k2 in 1:d2
         j_src = 2k2   # source (even) column in output image
         for i in 1:n1
             s0 = sb0[i, k2]
@@ -310,4 +311,5 @@ end
             end
         end
     end
+    return nothing
 end

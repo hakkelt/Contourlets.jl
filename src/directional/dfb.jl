@@ -215,7 +215,7 @@ function _sefilter2(x::AbstractMatrix{Td}, f::Vector{Tf}, shift1::Int, shift2::I
     return _sefilter2_kernel!(out, tmp, ext, f, L, half, sym)
 end
 
-function _sefilter2_kernel!(out::AbstractMatrix{Td}, tmp::AbstractMatrix{Td}, ext::AbstractMatrix{Td}, f::Vector{Tf}, L::Int, half::Int, sym::Bool) where {Td<:Real, Tf}
+function _sefilter2_kernel!(out::AbstractMatrix{Td}, tmp::AbstractMatrix{Td}, ext::AbstractMatrix{Td}, f::Vector{Tf}, L::Int, half::Int, sym::Bool) where {Td <: Real, Tf}
     m, n = size(out)
     if sym
         @turbo for j in axes(ext, 2), i in 1:m

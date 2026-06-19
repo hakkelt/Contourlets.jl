@@ -124,6 +124,14 @@ struct ContourletWorkspace{Td <: Number, Tf <: AbstractFloat, M <: AbstractMatri
     # a CT workspace (the decimated LP uses the base filters directly).
     lp_h_cache::Vector{Vector{Tf}}
     lp_g_cache::Vector{Vector{Tf}}
+
+    # FFT Caches for D2 equivalent-filter NSDFB (empty for CT workspaces).
+    nsdfb_H_cache::Vector{Vector{Matrix{Complex{Tf}}}}
+    nsdfb_G_cache::Vector{Vector{Matrix{Complex{Tf}}}}
+    fft_plan_fwd::Any
+    fft_plan_inv::Any
+    fft_buffer_c::Matrix{Complex{Tf}}
+    fft_spectrum_bp::Matrix{Complex{Tf}}
 end
 
 Base.eltype(::ContourletWorkspace{Td}) where {Td} = Td
@@ -179,7 +187,8 @@ function make_workspace(
     # caches are needed.
     ws = ContourletWorkspace{Td, Tf, M}(
         p2, image_size, ScratchArena{M}(), ScratchArena{M}(),
-        _QupNT{Tf}[], Vector{Tf}[], Vector{Tf}[]
+        _QupNT{Tf}[], Vector{Tf}[], Vector{Tf}[],
+        Vector{Matrix{Complex{Tf}}}[], Vector{Matrix{Complex{Tf}}}[], nothing, nothing, Matrix{Complex{Tf}}(undef, 0, 0), Matrix{Complex{Tf}}(undef, 0, 0)
     )
     # Grow the scratch arena to its steady-state size now (forward + inverse), so
     # the first user call is already allocation-free.
@@ -219,9 +228,27 @@ function make_nsct_workspace(
     lp = p2.lp_filters
     lp_h_cache = Vector{Tf}[upsample_filter(lp.h, 2^(j - 1)) for j in 1:J]
     lp_g_cache = Vector{Tf}[Tf(_NSP_SYNTH_SCALE) .* upsample_filter(lp.g, 2^(j - 1)) for j in 1:J]
+
+    is_real = Td <: Real
+    n1, n2 = image_size
+    init_shape = is_real ? (n1 ÷ 2 + 1, n2) : (n1, n2)
+    fft_buffer_c = zeros(Complex{Tf}, init_shape)
+    fft_spectrum_bp = zeros(Complex{Tf}, init_shape)
+
+    tmp_d = zeros(Td, n1, n2)
+    fft_plan_fwd = is_real ? plan_rfft(tmp_d, flags = FFTW.MEASURE) : plan_fft(tmp_d, flags = FFTW.MEASURE)
+    fft_plan_inv = is_real ? plan_irfft(fft_buffer_c, n1, flags = FFTW.MEASURE) : plan_ifft(fft_buffer_c, flags = FFTW.MEASURE)
+
+    nsdfb_H_cache = Vector{Vector{Matrix{Complex{Tf}}}}(undef, J)
+    nsdfb_G_cache = Vector{Vector{Matrix{Complex{Tf}}}}(undef, J)
+    for j in 1:J
+        nsdfb_H_cache[j], nsdfb_G_cache[j] = _build_equivalent_filters(Tf, n1, n2, qup_cache[j], p2.L_array[j], is_real)
+    end
+
     ws = ContourletWorkspace{Td, Tf, M}(
         p2, image_size, ScratchArena{M}(), ScratchArena{M}(),
-        qup_cache, lp_h_cache, lp_g_cache
+        qup_cache, lp_h_cache, lp_g_cache,
+        nsdfb_H_cache, nsdfb_G_cache, fft_plan_fwd, fft_plan_inv, fft_buffer_c, fft_spectrum_bp
     )
     prewarm && _prewarm_nsct!(ws)
     return ws

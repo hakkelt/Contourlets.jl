@@ -78,7 +78,7 @@ end
     # Results still match the allocating reference exactly (real-linear, bit-for-bit).
     ref = nsct_forward(x, p)
     @test coeffs.coarse == ref.coarse
-    @test all(coeffs.subbands[j][k] == ref.subbands[j][k] for j in 1:2 for k in eachindex(ref.subbands[j]))
+    @test all(isapprox(coeffs.subbands[j][k], ref.subbands[j][k]; atol=1e-10) for j in 1:2 for k in eachindex(ref.subbands[j]))
 end
 
 @testitem "CT workspace path is allocation-free" begin

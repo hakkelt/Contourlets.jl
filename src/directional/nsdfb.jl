@@ -244,7 +244,7 @@ function _nsqfb_decompose!(
     return sb0, sb1
 end
 
-function _nsqfb_decompose_kernel!(sb0::AbstractMatrix{T}, sb1::AbstractMatrix{T}, image::AbstractMatrix{T}, offs, v0, v1, di, dj, ilo, ihi, jlo, jhi) where {T<:Real}
+function _nsqfb_decompose_kernel!(sb0::AbstractMatrix{T}, sb1::AbstractMatrix{T}, image::AbstractMatrix{T}, offs, v0, v1, di, dj, ilo, ihi, jlo, jhi) where {T <: Real}
     @turbo for j in jlo:jhi, i in ilo:ihi
         acc0 = zero(T)
         acc1 = zero(T)
@@ -257,6 +257,7 @@ function _nsqfb_decompose_kernel!(sb0::AbstractMatrix{T}, sb1::AbstractMatrix{T}
         sb0[i, j] = acc0
         sb1[i, j] = acc1
     end
+    return nothing
 end
 
 function _nsqfb_decompose_kernel!(sb0::AbstractMatrix{T}, sb1::AbstractMatrix{T}, image::AbstractMatrix{T}, offs, v0, v1, di, dj, ilo, ihi, jlo, jhi) where {T}
@@ -272,6 +273,7 @@ function _nsqfb_decompose_kernel!(sb0::AbstractMatrix{T}, sb1::AbstractMatrix{T}
         sb0[i, j] = acc0
         sb1[i, j] = acc1
     end
+    return nothing
 end
 
 _nsqfb_reconstruct(sb0::AbstractMatrix, sb1::AbstractMatrix, qup, dir::Tuple{Int, Int}) =
@@ -318,7 +320,7 @@ function _nsqfb_reconstruct!(
     return out
 end
 
-function _nsqfb_reconstruct_kernel!(out::AbstractMatrix{T}, sb0::AbstractMatrix{T}, sb1::AbstractMatrix{T}, offs, v0, v1, scale, di, dj, ilo, ihi, jlo, jhi) where {T<:Real}
+function _nsqfb_reconstruct_kernel!(out::AbstractMatrix{T}, sb0::AbstractMatrix{T}, sb1::AbstractMatrix{T}, offs, v0, v1, scale, di, dj, ilo, ihi, jlo, jhi) where {T <: Real}
     @turbo for j in jlo:jhi, i in ilo:ihi
         acc = zero(T)
         for t in eachindex(offs)
@@ -329,6 +331,7 @@ function _nsqfb_reconstruct_kernel!(out::AbstractMatrix{T}, sb0::AbstractMatrix{
         end
         out[i, j] = scale * acc
     end
+    return nothing
 end
 
 function _nsqfb_reconstruct_kernel!(out::AbstractMatrix{T}, sb0::AbstractMatrix{T}, sb1::AbstractMatrix{T}, offs, v0, v1, scale, di, dj, ilo, ihi, jlo, jhi) where {T}
@@ -342,6 +345,7 @@ function _nsqfb_reconstruct_kernel!(out::AbstractMatrix{T}, sb0::AbstractMatrix{
         end
         out[i, j] = scale * acc
     end
+    return nothing
 end
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -409,4 +413,56 @@ function _upsample_qfp_1d(qfp::QuincunxFilterPair, factor::Int, ::Type{T}) where
         g0 = g0, cg0 = cg0, g1 = g1, cg1 = cg1, scale = scale,
         taps_h = taps_h, taps_g = taps_g,
     )
+end
+
+# ── FFT-Domain Equivalent Filters (D2) ───────────────────────────────────────
+
+function _build_filter_grid(T, n1, n2, offs, vals, di, dj)
+    grid = zeros(T, n1, n2)
+    for t in eachindex(offs)
+        d = offs[t]
+        grid[mod1(1 + di * d, n1), mod1(1 + dj * d, n2)] += vals[t]
+    end
+    return grid
+end
+
+function _get_transfer_functions(T, n1, n2, qup, depth; is_real = true)
+    di, dj = _nsdfb_direction(depth)
+    h0 = _build_filter_grid(T, n1, n2, qup.taps_h.offs, qup.taps_h.vals0, di, dj)
+    h1 = _build_filter_grid(T, n1, n2, qup.taps_h.offs, qup.taps_h.vals1, di, dj)
+    g0 = _build_filter_grid(T, n1, n2, qup.taps_g.offs, qup.taps_g.vals0, di, dj)
+    g1 = _build_filter_grid(T, n1, n2, qup.taps_g.offs, qup.taps_g.vals1, di, dj)
+    if is_real
+        return rfft(h0), rfft(h1), rfft(g0), rfft(g1)
+    else
+        return fft(h0), fft(h1), fft(g0), fft(g1)
+    end
+end
+
+function _build_equivalent_filters(T, n1, n2, qup, L, is_real)
+    H_leaves = Matrix{Complex{T}}[]
+    G_leaves = Matrix{Complex{T}}[]
+
+    H0s, H1s, G0s, G1s = Matrix{Complex{T}}[], Matrix{Complex{T}}[], Matrix{Complex{T}}[], Matrix{Complex{T}}[]
+    for d in 1:L
+        h0, h1, g0, g1 = _get_transfer_functions(T, n1, n2, qup, d; is_real = is_real)
+        push!(H0s, h0); push!(H1s, h1)
+        push!(G0s, g0); push!(G1s, g1)
+    end
+
+    function build_branch(depth, current_H, current_G)
+        if depth > L
+            push!(H_leaves, current_H)
+            push!(G_leaves, current_G)
+            return
+        end
+        build_branch(depth + 1, current_H .* H0s[depth], current_G .* G0s[depth])
+        build_branch(depth + 1, current_H .* H1s[depth], current_G .* G1s[depth])
+        return nothing
+    end
+
+    init_shape = is_real ? (n1 ÷ 2 + 1, n2) : (n1, n2)
+    build_branch(1, ones(Complex{T}, init_shape), ones(Complex{T}, init_shape) .* (qup.scale^L))
+
+    return H_leaves, G_leaves
 end

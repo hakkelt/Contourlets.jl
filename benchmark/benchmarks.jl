@@ -33,17 +33,18 @@ SUITE["primitives"] = BenchmarkGroup()
 # ╚════════════════════════════════════════════════════════════════════════════╝
 
 const RNG = MersenneTwister(1234)
-const TEST_SIZES = [64, 128, 256]
+const TEST_SIZES = [64, 256]
 
 # ╔════════════════════════════════════════════════════════════════════════════╗
 # ║ SIZE-SPECIFIC BENCHMARKS                                                   ║
 # ╚════════════════════════════════════════════════════════════════════════════╝
 
 for sz in TEST_SIZES
-    sz_str = string(sz)
+    for T in [Float64, ComplexF64]
+        sz_str = "$(sz)x$(sz)_$(T)"
 
-    # Generate test image for this size
-    img = randn(RNG, sz, sz)
+        # Generate test image for this size and type
+        img = randn(RNG, T, sz, sz)
 
     # ────────────────────────────────────────────────────────────────────────────
     # Contourlet Transform (CT): forward/inverse
@@ -51,10 +52,10 @@ for sz in TEST_SIZES
 
     SUITE["CT"][sz_str] = BenchmarkGroup()
 
-    # Setup CT with J=2, L_array=[2, 3]
-    p_ct = ContourletParams(J = 2, L_array = [2, 3])
-    ws_ct = make_workspace(Float64, (sz, sz), p_ct)
-    coeffs_ct_alloc = similar_coefficients(p_ct, (sz, sz))
+    # Setup CT with J=3, L_array=[2, 3, 4]
+    p_ct = ContourletParams(J = 3, L_array = [2, 3, 4])
+    ws_ct = make_workspace(T, (sz, sz), p_ct)
+    coeffs_ct_alloc = similar_coefficients(p_ct, (sz, sz); Td = T)
 
     # CT Forward: allocating version
     SUITE["CT"][sz_str]["forward"] = @benchmarkable ct_forward($img, $p_ct)
@@ -78,10 +79,10 @@ for sz in TEST_SIZES
 
     SUITE["NSCT"][sz_str] = BenchmarkGroup()
 
-    # Setup NSCT with J=2, L_array=[2, 3]
-    p_nsct = ContourletParams(J = 2, L_array = [2, 3])
-    ws_nsct = make_nsct_workspace(Float64, (sz, sz), p_nsct)
-    coeffs_nsct_alloc = similar_nsct_coefficients(p_nsct, (sz, sz))
+    # Setup NSCT with J=3, L_array=[2, 3, 4] to highlight the FFT cascade speedup
+    p_nsct = ContourletParams(J = 3, L_array = [2, 3, 4])
+    ws_nsct = make_nsct_workspace(T, (sz, sz), p_nsct)
+    coeffs_nsct_alloc = similar_nsct_coefficients(p_nsct, (sz, sz); Td = T)
 
     # NSCT Forward: allocating version
     SUITE["NSCT"][sz_str]["forward"] = @benchmarkable nsct_forward($img, $p_nsct)
@@ -157,11 +158,12 @@ for sz in TEST_SIZES
     SUITE["primitives"][sz_str] = BenchmarkGroup()
     # Separable convolution (LP workhorse) and the direct/FFTW conv2d backends.
     k_small = Float64[1.0 2.0 1.0]                       # direct backend (≤25 taps)
-    k_large = randn(RNG, 7, 7)                           # FFTW backend (>25 taps)
+    k_large = randn(RNG, Float64, 7, 7)                  # FFTW backend (>25 taps)
     SUITE["primitives"][sz_str]["conv2d_sep"] =
         @benchmarkable conv2d_sep($img, [1.0, 2.0, 1.0], [1.0, 2.0, 1.0])
     SUITE["primitives"][sz_str]["conv2d_direct"] =
         @benchmarkable conv2d($img, $k_small, (1, 2))
     SUITE["primitives"][sz_str]["conv2d_fftw"] =
         @benchmarkable conv2d($img, $k_large, (4, 4))
+    end
 end

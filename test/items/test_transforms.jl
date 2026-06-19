@@ -148,6 +148,9 @@ end
     nsct_forward!(coeffs, x, ws)
     coeffs_alloc = nsct_forward(x, p)
     @test maximum(abs, coeffs.coarse .- coeffs_alloc.coarse) < 1.0e-12
+    for j in 1:2, k in 1:length(coeffs.subbands[j])
+        @test isapprox(coeffs.subbands[j][k], coeffs_alloc.subbands[j][k]; atol=1e-10)
+    end
 end
 
 @testitem "similar_nsct_coefficients sizes" begin

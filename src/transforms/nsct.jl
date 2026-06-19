@@ -86,7 +86,19 @@ function nsct_forward!(
                 tmp = tmp_j, tmp2 = tmp2_j,
                 h_j = ws.lp_h_cache[j], g_j = ws.lp_g_cache[j]
             )
-            _nsdfb_decompose_into!(coeffs.subbands[j], bp_j, L[j], ws.qup_cache[j], ws.fwd_scratch)
+
+            if ws.fft_plan_fwd !== nothing
+                mul!(ws.fft_spectrum_bp, ws.fft_plan_fwd, bp_j)
+                H_leaves = ws.nsdfb_H_cache[j]
+                plan_inv = ws.fft_plan_inv
+                for k in 1:length(H_leaves)
+                    ws.fft_buffer_c .= ws.fft_spectrum_bp .* H_leaves[k]
+                    mul!(coeffs.subbands[j][k], plan_inv, ws.fft_buffer_c)
+                end
+            else
+                _nsdfb_decompose_into!(coeffs.subbands[j], bp_j, L[j], ws.qup_cache[j], ws.fwd_scratch)
+            end
+
             current = coarse_j
         end
         copyto!(coeffs.coarse, current)
@@ -149,7 +161,20 @@ function nsct_inverse!(
         for j in J:-1:1
             n1, n2 = size(current)
             bp = _scratch_like(current, n1, n2)
-            _nsdfb_reconstruct_into!(bp, coeffs.subbands[j], ws.qup_cache[j], ws.inv_scratch)
+
+            if ws.fft_plan_fwd !== nothing
+                G_leaves = ws.nsdfb_G_cache[j]
+                plan_fwd = ws.fft_plan_fwd
+                plan_inv = ws.fft_plan_inv
+                fill!(ws.fft_spectrum_bp, zero(eltype(ws.fft_spectrum_bp)))
+                for k in 1:length(G_leaves)
+                    mul!(ws.fft_buffer_c, plan_fwd, coeffs.subbands[j][k])
+                    ws.fft_spectrum_bp .+= ws.fft_buffer_c .* G_leaves[k]
+                end
+                mul!(bp, plan_inv, ws.fft_spectrum_bp)
+            else
+                _nsdfb_reconstruct_into!(bp, coeffs.subbands[j], ws.qup_cache[j], ws.inv_scratch)
+            end
 
             tmp_j = _scratch_like(current, n1, n2)
             tmp2_j = _scratch_like(current, n1, n2)

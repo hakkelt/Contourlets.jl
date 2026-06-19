@@ -12,6 +12,11 @@ lcov.info
 # benchmarks, never vendored into this MIT-licensed repository).
 /benchmark/matlab/
 
+# Agentic tools
+.gemini
+.claude
+.copilot
+
 # Local benchmark scratch output
 /julia_bench.txt
 /matlab_bench.txt

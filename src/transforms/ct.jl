@@ -171,9 +171,9 @@ end
 # Grow the workspace scratch arena to its steady-state size by running one forward
 # + inverse pass on zeros, so the first real call allocates nothing.  Called from
 # `make_workspace(...; prewarm=true)`.
-function _prewarm_ct!(ws::ContourletWorkspace{Td}) where {Td}
-    img = zeros(Td, ws.image_size)
-    coeffs = similar_coefficients(ws.params, ws.image_size; Td = Td)
+function _prewarm_ct!(ws::ContourletWorkspace{Td, Tf, M}) where {Td, Tf, M}
+    img = _allocate_zeros(M, Td, ws.image_size)
+    coeffs = similar_coefficients(ws.params, ws.image_size; Td = Td, M = M)
     ct_forward!(coeffs, img, ws)
     ct_inverse!(img, coeffs, ws)
     return ws
@@ -211,20 +211,22 @@ image of size `image_size`, without computing any transform.  Useful together wi
 function similar_coefficients(
         params::ContourletParams{Tf},
         image_size::Tuple{Int, Int};
-        Td::Type = Tf
+        Td::Type = Tf,
+        M::Type{<:AbstractMatrix} = Matrix{Td}
     ) where {Tf}
     J = params.J
     L = params.L_array
     n1, n2 = image_size
     ladder = is_ladder(params.dfb_filters)
-    subbands = Vector{Vector{Matrix{Td}}}(undef, J)
+    A = typeof(_allocate_zeros(M, Td, (1, 1)))
+    subbands = Vector{Vector{A}}(undef, J)
     cur_n1, cur_n2 = n1, n2
     for j in 1:J
         szs = dfb_subband_sizes(cur_n1, cur_n2, L[j]; ladder = ladder)
-        subbands[j] = [zeros(Td, s...) for s in szs]
+        subbands[j] = [_allocate_zeros(M, Td, s) for s in szs]
         cur_n1 = cld(cur_n1, 2)
         cur_n2 = cld(cur_n2, 2)
     end
-    coarse = zeros(Td, cur_n1, cur_n2)
+    coarse = _allocate_zeros(M, Td, (cur_n1, cur_n2))
     return ContourletCoefficients(coarse, subbands, params)
 end

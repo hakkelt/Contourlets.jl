@@ -75,6 +75,17 @@ function _scratch_like(ref::R, m::Int, n::Int) where {R <: AbstractMatrix}
     return similar(ref, m, n)
 end
 
+function _allocate_zeros(::Type{M}, Td::Type, dims::Tuple) where {M <: AbstractMatrix}
+    T_concrete = M isa UnionAll ? M{Td} : M
+    if T_concrete <: Array
+        return zeros(Td, dims...)
+    end
+    dummy = similar(T_concrete, (1, 1))
+    arr = similar(dummy, Td, dims)
+    return fill!(arr, zero(Td))
+end
+
+
 # Type of the upsampled 1-D quincunx filter bundle returned by `_upsample_qfp_1d`
 # (analysis/synthesis equivalent filters + origins + reconstruction scale), at the
 # real filter precision `T`.  Cached per LP level in the NSCT workspace so the
@@ -104,7 +115,7 @@ iterations with the mutating `!` entry points.
     A `ContourletWorkspace` is **not thread-safe**.  Create a separate workspace
     per thread (e.g., `[make_workspace(params, sz) for _ in 1:Threads.nthreads()]`).
 """
-struct ContourletWorkspace{Td <: Number, Tf <: AbstractFloat, M <: AbstractMatrix{Td}}
+struct ContourletWorkspace{Td <: Number, Tf <: AbstractFloat, M <: AbstractMatrix{Td}, Q, L}
     params::ContourletParams{Tf}     # real filter precision Tf
     image_size::Tuple{Int, Int}
 
@@ -116,14 +127,13 @@ struct ContourletWorkspace{Td <: Number, Tf <: AbstractFloat, M <: AbstractMatri
 
     # Per-level upsampled NSDFB filters (empty for a CT workspace, which uses the
     # un-upsampled ladder filter directly).  Precomputed once at construction.
-    qup_cache::Vector{_QupNT{Tf}}
-
+    qup_cache::Q
 
     # Per-level à trous upsampled LP analysis/synthesis filters for the NSP stage
     # (the scaled synthesis `g` serves both decompose and reconstruct).  Empty for
     # a CT workspace (the decimated LP uses the base filters directly).
-    lp_h_cache::Vector{Vector{Tf}}
-    lp_g_cache::Vector{Vector{Tf}}
+    lp_h_cache::L
+    lp_g_cache::L
 
     # FFT Caches for D2 equivalent-filter NSDFB (empty for CT workspaces).
     nsdfb_H_cache::Vector{Vector{Matrix{Complex{Tf}}}}
@@ -133,6 +143,31 @@ struct ContourletWorkspace{Td <: Number, Tf <: AbstractFloat, M <: AbstractMatri
     fft_buffer_c::Matrix{Complex{Tf}}
     fft_spectrum_bp::Matrix{Complex{Tf}}
 end
+
+function ContourletWorkspace{Td, Tf, M}(
+        params::ContourletParams{Tf},
+        image_size::Tuple{Int, Int},
+        fwd_scratch::ScratchArena{M},
+        inv_scratch::ScratchArena{M},
+        qup_cache::Q,
+        lp_h_cache::L,
+        lp_g_cache::L,
+        nsdfb_H_cache::Vector{Vector{Matrix{Complex{Tf}}}},
+        nsdfb_G_cache::Vector{Vector{Matrix{Complex{Tf}}}},
+        fft_plan_fwd::Any,
+        fft_plan_inv::Any,
+        fft_buffer_c::Matrix{Complex{Tf}},
+        fft_spectrum_bp::Matrix{Complex{Tf}}
+    ) where {Td, Tf, M, Q, L}
+    return ContourletWorkspace{Td, Tf, M, Q, L}(
+        params, image_size, fwd_scratch, inv_scratch,
+        qup_cache, lp_h_cache, lp_g_cache,
+        nsdfb_H_cache, nsdfb_G_cache, fft_plan_fwd, fft_plan_inv, fft_buffer_c, fft_spectrum_bp
+    )
+end
+
+_device_qup_cache(::Type{M}, qup_cache) where {M <: AbstractMatrix} = qup_cache
+_device_lp_cache(::Type{M}, lp_cache) where {M <: AbstractMatrix} = lp_cache
 
 Base.eltype(::ContourletWorkspace{Td}) where {Td} = Td
 
@@ -211,6 +246,17 @@ make_nsct_workspace(
 ) =
     make_nsct_workspace(params, image_size; T = T, kwargs...)
 
+"""
+    make_nsct_workspace(image::AbstractMatrix, params::ContourletParams) -> ContourletWorkspace
+
+Allocate a workspace for the NSCT transforms using the array type and element type of `image`.
+This is required for allocation-free execution on GPU arrays.
+"""
+make_nsct_workspace(
+    image::AbstractMatrix, params::ContourletParams{Tp}; kwargs...
+) where {Tp} =
+    make_nsct_workspace(params, size(image); T = eltype(image), M = typeof(similar(image, promote_type(Tp, eltype(image)), 0, 0)), kwargs...)
+
 function make_nsct_workspace(
         params::ContourletParams{Tp},
         image_size::Tuple{Int, Int};
@@ -235,15 +281,24 @@ function make_nsct_workspace(
     fft_buffer_c = zeros(Complex{Tf}, init_shape)
     fft_spectrum_bp = zeros(Complex{Tf}, init_shape)
 
-    tmp_d = zeros(Td, n1, n2)
-    fft_plan_fwd = is_real ? plan_rfft(tmp_d, flags = FFTW.MEASURE) : plan_fft(tmp_d, flags = FFTW.MEASURE)
-    fft_plan_inv = is_real ? plan_irfft(fft_buffer_c, n1, flags = FFTW.MEASURE) : plan_ifft(fft_buffer_c, flags = FFTW.MEASURE)
+    if M <: Array
+        tmp_d = zeros(Td, n1, n2)
+        fft_plan_fwd = is_real ? plan_rfft(tmp_d, flags = FFTW.MEASURE) : plan_fft(tmp_d, flags = FFTW.MEASURE)
+        fft_plan_inv = is_real ? plan_irfft(fft_buffer_c, n1, flags = FFTW.MEASURE) : plan_ifft(fft_buffer_c, flags = FFTW.MEASURE)
+    else
+        fft_plan_fwd = nothing
+        fft_plan_inv = nothing
+    end
 
     nsdfb_H_cache = Vector{Vector{Matrix{Complex{Tf}}}}(undef, J)
     nsdfb_G_cache = Vector{Vector{Matrix{Complex{Tf}}}}(undef, J)
     for j in 1:J
         nsdfb_H_cache[j], nsdfb_G_cache[j] = _build_equivalent_filters(Tf, n1, n2, qup_cache[j], p2.L_array[j], is_real)
     end
+
+    qup_cache = _device_qup_cache(M, qup_cache)
+    lp_h_cache = _device_lp_cache(M, lp_h_cache)
+    lp_g_cache = _device_lp_cache(M, lp_g_cache)
 
     ws = ContourletWorkspace{Td, Tf, M}(
         p2, image_size, ScratchArena{M}(), ScratchArena{M}(),

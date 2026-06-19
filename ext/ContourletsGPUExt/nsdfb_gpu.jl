@@ -63,6 +63,17 @@ function _qup_to_device(backend, qup)
     )
 end
 
+function Contourlets._device_qup_cache(::Type{M}, qup_cache) where {M <: AbstractGPUMatrix}
+    backend = KernelAbstractions.get_backend(similar(M, (1, 1)))
+    return [_qup_to_device(backend, q) for q in qup_cache]
+end
+
+function Contourlets._device_lp_cache(::Type{M}, lp_cache) where {M <: AbstractGPUMatrix}
+    backend = KernelAbstractions.get_backend(similar(M, (1, 1)))
+    return [_to_device(backend, v) for v in lp_cache]
+end
+
+
 # ── Per-stage device methods (dispatched by the generic tree recursion) ───────
 
 function Contourlets._nsqfb_decompose(image::_AbstractGPUMatrix, qup, dir::Tuple{Int, Int})
@@ -72,6 +83,21 @@ function Contourlets._nsqfb_decompose(image::_AbstractGPUMatrix, qup, dir::Tuple
     n1, n2 = size(image)
     sb0 = KernelAbstractions.allocate(backend, T, n1, n2)
     sb1 = KernelAbstractions.allocate(backend, T, n1, n2)
+    kernel = _nsqfb_decompose_kernel!(backend, (16, 16))
+    kernel(
+        sb0, sb1, image, qup.h0, qup.h1, qup.c0, qup.c1,
+        length(qup.h0), length(qup.h1), di, dj, n1, n2; ndrange = (n1, n2)
+    )
+    return sb0, sb1
+end
+
+function Contourlets._nsqfb_decompose!(
+        sb0::_AbstractGPUMatrix, sb1::_AbstractGPUMatrix, image::_AbstractGPUMatrix,
+        qup, dir::Tuple{Int, Int}
+    )
+    backend = _gpu_backend(image)
+    di, dj = dir
+    n1, n2 = size(image)
     kernel = _nsqfb_decompose_kernel!(backend, (16, 16))
     kernel(
         sb0, sb1, image, qup.h0, qup.h1, qup.c0, qup.c1,
@@ -92,6 +118,21 @@ function Contourlets._nsqfb_reconstruct(
     kernel(
         out, sb0, sb1, qup.g0, qup.g1, qup.cg0, qup.cg1,
         length(qup.g0), length(qup.g1), di, dj, T(qup.scale), n1, n2; ndrange = (n1, n2)
+    )
+    return out
+end
+
+function Contourlets._nsqfb_reconstruct!(
+        out::_AbstractGPUMatrix, sb0::_AbstractGPUMatrix, sb1::_AbstractGPUMatrix,
+        qup, dir::Tuple{Int, Int}
+    )
+    backend = _gpu_backend(sb0)
+    di, dj = dir
+    n1, n2 = size(sb0)
+    kernel = _nsqfb_reconstruct_kernel!(backend, (16, 16))
+    kernel(
+        out, sb0, sb1, qup.g0, qup.g1, qup.cg0, qup.cg1,
+        length(qup.g0), length(qup.g1), di, dj, eltype(out)(qup.scale), n1, n2; ndrange = (n1, n2)
     )
     return out
 end

@@ -201,9 +201,9 @@ end
 # + inverse pass on zeros (the per-call allocation sequence is deterministic, so
 # afterwards the first real call allocates nothing).  Called from
 # `make_nsct_workspace(...; prewarm=true)`.
-function _prewarm_nsct!(ws::ContourletWorkspace{Td}) where {Td}
-    img = zeros(Td, ws.image_size)
-    coeffs = similar_nsct_coefficients(ws.params, ws.image_size; Td = Td)
+function _prewarm_nsct!(ws::ContourletWorkspace{Td, Tf, M}) where {Td, Tf, M}
+    img = _allocate_zeros(M, Td, ws.image_size)
+    coeffs = similar_nsct_coefficients(ws.params, ws.image_size; Td = Td, M = M)
     nsct_forward!(coeffs, img, ws)
     nsct_inverse!(img, coeffs, ws)
     return ws
@@ -217,16 +217,18 @@ Allocate `NSCTCoefficients` buffers (all subbands same spatial size as image).
 function similar_nsct_coefficients(
         params::ContourletParams{Tf},
         image_size::Tuple{Int, Int};
-        Td::Type = Tf
+        Td::Type = Tf,
+        M::Type{<:AbstractMatrix} = Matrix{Td}
     ) where {Tf}
     J = params.J
     L = params.L_array
     n1, n2 = image_size
-    subbands = Vector{Vector{Matrix{Td}}}(undef, J)
+    A = typeof(_allocate_zeros(M, Td, (1, 1)))
+    subbands = Vector{Vector{A}}(undef, J)
     for j in 1:J
         n_dirs = max(1, 2^L[j])
-        subbands[j] = [zeros(Td, n1, n2) for _ in 1:n_dirs]
+        subbands[j] = [_allocate_zeros(M, Td, (n1, n2)) for _ in 1:n_dirs]
     end
-    coarse = zeros(Td, n1, n2)
+    coarse = _allocate_zeros(M, Td, (n1, n2))
     return NSCTCoefficients(coarse, subbands, params)
 end

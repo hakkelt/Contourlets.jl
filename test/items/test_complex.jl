@@ -26,10 +26,12 @@ end
     cz = ct_forward(complex.(x, y), p)
     cx = ct_forward(x, p)
     cy = ct_forward(y, p)
-    # Exact equality: a real-filtered complex transform splits over re/im parts.
-    @test cz.coarse == cx.coarse .+ im .* cy.coarse
+    # Approximate equality: a real-filtered complex transform splits over re/im parts.
+    # Floating-point ordering differences due to LoopVectorization on the real path
+    # mean this is no longer bit-for-bit identical, but it is mathematically linear.
+    @test cz.coarse ≈ cx.coarse .+ im .* cy.coarse
     for j in 1:p.J, k in eachindex(cz.subbands[j])
-        @test cz.subbands[j][k] == cx.subbands[j][k] .+ im .* cy.subbands[j][k]
+        @test cz.subbands[j][k] ≈ cx.subbands[j][k] .+ im .* cy.subbands[j][k]
     end
 end
 

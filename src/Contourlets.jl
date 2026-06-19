@@ -23,6 +23,8 @@ module Contourlets
 
 using FFTW
 using LinearAlgebra
+using FastBroadcast
+using LoopVectorization
 
 # ── Types (must come before filters which use them) ──────────────────────────
 include("types.jl")

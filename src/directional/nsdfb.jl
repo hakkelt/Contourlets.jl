@@ -224,18 +224,7 @@ function _nsqfb_decompose!(
     jlo = max(1, 1 + djmax)
     jhi = min(n2, n2 + djmin)
 
-    @inbounds for j in jlo:jhi, i in ilo:ihi
-        acc0 = zero(T)
-        acc1 = zero(T)
-        for t in eachindex(offs)
-            d = offs[t]
-            x = image[i - di * d, j - dj * d]
-            acc0 += v0[t] * x
-            acc1 += v1[t] * x
-        end
-        sb0[i, j] = acc0
-        sb1[i, j] = acc1
-    end
+    _nsqfb_decompose_kernel!(sb0, sb1, image, offs, v0, v1, di, dj, ilo, ihi, jlo, jhi)
 
     @inbounds for j in 1:n2, i in 1:n1
         if ilo <= i <= ihi && jlo <= j <= jhi
@@ -253,6 +242,36 @@ function _nsqfb_decompose!(
         sb1[i, j] = acc1
     end
     return sb0, sb1
+end
+
+function _nsqfb_decompose_kernel!(sb0::AbstractMatrix{T}, sb1::AbstractMatrix{T}, image::AbstractMatrix{T}, offs, v0, v1, di, dj, ilo, ihi, jlo, jhi) where {T<:Real}
+    @turbo for j in jlo:jhi, i in ilo:ihi
+        acc0 = zero(T)
+        acc1 = zero(T)
+        for t in eachindex(offs)
+            d = offs[t]
+            x = image[i - di * d, j - dj * d]
+            acc0 += v0[t] * x
+            acc1 += v1[t] * x
+        end
+        sb0[i, j] = acc0
+        sb1[i, j] = acc1
+    end
+end
+
+function _nsqfb_decompose_kernel!(sb0::AbstractMatrix{T}, sb1::AbstractMatrix{T}, image::AbstractMatrix{T}, offs, v0, v1, di, dj, ilo, ihi, jlo, jhi) where {T}
+    @inbounds for j in jlo:jhi, i in ilo:ihi
+        acc0 = zero(T)
+        acc1 = zero(T)
+        for t in eachindex(offs)
+            d = offs[t]
+            x = image[i - di * d, j - dj * d]
+            acc0 += v0[t] * x
+            acc1 += v1[t] * x
+        end
+        sb0[i, j] = acc0
+        sb1[i, j] = acc1
+    end
 end
 
 _nsqfb_reconstruct(sb0::AbstractMatrix, sb1::AbstractMatrix, qup, dir::Tuple{Int, Int}) =
@@ -281,16 +300,7 @@ function _nsqfb_reconstruct!(
     jlo = max(1, 1 + djmax)
     jhi = min(n2, n2 + djmin)
 
-    @inbounds for j in jlo:jhi, i in ilo:ihi
-        acc = zero(T)
-        for t in eachindex(offs)
-            d = offs[t]
-            x0 = sb0[i - di * d, j - dj * d]
-            x1 = sb1[i - di * d, j - dj * d]
-            acc += v0[t] * x0 + v1[t] * x1
-        end
-        out[i, j] = scale * acc
-    end
+    _nsqfb_reconstruct_kernel!(out, sb0, sb1, offs, v0, v1, scale, di, dj, ilo, ihi, jlo, jhi)
 
     @inbounds for j in 1:n2, i in 1:n1
         if ilo <= i <= ihi && jlo <= j <= jhi
@@ -306,6 +316,32 @@ function _nsqfb_reconstruct!(
         out[i, j] = scale * acc
     end
     return out
+end
+
+function _nsqfb_reconstruct_kernel!(out::AbstractMatrix{T}, sb0::AbstractMatrix{T}, sb1::AbstractMatrix{T}, offs, v0, v1, scale, di, dj, ilo, ihi, jlo, jhi) where {T<:Real}
+    @turbo for j in jlo:jhi, i in ilo:ihi
+        acc = zero(T)
+        for t in eachindex(offs)
+            d = offs[t]
+            x0 = sb0[i - di * d, j - dj * d]
+            x1 = sb1[i - di * d, j - dj * d]
+            acc += v0[t] * x0 + v1[t] * x1
+        end
+        out[i, j] = scale * acc
+    end
+end
+
+function _nsqfb_reconstruct_kernel!(out::AbstractMatrix{T}, sb0::AbstractMatrix{T}, sb1::AbstractMatrix{T}, offs, v0, v1, scale, di, dj, ilo, ihi, jlo, jhi) where {T}
+    @inbounds for j in jlo:jhi, i in ilo:ihi
+        acc = zero(T)
+        for t in eachindex(offs)
+            d = offs[t]
+            x0 = sb0[i - di * d, j - dj * d]
+            x1 = sb1[i - di * d, j - dj * d]
+            acc += v0[t] * x0 + v1[t] * x1
+        end
+        out[i, j] = scale * acc
+    end
 end
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

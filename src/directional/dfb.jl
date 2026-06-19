@@ -211,6 +211,60 @@ function _sefilter2(x::AbstractMatrix{Td}, f::Vector{Tf}, shift1::Int, shift2::I
     half = (L + 1) ÷ 2
     # Separable valid convolution with f along both dims (conv flips the filter).
     tmp = _scratch_like(x, m, size(ext, 2))
+    out = _scratch_like(x, m, n)
+    return _sefilter2_kernel!(out, tmp, ext, f, L, half, sym)
+end
+
+function _sefilter2_kernel!(out::AbstractMatrix{Td}, tmp::AbstractMatrix{Td}, ext::AbstractMatrix{Td}, f::Vector{Tf}, L::Int, half::Int, sym::Bool) where {Td<:Real, Tf}
+    m, n = size(out)
+    if sym
+        @turbo for j in axes(ext, 2), i in 1:m
+            acc = zero(Td)
+            for a in 1:half
+                acc += f[a] * (ext[i + L - a, j] + ext[i + a - 1, j])
+            end
+            tmp[i, j] = acc
+        end
+        if isodd(L)
+            f_half = f[half]
+            @turbo for j in axes(ext, 2), i in 1:m
+                tmp[i, j] -= f_half * ext[i + L - half, j]
+            end
+        end
+        @turbo for j in 1:n, i in 1:m
+            acc = zero(Td)
+            for b in 1:half
+                acc += f[b] * (tmp[i, j + L - b] + tmp[i, j + b - 1])
+            end
+            out[i, j] = acc
+        end
+        if isodd(L)
+            f_half = f[half]
+            @turbo for j in 1:n, i in 1:m
+                out[i, j] -= f_half * tmp[i, j + L - half]
+            end
+        end
+    else
+        @turbo for j in axes(ext, 2), i in 1:m
+            acc = zero(Td)
+            for a in 1:L
+                acc += f[a] * ext[i + L - a, j]
+            end
+            tmp[i, j] = acc
+        end
+        @turbo for j in 1:n, i in 1:m
+            acc = zero(Td)
+            for b in 1:L
+                acc += f[b] * tmp[i, j + L - b]
+            end
+            out[i, j] = acc
+        end
+    end
+    return out
+end
+
+function _sefilter2_kernel!(out::AbstractMatrix{Td}, tmp::AbstractMatrix{Td}, ext::AbstractMatrix{Td}, f::Vector{Tf}, L::Int, half::Int, sym::Bool) where {Td, Tf}
+    m, n = size(out)
     if sym
         @inbounds for j in axes(ext, 2), i in 1:m
             acc = zero(Td)
@@ -220,17 +274,6 @@ function _sefilter2(x::AbstractMatrix{Td}, f::Vector{Tf}, shift1::Int, shift2::I
             isodd(L) && (acc -= f[half] * ext[i + L - half, j])
             tmp[i, j] = acc
         end
-    else
-        @inbounds for j in axes(ext, 2), i in 1:m
-            acc = zero(Td)
-            for a in 1:L
-                acc += f[a] * ext[i + L - a, j]
-            end
-            tmp[i, j] = acc
-        end
-    end
-    out = _scratch_like(x, m, n)
-    if sym
         @inbounds for j in 1:n, i in 1:m
             acc = zero(Td)
             for b in 1:half
@@ -240,6 +283,13 @@ function _sefilter2(x::AbstractMatrix{Td}, f::Vector{Tf}, shift1::Int, shift2::I
             out[i, j] = acc
         end
     else
+        @inbounds for j in axes(ext, 2), i in 1:m
+            acc = zero(Td)
+            for a in 1:L
+                acc += f[a] * ext[i + L - a, j]
+            end
+            tmp[i, j] = acc
+        end
         @inbounds for j in 1:n, i in 1:m
             acc = zero(Td)
             for b in 1:L
@@ -270,10 +320,10 @@ function _fbdec_l(x::AbstractMatrix{Td}, f::Vector{Tf}, kind::Symbol, t, extmod:
     s2 = sqrt(Tf(2))
     sef = _sefilter2(p1, f, 1, 1, extmod)              # arena scratch (transient)
     y0 = _scratch_like(p0, size(p0, 1), size(p0, 2))
-    @. y0 = (p0 - sef) / s2
+    @.. y0 = (p0 - sef) / s2
     sef = _sefilter2(y0, f, 0, 0, extmod)
     y1 = _scratch_like(p1, size(p1, 1), size(p1, 2))
-    @. y1 = (-s2) * p1 - sef
+    @.. y1 = (-s2) * p1 - sef
     return y0, y1
 end
 
@@ -281,10 +331,10 @@ function _fbrec_l(y0::AbstractMatrix{Td}, y1::AbstractMatrix{Td}, f::Vector{Tf},
     s2 = sqrt(Tf(2))
     sef = _sefilter2(y0, f, 0, 0, extmod)
     p1 = _scratch_like(y1, size(y1, 1), size(y1, 2))
-    @. p1 = (-(one(Tf) / s2)) * (y1 + sef)
+    @.. p1 = (-(one(Tf) / s2)) * (y1 + sef)
     sef = _sefilter2(p1, f, 1, 1, extmod)
     p0 = _scratch_like(y0, size(y0, 1), size(y0, 2))
-    @. p0 = s2 * y0 + sef
+    @.. p0 = s2 * y0 + sef
     return _poly_rec(p0, p1, kind, t)
 end
 

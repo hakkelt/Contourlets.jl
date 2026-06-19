@@ -5,16 +5,16 @@ structure and the conventions that are *specific to this package*. General
 Julia best practices live in the skills under `.agents/skills/` (see below) and
 are not repeated here.
 
-## Quick Start for Agents
+## Quick Start
 
 1. **Read this file** for repository layout and project-specific invariants.
 2. **Load the matching skill** from `.agents/skills/` for the kind of work you
    are doing (performance, benchmarking, JET, packaging, docs).
 3. **Honour the invariants** in the table below — every change must keep them.
 
-## Agent Rules
+## Commit Rules
 
-- **Commit Message Formatting**: Follow the "Conventional Commits" format with the structure `type(scope): subject`. For complex changes, provide a detailed description (including performance numbers or context) separated by a blank line. For simple commits, a detailed description is optional.
+- **Commit Message Formatting**: Follow the "Conventional Commits" format with the structure `type(scope): subject` and a detailed description (including performance numbers or context) separated by a blank line. For simple commits affecting only a couple lines, a detailed description is optional. Always append co-author line referencing yourself.
 - **Committing Changes**: ONLY commit code upon explicit instruction from the user.
 
 ---
@@ -171,7 +171,6 @@ julia --project=test test/runtests.jl
 julia --project=test test/runtests.jl :ct,:gpu
 julia --project=test test/runtests.jl "make_nsct_workspace (type-first positional API)"
 ```
-Enable verbose output by setting `CONTOURLETS_TEST_VERBOSE=true`.
 
 **Benchmarks** — smoke test, then revision comparison:
 ```bash
@@ -183,8 +182,9 @@ benchpkg Contourlets --rev=master,HEAD --script=benchmark/benchmarks.jl \
     --output-dir=.temp/bench --exeflags="--threads=2"
 ```
 
-**Artifacts** — all generated output (coverage, benchmark JSON, profiles) goes
-under `.temp/`, which is git-ignored.
+**Artifacts** — all generated output (test run outputs, coverage, benchmark JSON, profiles) goes
+under `.temp/`, which is git-ignored to avoid re-runing failing long-running commands for full
+output.
 
 ---
 

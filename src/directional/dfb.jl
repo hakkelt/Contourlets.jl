@@ -320,10 +320,10 @@ function _fbdec_l(x::AbstractMatrix{Td}, f::Vector{Tf}, kind::Symbol, t, extmod:
     s2 = sqrt(Tf(2))
     sef = _sefilter2(p1, f, 1, 1, extmod)              # arena scratch (transient)
     y0 = _scratch_like(p0, size(p0, 1), size(p0, 2))
-    @.. y0 = (p0 - sef) / s2
+    @. y0 = (p0 - sef) / s2
     sef = _sefilter2(y0, f, 0, 0, extmod)
     y1 = _scratch_like(p1, size(p1, 1), size(p1, 2))
-    @.. y1 = (-s2) * p1 - sef
+    @. y1 = (-s2) * p1 - sef
     return y0, y1
 end
 
@@ -331,10 +331,10 @@ function _fbrec_l(y0::AbstractMatrix{Td}, y1::AbstractMatrix{Td}, f::Vector{Tf},
     s2 = sqrt(Tf(2))
     sef = _sefilter2(y0, f, 0, 0, extmod)
     p1 = _scratch_like(y1, size(y1, 1), size(y1, 2))
-    @.. p1 = (-(one(Tf) / s2)) * (y1 + sef)
+    @. p1 = (-(one(Tf) / s2)) * (y1 + sef)
     sef = _sefilter2(p1, f, 1, 1, extmod)
     p0 = _scratch_like(y0, size(y0, 1), size(y0, 2))
-    @.. p0 = s2 * y0 + sef
+    @. p0 = s2 * y0 + sef
     return _poly_rec(p0, p1, kind, t)
 end
 

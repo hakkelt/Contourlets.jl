@@ -76,7 +76,7 @@ function nsp_decompose!(
     end
     conv2d_sep!(coarse, image, h_j, h_j; boundary = :periodic, tmp = tmp2)
     conv2d_sep!(tmp, coarse, g_j, g_j; boundary = :periodic, tmp = tmp2)
-    @.. bandpass = image - tmp
+    @. bandpass = image - tmp
     return coarse, bandpass
 end
 
@@ -137,6 +137,6 @@ function nsp_reconstruct!(
 
     end
     conv2d_sep!(tmp, coarse, g_j, g_j; boundary = :periodic, tmp = tmp2)
-    @.. image = bandpass + tmp
+    @. image = bandpass + tmp
     return image
 end

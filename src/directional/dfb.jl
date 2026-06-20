@@ -487,6 +487,37 @@ function dfb_decompose(
 end
 
 """
+    dfb_decompose!(subbands::Vector{<:AbstractMatrix}, bandpass, l_levels, qfp::QuincunxFilterPair;
+                   workspace=nothing) -> subbands
+
+In-place DFB analysis. `subbands` must be a vector of `2^l_levels` preallocated matrices of the correct sizes.
+If a `workspace` is provided, intermediate allocations are avoided.
+"""
+function dfb_decompose!(
+        subbands::Vector{<:AbstractMatrix}, bandpass::AbstractMatrix, l_levels::Int,
+        qfp::QuincunxFilterPair;
+        workspace = nothing
+    )
+    l_levels >= 0 || throw(ArgumentError("l_levels must be ≥ 0"))
+    length(subbands) == 2^l_levels || throw(ArgumentError("subbands must have 2^l_levels matrices"))
+    if workspace !== nothing
+        _arena_reset!(workspace.fwd_scratch)
+        _with_arena(workspace.fwd_scratch) do
+            sbs = dfb_decompose(bandpass, l_levels, qfp)
+            for k in eachindex(sbs)
+                copyto!(subbands[k], sbs[k])
+            end
+        end
+    else
+        sbs = dfb_decompose(bandpass, l_levels, qfp)
+        for k in eachindex(sbs)
+            copyto!(subbands[k], sbs[k])
+        end
+    end
+    return subbands
+end
+
+"""
     dfb_reconstruct(subbands, qfp::QuincunxFilterPair) -> bandpass
 
 Reconstruct a bandpass image from its `2^l` directional subbands.
@@ -522,6 +553,30 @@ function dfb_reconstruct(
     end
     l_levels = round(Int, log2(n))
     return _dfb_merge(subbands, l_levels, 1, _convert_qfp(Tf, qfp))
+end
+
+"""
+    dfb_reconstruct!(bandpass::AbstractMatrix, subbands::Vector{<:AbstractMatrix}, qfp::QuincunxFilterPair;
+                     workspace=nothing) -> bandpass
+
+In-place DFB synthesis. `bandpass` is modified to store the reconstructed image.
+If a `workspace` is provided, intermediate allocations are avoided.
+"""
+function dfb_reconstruct!(
+        bandpass::AbstractMatrix, subbands::Vector{<:AbstractMatrix}, qfp::QuincunxFilterPair;
+        workspace = nothing
+    )
+    if workspace !== nothing
+        _arena_reset!(workspace.inv_scratch)
+        _with_arena(workspace.inv_scratch) do
+            bp = dfb_reconstruct(subbands, qfp)
+            copyto!(bandpass, bp)
+        end
+    else
+        bp = dfb_reconstruct(subbands, qfp)
+        copyto!(bandpass, bp)
+    end
+    return bandpass
 end
 
 # ── Modulation-mode shear path (modulation-mode pairs only) ───────────────────

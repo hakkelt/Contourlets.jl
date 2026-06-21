@@ -114,13 +114,16 @@ transforms use the separable direct backend ([`conv2d_sep!`](@ref)).
 function _build_fft_plan(
         src_size::Tuple{Int, Int},
         kernel_size::Tuple{Int, Int},
-        ::Type{T}
+        ::Type{T},
+        threading::ThreadingPolicy = Auto()
     ) where {T <: AbstractFloat}
     n1, n2 = src_size
     k1, k2 = kernel_size
     p1 = nextprod([2, 3, 5], n1 + k1 - 1)
     p2 = nextprod([2, 3, 5], n2 + k2 - 1)
     buf = zeros(T, p1, p2)
+    threaded = _use_threading(threading, T)
+    FFTW.set_num_threads(threaded ? Threads.nthreads() : 1)
     fwd = plan_rfft(buf; flags = FFTW.MEASURE)
     inv = plan_irfft(fwd * buf, p1; flags = FFTW.MEASURE)
     return fwd, inv, (p1, p2)
@@ -209,7 +212,8 @@ function conv2d!(
             ceil(Int, size(kernel, 1) / 2),
             ceil(Int, size(kernel, 2) / 2),
         );
-        boundary::Symbol = :symmetric
+        boundary::Symbol = :symmetric,
+        threading::ThreadingPolicy = Auto()
     ) where {Td <: Number, Tf <: AbstractFloat}
     size(dst) == size(src) || throw(DimensionMismatch("dst and src must have the same size"))
     # The FFTW backend is real-only (plan_rfft) and needs data == kernel type, so
@@ -218,7 +222,7 @@ function conv2d!(
     if length(kernel) <= 25 || !(Td <: AbstractFloat && Td === Tf)
         _conv2d_direct!(dst, src, kernel, origin; boundary = boundary)
     else
-        ws = _make_fftw_workspace(size(src), size(kernel), Td)
+        ws = _make_fftw_workspace(size(src), size(kernel), Td, threading)
         _conv2d_fftw!(dst, src, kernel, origin, ws; boundary = boundary)
     end
     return dst
@@ -236,10 +240,11 @@ function conv2d(
             ceil(Int, size(kernel, 1) / 2),
             ceil(Int, size(kernel, 2) / 2),
         );
-        boundary::Symbol = :symmetric
+        boundary::Symbol = :symmetric,
+        threading::ThreadingPolicy = Auto()
     ) where {Td <: Number, Tf <: AbstractFloat}
     dst = similar(src)
-    return conv2d!(dst, src, kernel, origin; boundary = boundary)
+    return conv2d!(dst, src, kernel, origin; boundary = boundary, threading = threading)
 end
 
 """
@@ -332,9 +337,10 @@ end
 function _make_fftw_workspace(
         src_size::Tuple{Int, Int},
         kernel_size::Tuple{Int, Int},
-        ::Type{T}
+        ::Type{T},
+        threading::ThreadingPolicy = Auto()
     ) where {T <: AbstractFloat}
-    fwd, inv, (p1, p2) = _build_fft_plan(src_size, kernel_size, T)
+    fwd, inv, (p1, p2) = _build_fft_plan(src_size, kernel_size, T, threading)
     pad_src = zeros(T, p1, p2)
     pad_ker = zeros(T, p1, p2)
     Nc = p1 ÷ 2 + 1

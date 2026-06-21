@@ -30,13 +30,14 @@ true
 """
 function nsct_forward(
         image::AbstractMatrix, params::ContourletParams;
-        workspace::Union{ContourletWorkspace, Nothing} = nothing
+        workspace::Union{ContourletWorkspace, Nothing} = nothing,
+        threading::ThreadingPolicy = Auto()
     )
     if workspace !== nothing
         Tw = eltype(workspace)   # the workspace dictates the data type
         coeffs = similar_nsct_coefficients(params, size(image); Td = Tw)
         img = Tw === eltype(image) ? image : Tw.(image)
-        return nsct_forward!(coeffs, img, workspace)
+        return nsct_forward!(coeffs, img, workspace; threading = threading)
     end
     Td = _data_eltype(image)       # data type (real or complex)
     Tf = _filter_eltype(Td)        # real filter precision
@@ -50,7 +51,7 @@ function nsct_forward(
 
     for j in 1:J
         coarse_j, bp_j = nsp_decompose(coarse, fp, j)
-        subbands[j] = nsdfb_decompose(bp_j, L[j], qfp, j)
+        subbands[j] = nsdfb_decompose(bp_j, L[j], qfp, j; threading = threading)
         coarse = coarse_j
     end
     return NSCTCoefficients(coarse, subbands, p_out)
@@ -64,7 +65,8 @@ In-place NSCT forward pass.
 function nsct_forward!(
         coeffs::NSCTCoefficients{T},
         image::AbstractMatrix,
-        ws::ContourletWorkspace{T, Tf}
+        ws::ContourletWorkspace{T, Tf};
+        threading::ThreadingPolicy = Auto()
     ) where {T, Tf}
     params = coeffs.params
     J = params.J
@@ -91,6 +93,10 @@ function nsct_forward!(
                 mul!(ws.fft_spectrum_bp, ws.fft_plan_fwd, bp_j)
                 H_leaves = ws.nsdfb_H_cache[j]
                 plan_inv = ws.fft_plan_inv
+
+                # In the hybrid threading model, Polyester is used natively
+                # inside the convolution kernels. For FFT-based convolution,
+                # we just loop through the leaves.
                 for k in 1:length(H_leaves)
                     ws.fft_buffer_c .= ws.fft_spectrum_bp .* H_leaves[k]
                     mul!(coeffs.subbands[j][k], plan_inv, ws.fft_buffer_c)
@@ -125,7 +131,7 @@ julia> maximum(abs, rec .- x) < 1e-12
 true
 ```
 """
-function nsct_inverse(coeffs::NSCTCoefficients{T}) where {T}
+function nsct_inverse(coeffs::NSCTCoefficients{T}; threading::ThreadingPolicy = Auto()) where {T}
     params = coeffs.params
     J = params.J
     fp = params.lp_filters
@@ -133,7 +139,7 @@ function nsct_inverse(coeffs::NSCTCoefficients{T}) where {T}
     coarse = copy(coeffs.coarse)
 
     for j in J:-1:1
-        bp = nsdfb_reconstruct(coeffs.subbands[j], qfp, j)
+        bp = nsdfb_reconstruct(coeffs.subbands[j], qfp, j; threading = threading)
         coarse = nsp_reconstruct(coarse, bp, fp, j)
     end
     return coarse
@@ -147,7 +153,8 @@ In-place NSCT inverse pass.
 function nsct_inverse!(
         image::AbstractMatrix{T},
         coeffs::NSCTCoefficients{T},
-        ws::ContourletWorkspace{T, Tf}
+        ws::ContourletWorkspace{T, Tf};
+        threading::ThreadingPolicy = Auto()
     ) where {T, Tf}
     params = coeffs.params
     J = params.J
@@ -167,11 +174,17 @@ function nsct_inverse!(
                 plan_fwd = ws.fft_plan_fwd
                 plan_inv = ws.fft_plan_inv
                 fill!(ws.fft_spectrum_bp, zero(eltype(ws.fft_spectrum_bp)))
-                for k in 1:length(G_leaves)
-                    mul!(ws.fft_buffer_c, plan_fwd, coeffs.subbands[j][k])
+
+                n_subbands = length(coeffs.subbands[j])
+
+                # In the hybrid threading model, Polyester is used natively
+                # inside the convolution kernels. For FFT-based convolution,
+                # we just loop through the leaves.
+                for k in 1:n_subbands
+                    mul!(ws.fft_buffer_c, ws.fft_plan_fwd, coeffs.subbands[j][k])
                     ws.fft_spectrum_bp .+= ws.fft_buffer_c .* G_leaves[k]
                 end
-                mul!(bp, plan_inv, ws.fft_spectrum_bp)
+                mul!(bp, ws.fft_plan_inv, ws.fft_spectrum_bp)
             else
                 _nsdfb_reconstruct_into!(bp, coeffs.subbands[j], ws.qup_cache[j], ws.inv_scratch)
             end

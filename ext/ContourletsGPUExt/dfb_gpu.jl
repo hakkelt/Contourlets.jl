@@ -83,7 +83,8 @@ end
 end
 
 function Contourlets._sefilter2(
-        x::_AbstractGPUMatrix{Td}, f::Vector{Tf}, shift1::Int, shift2::Int, extmod::Symbol
+        x::_AbstractGPUMatrix{Td}, f::Vector{Tf}, shift1::Int, shift2::Int, extmod::Symbol, threaded::Bool = false;
+        kwargs...
     ) where {Td, Tf}
     backend = _gpu_backend(x)
     L = length(f)

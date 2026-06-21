@@ -57,25 +57,35 @@ julia> length(sbs), size(sbs[1]) == size(x)
 """
 function nsdfb_decompose(
         bandpass::AbstractMatrix, l_levels::Int,
-        qfp::QuincunxFilterPair, tree_level::Int
+        qfp::QuincunxFilterPair, tree_level::Int;
+        threading::ThreadingPolicy = Auto()
     )
     l_levels >= 0 || throw(ArgumentError("l_levels must be ≥ 0"))
     tree_level >= 1 || throw(ArgumentError("tree_level must be ≥ 1"))
     l_levels == 0 && return [copy(bandpass)]
-    Td = _data_eltype(bandpass)      # data type (real or complex)
-    Tf = _filter_eltype(Td)          # real filter precision
+    Td = _data_eltype(bandpass)
+    Tf = _filter_eltype(Td)
     img = Td === eltype(bandpass) ? bandpass : Td.(bandpass)
     qup = _upsample_qfp_1d(qfp, 2^(tree_level - 1), Tf)
-    return _nsdfb_split(img, l_levels, 1, qup)
+    threaded = _use_threading(threading, Td)
+    return _nsdfb_split(img, l_levels, 1, qup, threaded)
 end
 
-function _nsdfb_split(img::AbstractMatrix, remaining::Int, depth::Int, qup)
-    sb0, sb1 = _nsqfb_decompose(img, qup, _nsdfb_direction(depth))
+function _nsdfb_split(img::AbstractMatrix, remaining::Int, depth::Int, qup, threaded::Bool = false)
+    sb0, sb1 = _nsqfb_decompose(img, qup, _nsdfb_direction(depth), threaded)
     remaining == 1 && return [sb0, sb1]
-    return vcat(
-        _nsdfb_split(sb0, remaining - 1, depth + 1, qup),
-        _nsdfb_split(sb1, remaining - 1, depth + 1, qup)
-    )
+
+    if threaded
+        t0 = Threads.@spawn _nsdfb_split(sb0, remaining - 1, depth + 1, qup, threaded)
+        r1 = _nsdfb_split(sb1, remaining - 1, depth + 1, qup, threaded)
+        r0 = fetch(t0)::typeof(r1)
+        return vcat(r0, r1)
+    else
+        return vcat(
+            _nsdfb_split(sb0, remaining - 1, depth + 1, qup, threaded),
+            _nsdfb_split(sb1, remaining - 1, depth + 1, qup, threaded)
+        )
+    end
 end
 
 """
@@ -99,27 +109,33 @@ true
 """
 function nsdfb_reconstruct(
         subbands::Vector{<:AbstractMatrix},
-        qfp::QuincunxFilterPair, tree_level::Int
+        qfp::QuincunxFilterPair, tree_level::Int;
+        threading::ThreadingPolicy = Auto()
     )
     n = length(subbands)
     ispow2(n) || throw(ArgumentError("number of subbands must be a power of 2"))
     n == 1 && return copy(subbands[1])
-    Td = _data_eltype(subbands[1])   # data type (real or complex)
-    Tf = _filter_eltype(Td)          # real filter precision
+    Td = _data_eltype(subbands[1])
+    Tf = _filter_eltype(Td)
     qup = _upsample_qfp_1d(qfp, 2^(tree_level - 1), Tf)
     l_levels = round(Int, log2(n))
-    return _nsdfb_merge(subbands, l_levels, 1, qup)
+    threaded = _use_threading(threading, Td)
+    return _nsdfb_merge(subbands, l_levels, 1, qup, threaded)
 end
 
-function _nsdfb_merge(sbs::Vector{<:AbstractMatrix}, l::Int, depth::Int, qup)
+function _nsdfb_merge(sbs::Vector{<:AbstractMatrix}, l::Int, depth::Int, qup, threaded::Bool = false)
     half = length(sbs) ÷ 2
     if l == 1
         sb0, sb1 = sbs[1], sbs[2]
+    elseif threaded
+        t0 = Threads.@spawn _nsdfb_merge(sbs[1:half], l - 1, depth + 1, qup, threaded)
+        sb1 = _nsdfb_merge(sbs[(half + 1):end], l - 1, depth + 1, qup, threaded)
+        sb0 = fetch(t0)::typeof(sb1)
     else
-        sb0 = _nsdfb_merge(sbs[1:half], l - 1, depth + 1, qup)
-        sb1 = _nsdfb_merge(sbs[(half + 1):end], l - 1, depth + 1, qup)
+        sb0 = _nsdfb_merge(sbs[1:half], l - 1, depth + 1, qup, threaded)
+        sb1 = _nsdfb_merge(sbs[(half + 1):end], l - 1, depth + 1, qup, threaded)
     end
-    return _nsqfb_reconstruct(sb0, sb1, qup, _nsdfb_direction(depth))
+    return _nsqfb_reconstruct(sb0, sb1, qup, _nsdfb_direction(depth), threaded)
 end
 
 # ── Allocation-free NSDFB (writes into pre-allocated `out`; `arena` supplies the
@@ -199,12 +215,12 @@ end
 #     follows from the decimated PR identity G₀H₀ + G₁H₁ = 2).
 # Both identities are invariant under à trous upsampling (z → z^{2^l}).
 
-_nsqfb_decompose(image::AbstractMatrix, qup, dir::Tuple{Int, Int}) =
-    _nsqfb_decompose!(similar(image), similar(image), image, qup, dir)
+_nsqfb_decompose(image::AbstractMatrix, qup, dir::Tuple{Int, Int}, threaded::Bool = false) =
+    _nsqfb_decompose!(similar(image), similar(image), image, qup, dir, threaded)
 
 function _nsqfb_decompose!(
         sb0::AbstractMatrix, sb1::AbstractMatrix, image::AbstractMatrix,
-        qup, dir::Tuple{Int, Int}
+        qup, dir::Tuple{Int, Int}, threaded::Bool = false
     )
     di, dj = dir
     n1, n2 = size(image)
@@ -224,7 +240,7 @@ function _nsqfb_decompose!(
     jlo = max(1, 1 + djmax)
     jhi = min(n2, n2 + djmin)
 
-    _nsqfb_decompose_kernel!(sb0, sb1, image, offs, v0, v1, di, dj, ilo, ihi, jlo, jhi)
+    _nsqfb_decompose_kernel!(sb0, sb1, image, offs, v0, v1, di, dj, ilo, ihi, jlo, jhi, threaded)
 
     @inbounds for j in 1:n2, i in 1:n1
         if ilo <= i <= ihi && jlo <= j <= jhi
@@ -244,44 +260,76 @@ function _nsqfb_decompose!(
     return sb0, sb1
 end
 
-function _nsqfb_decompose_kernel!(sb0::AbstractMatrix{T}, sb1::AbstractMatrix{T}, image::AbstractMatrix{T}, offs, v0, v1, di, dj, ilo, ihi, jlo, jhi) where {T <: Real}
-    @turbo for j in jlo:jhi, i in ilo:ihi
-        acc0 = zero(T)
-        acc1 = zero(T)
-        for t in eachindex(offs)
-            d = offs[t]
-            x = image[i - di * d, j - dj * d]
-            acc0 += v0[t] * x
-            acc1 += v1[t] * x
+function _nsqfb_decompose_kernel!(sb0::AbstractMatrix{T}, sb1::AbstractMatrix{T}, image::AbstractMatrix{T}, offs, v0, v1, di, dj, ilo, ihi, jlo, jhi, threaded::Bool) where {T <: Real}
+    if threaded
+        @tturbo for j in jlo:jhi, i in ilo:ihi
+            acc0 = zero(T)
+            acc1 = zero(T)
+            for t in eachindex(offs)
+                d = offs[t]
+                x = image[i - di * d, j - dj * d]
+                acc0 += v0[t] * x
+                acc1 += v1[t] * x
+            end
+            sb0[i, j] = acc0
+            sb1[i, j] = acc1
         end
-        sb0[i, j] = acc0
-        sb1[i, j] = acc1
+    else
+        @turbo for j in jlo:jhi, i in ilo:ihi
+            acc0 = zero(T)
+            acc1 = zero(T)
+            for t in eachindex(offs)
+                d = offs[t]
+                x = image[i - di * d, j - dj * d]
+                acc0 += v0[t] * x
+                acc1 += v1[t] * x
+            end
+            sb0[i, j] = acc0
+            sb1[i, j] = acc1
+        end
     end
     return nothing
 end
 
-function _nsqfb_decompose_kernel!(sb0::AbstractMatrix{T}, sb1::AbstractMatrix{T}, image::AbstractMatrix{T}, offs, v0, v1, di, dj, ilo, ihi, jlo, jhi) where {T}
-    @inbounds for j in jlo:jhi, i in ilo:ihi
-        acc0 = zero(T)
-        acc1 = zero(T)
-        for t in eachindex(offs)
-            d = offs[t]
-            x = image[i - di * d, j - dj * d]
-            acc0 += v0[t] * x
-            acc1 += v1[t] * x
+function _nsqfb_decompose_kernel!(sb0::AbstractMatrix{T}, sb1::AbstractMatrix{T}, image::AbstractMatrix{T}, offs, v0, v1, di, dj, ilo, ihi, jlo, jhi, threaded::Bool) where {T}
+    if threaded
+        @batch for j in jlo:jhi
+            @inbounds for i in ilo:ihi
+                acc0 = zero(T)
+                acc1 = zero(T)
+                for t in eachindex(offs)
+                    d = offs[t]
+                    x = image[i - di * d, j - dj * d]
+                    acc0 += v0[t] * x
+                    acc1 += v1[t] * x
+                end
+                sb0[i, j] = acc0
+                sb1[i, j] = acc1
+            end
         end
-        sb0[i, j] = acc0
-        sb1[i, j] = acc1
+    else
+        @inbounds for j in jlo:jhi, i in ilo:ihi
+            acc0 = zero(T)
+            acc1 = zero(T)
+            for t in eachindex(offs)
+                d = offs[t]
+                x = image[i - di * d, j - dj * d]
+                acc0 += v0[t] * x
+                acc1 += v1[t] * x
+            end
+            sb0[i, j] = acc0
+            sb1[i, j] = acc1
+        end
     end
     return nothing
 end
 
-_nsqfb_reconstruct(sb0::AbstractMatrix, sb1::AbstractMatrix, qup, dir::Tuple{Int, Int}) =
-    _nsqfb_reconstruct!(similar(sb0), sb0, sb1, qup, dir)
+_nsqfb_reconstruct(sb0::AbstractMatrix, sb1::AbstractMatrix, qup, dir::Tuple{Int, Int}, threaded::Bool = false) =
+    _nsqfb_reconstruct!(similar(sb0), sb0, sb1, qup, dir, threaded)
 
 function _nsqfb_reconstruct!(
         out::AbstractMatrix, sb0::AbstractMatrix, sb1::AbstractMatrix, qup,
-        dir::Tuple{Int, Int}
+        dir::Tuple{Int, Int}, threaded::Bool = false
     )
     di, dj = dir
     n1, n2 = size(sb0)
@@ -302,7 +350,7 @@ function _nsqfb_reconstruct!(
     jlo = max(1, 1 + djmax)
     jhi = min(n2, n2 + djmin)
 
-    _nsqfb_reconstruct_kernel!(out, sb0, sb1, offs, v0, v1, scale, di, dj, ilo, ihi, jlo, jhi)
+    _nsqfb_reconstruct_kernel!(out, sb0, sb1, offs, v0, v1, scale, di, dj, ilo, ihi, jlo, jhi, threaded)
 
     @inbounds for j in 1:n2, i in 1:n1
         if ilo <= i <= ihi && jlo <= j <= jhi
@@ -320,30 +368,58 @@ function _nsqfb_reconstruct!(
     return out
 end
 
-function _nsqfb_reconstruct_kernel!(out::AbstractMatrix{T}, sb0::AbstractMatrix{T}, sb1::AbstractMatrix{T}, offs, v0, v1, scale, di, dj, ilo, ihi, jlo, jhi) where {T <: Real}
-    @turbo for j in jlo:jhi, i in ilo:ihi
-        acc = zero(T)
-        for t in eachindex(offs)
-            d = offs[t]
-            x0 = sb0[i - di * d, j - dj * d]
-            x1 = sb1[i - di * d, j - dj * d]
-            acc += v0[t] * x0 + v1[t] * x1
+function _nsqfb_reconstruct_kernel!(out::AbstractMatrix{T}, sb0::AbstractMatrix{T}, sb1::AbstractMatrix{T}, offs, v0, v1, scale, di, dj, ilo, ihi, jlo, jhi, threaded::Bool) where {T <: Real}
+    if threaded
+        @tturbo for j in jlo:jhi, i in ilo:ihi
+            acc = zero(T)
+            for t in eachindex(offs)
+                d = offs[t]
+                x0 = sb0[i - di * d, j - dj * d]
+                x1 = sb1[i - di * d, j - dj * d]
+                acc += v0[t] * x0 + v1[t] * x1
+            end
+            out[i, j] = scale * acc
         end
-        out[i, j] = scale * acc
+    else
+        @turbo for j in jlo:jhi, i in ilo:ihi
+            acc = zero(T)
+            for t in eachindex(offs)
+                d = offs[t]
+                x0 = sb0[i - di * d, j - dj * d]
+                x1 = sb1[i - di * d, j - dj * d]
+                acc += v0[t] * x0 + v1[t] * x1
+            end
+            out[i, j] = scale * acc
+        end
     end
     return nothing
 end
 
-function _nsqfb_reconstruct_kernel!(out::AbstractMatrix{T}, sb0::AbstractMatrix{T}, sb1::AbstractMatrix{T}, offs, v0, v1, scale, di, dj, ilo, ihi, jlo, jhi) where {T}
-    @inbounds for j in jlo:jhi, i in ilo:ihi
-        acc = zero(T)
-        for t in eachindex(offs)
-            d = offs[t]
-            x0 = sb0[i - di * d, j - dj * d]
-            x1 = sb1[i - di * d, j - dj * d]
-            acc += v0[t] * x0 + v1[t] * x1
+function _nsqfb_reconstruct_kernel!(out::AbstractMatrix{T}, sb0::AbstractMatrix{T}, sb1::AbstractMatrix{T}, offs, v0, v1, scale, di, dj, ilo, ihi, jlo, jhi, threaded::Bool) where {T}
+    if threaded
+        @batch for j in jlo:jhi
+            @inbounds for i in ilo:ihi
+                acc = zero(T)
+                for t in eachindex(offs)
+                    d = offs[t]
+                    x0 = sb0[i - di * d, j - dj * d]
+                    x1 = sb1[i - di * d, j - dj * d]
+                    acc += v0[t] * x0 + v1[t] * x1
+                end
+                out[i, j] = scale * acc
+            end
         end
-        out[i, j] = scale * acc
+    else
+        @inbounds for j in jlo:jhi, i in ilo:ihi
+            acc = zero(T)
+            for t in eachindex(offs)
+                d = offs[t]
+                x0 = sb0[i - di * d, j - dj * d]
+                x1 = sb1[i - di * d, j - dj * d]
+                acc += v0[t] * x0 + v1[t] * x1
+            end
+            out[i, j] = scale * acc
+        end
     end
     return nothing
 end

@@ -195,7 +195,7 @@ end
 
 # y = X * F1(z1) * F2(z2) * z1^shift1 * z2^shift2, same size as x.
 # Real filter `f` (Tf) applied to data `x` (Td, real or complex); `acc` is Td.
-function _sefilter2(x::AbstractMatrix{Td}, f::Vector{Tf}, shift1::Int, shift2::Int, extmod::Symbol) where {Td, Tf}
+function _sefilter2(x::AbstractMatrix{Td}, f::Vector{Tf}, shift1::Int, shift2::Int, extmod::Symbol, threaded::Bool = false) where {Td, Tf}
     L = length(f)
     lf = (L - 1) / 2
     ru = floor(Int, lf) + shift1
@@ -204,98 +204,99 @@ function _sefilter2(x::AbstractMatrix{Td}, f::Vector{Tf}, shift1::Int, shift2::I
     cr = ceil(Int, lf) - shift2
     ext = _extend2(x, ru, rd, cl, cr, extmod)
     m, n = size(x)
-    # The lifting filter is symmetric (f[a] == f[L+1-a]); fold the taps so each
-    # output uses ⌈L/2⌉ multiplies instead of L.  Cuts the FLOP count of this
-    # (dominant) kernel roughly in half for the default Q2345 pair.
     sym = _is_symmetric(f, L)
     half = (L + 1) ÷ 2
     # Separable valid convolution with f along both dims (conv flips the filter).
     tmp = _scratch_like(x, m, size(ext, 2))
     out = _scratch_like(x, m, n)
-    return _sefilter2_kernel!(out, tmp, ext, f, L, half, sym)
+    return _sefilter2_kernel!(out, tmp, ext, f, L, half, sym, threaded)
 end
 
-function _sefilter2_kernel!(out::AbstractMatrix{Td}, tmp::AbstractMatrix{Td}, ext::AbstractMatrix{Td}, f::Vector{Tf}, L::Int, half::Int, sym::Bool) where {Td <: Real, Tf}
+function _sefilter2_kernel!(out::AbstractMatrix{Td}, tmp::AbstractMatrix{Td}, ext::AbstractMatrix{Td}, f::Vector{Tf}, L::Int, half::Int, sym::Bool, threaded::Bool) where {Td, Tf}
     m, n = size(out)
     if sym
-        @turbo for j in axes(ext, 2), i in 1:m
-            acc = zero(Td)
-            for a in 1:half
-                acc += f[a] * (ext[i + L - a, j] + ext[i + a - 1, j])
+        if threaded
+            @batch for j in axes(ext, 2)
+                @inbounds for i in 1:m
+                    acc = zero(Td)
+                    for a in 1:half
+                        acc += f[a] * (ext[i + L - a, j] + ext[i + a - 1, j])
+                    end
+                    isodd(L) && (acc -= f[half] * ext[i + L - half, j])
+                    tmp[i, j] = acc
+                end
             end
-            tmp[i, j] = acc
-        end
-        if isodd(L)
-            f_half = f[half]
-            @turbo for j in axes(ext, 2), i in 1:m
-                tmp[i, j] -= f_half * ext[i + L - half, j]
+            @batch for j in 1:n
+                @inbounds for i in 1:m
+                    acc = zero(Td)
+                    for b in 1:half
+                        acc += f[b] * (tmp[i, j + L - b] + tmp[i, j + b - 1])
+                    end
+                    isodd(L) && (acc -= f[half] * tmp[i, j + L - half])
+                    out[i, j] = acc
+                end
             end
-        end
-        @turbo for j in 1:n, i in 1:m
-            acc = zero(Td)
-            for b in 1:half
-                acc += f[b] * (tmp[i, j + L - b] + tmp[i, j + b - 1])
+        else
+            for j in axes(ext, 2)
+                @inbounds for i in 1:m
+                    acc = zero(Td)
+                    for a in 1:half
+                        acc += f[a] * (ext[i + L - a, j] + ext[i + a - 1, j])
+                    end
+                    isodd(L) && (acc -= f[half] * ext[i + L - half, j])
+                    tmp[i, j] = acc
+                end
             end
-            out[i, j] = acc
-        end
-        if isodd(L)
-            f_half = f[half]
-            @turbo for j in 1:n, i in 1:m
-                out[i, j] -= f_half * tmp[i, j + L - half]
+            for j in 1:n
+                @inbounds for i in 1:m
+                    acc = zero(Td)
+                    for b in 1:half
+                        acc += f[b] * (tmp[i, j + L - b] + tmp[i, j + b - 1])
+                    end
+                    isodd(L) && (acc -= f[half] * tmp[i, j + L - half])
+                    out[i, j] = acc
+                end
             end
         end
     else
-        @turbo for j in axes(ext, 2), i in 1:m
-            acc = zero(Td)
-            for a in 1:L
-                acc += f[a] * ext[i + L - a, j]
+        if threaded
+            @batch for j in axes(ext, 2)
+                @inbounds for i in 1:m
+                    acc = zero(Td)
+                    for a in 1:L
+                        acc += f[a] * ext[i + L - a, j]
+                    end
+                    tmp[i, j] = acc
+                end
             end
-            tmp[i, j] = acc
-        end
-        @turbo for j in 1:n, i in 1:m
-            acc = zero(Td)
-            for b in 1:L
-                acc += f[b] * tmp[i, j + L - b]
+            @batch for j in 1:n
+                @inbounds for i in 1:m
+                    acc = zero(Td)
+                    for b in 1:L
+                        acc += f[b] * tmp[i, j + L - b]
+                    end
+                    out[i, j] = acc
+                end
             end
-            out[i, j] = acc
-        end
-    end
-    return out
-end
-
-function _sefilter2_kernel!(out::AbstractMatrix{Td}, tmp::AbstractMatrix{Td}, ext::AbstractMatrix{Td}, f::Vector{Tf}, L::Int, half::Int, sym::Bool) where {Td, Tf}
-    m, n = size(out)
-    if sym
-        @inbounds for j in axes(ext, 2), i in 1:m
-            acc = zero(Td)
-            for a in 1:half
-                acc += f[a] * (ext[i + L - a, j] + ext[i + a - 1, j])
+        else
+            for j in axes(ext, 2)
+                @inbounds for i in 1:m
+                    acc = zero(Td)
+                    for a in 1:L
+                        acc += f[a] * ext[i + L - a, j]
+                    end
+                    tmp[i, j] = acc
+                end
             end
-            isodd(L) && (acc -= f[half] * ext[i + L - half, j])
-            tmp[i, j] = acc
-        end
-        @inbounds for j in 1:n, i in 1:m
-            acc = zero(Td)
-            for b in 1:half
-                acc += f[b] * (tmp[i, j + L - b] + tmp[i, j + b - 1])
+            for j in 1:n
+                @inbounds for i in 1:m
+                    acc = zero(Td)
+                    for b in 1:L
+                        acc += f[b] * tmp[i, j + L - b]
+                    end
+                    out[i, j] = acc
+                end
             end
-            isodd(L) && (acc -= f[half] * tmp[i, j + L - half])
-            out[i, j] = acc
-        end
-    else
-        @inbounds for j in axes(ext, 2), i in 1:m
-            acc = zero(Td)
-            for a in 1:L
-                acc += f[a] * ext[i + L - a, j]
-            end
-            tmp[i, j] = acc
-        end
-        @inbounds for j in 1:n, i in 1:m
-            acc = zero(Td)
-            for b in 1:L
-                acc += f[b] * tmp[i, j + L - b]
-            end
-            out[i, j] = acc
         end
     end
     return out
@@ -315,26 +316,42 @@ end
 _poly_dec(x, kind::Symbol, t) = kind === :q ? _qpdec(x, t) : _ppdec(x, t)
 _poly_rec(p0, p1, kind::Symbol, t) = kind === :q ? _qprec(p0, p1, t) : _pprec(p0, p1, t)
 
-function _fbdec_l(x::AbstractMatrix{Td}, f::Vector{Tf}, kind::Symbol, t, extmod::Symbol = :per) where {Td, Tf}
+function _fbdec_l(x::AbstractMatrix{Td}, f::Vector{Tf}, kind::Symbol, t, extmod::Symbol = :per, threaded::Bool = false) where {Td, Tf}
     p0, p1 = _poly_dec(x, kind, t)
     s2 = sqrt(Tf(2))
-    sef = _sefilter2(p1, f, 1, 1, extmod)              # arena scratch (transient)
+    sef = _sefilter2(p1, f, 1, 1, extmod, threaded)
     y0 = _scratch_like(p0, size(p0, 1), size(p0, 2))
-    @. y0 = (p0 - sef) / s2
-    sef = _sefilter2(y0, f, 0, 0, extmod)
+    if Td <: Real && y0 isa Array
+        @turbo @. y0 = (p0 - sef) / s2
+    else
+        @. y0 = (p0 - sef) / s2
+    end
+    sef = _sefilter2(y0, f, 0, 0, extmod, threaded)
     y1 = _scratch_like(p1, size(p1, 1), size(p1, 2))
-    @. y1 = (-s2) * p1 - sef
+    if Td <: Real && y1 isa Array
+        @turbo @. y1 = (-s2) * p1 - sef
+    else
+        @. y1 = (-s2) * p1 - sef
+    end
     return y0, y1
 end
 
-function _fbrec_l(y0::AbstractMatrix{Td}, y1::AbstractMatrix{Td}, f::Vector{Tf}, kind::Symbol, t, extmod::Symbol = :per) where {Td, Tf}
+function _fbrec_l(y0::AbstractMatrix{Td}, y1::AbstractMatrix{Td}, f::Vector{Tf}, kind::Symbol, t, extmod::Symbol = :per, threaded::Bool = false) where {Td, Tf}
     s2 = sqrt(Tf(2))
-    sef = _sefilter2(y0, f, 0, 0, extmod)
+    sef = _sefilter2(y0, f, 0, 0, extmod, threaded)
     p1 = _scratch_like(y1, size(y1, 1), size(y1, 2))
-    @. p1 = (-(one(Tf) / s2)) * (y1 + sef)
-    sef = _sefilter2(p1, f, 1, 1, extmod)
+    if Td <: Real && p1 isa Array
+        @turbo @. p1 = (-(one(Tf) / s2)) * (y1 + sef)
+    else
+        @. p1 = (-(one(Tf) / s2)) * (y1 + sef)
+    end
+    sef = _sefilter2(p1, f, 1, 1, extmod, threaded)
     p0 = _scratch_like(y0, size(y0, 1), size(y0, 2))
-    @. p0 = s2 * y0 + sef
+    if Td <: Real && p0 isa Array
+        @turbo @. p0 = s2 * y0 + sef
+    else
+        @. p0 = s2 * y0 + sef
+    end
     return _poly_rec(p0, p1, kind, t)
 end
 
@@ -386,27 +403,28 @@ end
 
 # ── Ladder DFB decomposition / reconstruction ─────────────────────────────────
 
-function _dfbdec_l(x::AbstractMatrix{Td}, f::Vector{Tf}, n::Int) where {Td, Tf}
+function _dfbdec_l(x::AbstractMatrix{Td}, f::Vector{Tf}, n::Int, threaded::Bool = false) where {Td, Tf}
     n == 0 && return [copy(x)]
     if n == 1
-        y0, y1 = _fbdec_l(x, f, :q, :q1r, :qper_col)
+        y0, y1 = _fbdec_l(x, f, :q, :q1r, :qper_col, threaded)
         y = [y0, y1]
     else
-        x0, x1 = _fbdec_l(x, f, :q, :q1r, :qper_col)
+        x0, x1 = _fbdec_l(x, f, :q, :q1r, :qper_col, threaded)
         M = typeof(x0)
         y = Vector{M}(undef, 4)
-        y[2], y[1] = _fbdec_l(x0, f, :q, :q2c)
-        y[4], y[3] = _fbdec_l(x1, f, :q, :q2c)
+        y[2], y[1] = _fbdec_l(x0, f, :q, :q2c, :per, threaded)
+        y[4], y[3] = _fbdec_l(x1, f, :q, :q2c, :per, threaded)
+
         for l in 3:n
             y_old = y
             y = Vector{M}(undef, 2^l)
             for k in 1:(2^(l - 2))
                 i = mod(k - 1, 2) + 1
-                y[2k], y[2k - 1] = _fbdec_l(y_old[k], f, :p, i)
+                y[2k], y[2k - 1] = _fbdec_l(y_old[k], f, :p, i, :per, threaded)
             end
             for k in (2^(l - 2) + 1):(2^(l - 1))
                 i = mod(k - 1, 2) + 3
-                y[2k], y[2k - 1] = _fbdec_l(y_old[k], f, :p, i)
+                y[2k], y[2k - 1] = _fbdec_l(y_old[k], f, :p, i, :per, threaded)
             end
         end
     end
@@ -417,7 +435,7 @@ function _dfbdec_l(x::AbstractMatrix{Td}, f::Vector{Tf}, n::Int) where {Td, Tf}
     return y
 end
 
-function _dfbrec_l(y::Vector{<:AbstractMatrix{Td}}, f::Vector{Tf}) where {Td, Tf}
+function _dfbrec_l(y::Vector{<:AbstractMatrix{Td}}, f::Vector{Tf}, threaded::Bool = false) where {Td, Tf}
     n = round(Int, log2(length(y)))
     n == 0 && return copy(y[1])
     y = copy(y)
@@ -426,29 +444,29 @@ function _dfbrec_l(y::Vector{<:AbstractMatrix{Td}}, f::Vector{Tf}) where {Td, Tf
     reverse!(@view y[(half + 1):end])
     _rebacksamp!(y)
     if n == 1
-        return _fbrec_l(y[1], y[2], f, :q, :q1r, :qper_col)
+        return _fbrec_l(y[1], y[2], f, :q, :q1r, :qper_col, threaded)
     end
     for l in n:-1:3
         y_old = y
         y = Vector{M}(undef, 2^(l - 1))
         for k in 1:(2^(l - 2))
             i = mod(k - 1, 2) + 1
-            y[k] = _fbrec_l(y_old[2k], y_old[2k - 1], f, :p, i)
+            y[k] = _fbrec_l(y_old[2k], y_old[2k - 1], f, :p, i, :per, threaded)
         end
         for k in (2^(l - 2) + 1):(2^(l - 1))
             i = mod(k - 1, 2) + 3
-            y[k] = _fbrec_l(y_old[2k], y_old[2k - 1], f, :p, i)
+            y[k] = _fbrec_l(y_old[2k], y_old[2k - 1], f, :p, i, :per, threaded)
         end
     end
-    x0 = _fbrec_l(y[2], y[1], f, :q, :q2c)
-    x1 = _fbrec_l(y[4], y[3], f, :q, :q2c)
-    return _fbrec_l(x0, x1, f, :q, :q1r, :qper_col)
+    x0 = _fbrec_l(y[2], y[1], f, :q, :q2c, :per, threaded)
+    x1 = _fbrec_l(y[4], y[3], f, :q, :q2c, :per, threaded)
+    return _fbrec_l(x0, x1, f, :q, :q1r, :qper_col, threaded)
 end
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
 """
-    dfb_decompose(bandpass, l_levels, qfp::QuincunxFilterPair) -> Vector{Matrix}
+    dfb_decompose(bandpass, l_levels, qfp::QuincunxFilterPair; threading=Auto()) -> Vector{Matrix}
 
 Decompose `bandpass` into `2^l_levels` directional subbands using an
 `l_levels`-deep binary-tree DFB.
@@ -472,44 +490,51 @@ julia> length(sbs), size(sbs[1])
 """
 function dfb_decompose(
         bandpass::AbstractMatrix, l_levels::Int,
-        qfp::QuincunxFilterPair
+        qfp::QuincunxFilterPair;
+        threading::ThreadingPolicy = Auto()
     )
     l_levels >= 0 || throw(ArgumentError("l_levels must be ≥ 0"))
     l_levels == 0 && return [copy(bandpass)]
     Td = _data_eltype(bandpass)      # data type (real or complex)
     Tf = _filter_eltype(Td)          # real filter precision
     img = Td === eltype(bandpass) ? bandpass : Td.(bandpass)
+    threaded = _use_threading(threading, Td)
+
     if is_ladder(qfp)
         f = Tf === eltype(qfp) ? qfp.f_ladder : Tf.(qfp.f_ladder)
-        return _dfbdec_l(img, f, l_levels)
+        return _dfbdec_l(img, f, l_levels, threaded)
     end
-    return _dfb_split(img, l_levels, 1, _convert_qfp(Tf, qfp))
+    return _dfb_split(img, l_levels, 1, _convert_qfp(Tf, qfp), threaded)
 end
 
 """
     dfb_decompose!(subbands::Vector{<:AbstractMatrix}, bandpass, l_levels, qfp::QuincunxFilterPair;
-                   workspace=nothing) -> subbands
+                   workspace=nothing, threading=Auto()) -> subbands
 
 In-place DFB analysis. `subbands` must be a vector of `2^l_levels` preallocated matrices of the correct sizes.
 If a `workspace` is provided, intermediate allocations are avoided.
+
+**Keyword arguments:**
+- `threading::ThreadingPolicy`: Sets the threading strategy. Defaults to `Auto()`, which uses SIMD (single-threaded) for Real arrays, and `Polyester.@batch` (multithreaded) for Complex arrays.
 """
 function dfb_decompose!(
         subbands::Vector{<:AbstractMatrix}, bandpass::AbstractMatrix, l_levels::Int,
         qfp::QuincunxFilterPair;
-        workspace = nothing
+        workspace = nothing,
+        threading::ThreadingPolicy = Auto()
     )
     l_levels >= 0 || throw(ArgumentError("l_levels must be ≥ 0"))
     length(subbands) == 2^l_levels || throw(ArgumentError("subbands must have 2^l_levels matrices"))
     if workspace !== nothing
         _arena_reset!(workspace.fwd_scratch)
         _with_arena(workspace.fwd_scratch) do
-            sbs = dfb_decompose(bandpass, l_levels, qfp)
+            sbs = dfb_decompose(bandpass, l_levels, qfp; threading = threading)
             for k in eachindex(sbs)
                 copyto!(subbands[k], sbs[k])
             end
         end
     else
-        sbs = dfb_decompose(bandpass, l_levels, qfp)
+        sbs = dfb_decompose(bandpass, l_levels, qfp; threading = threading)
         for k in eachindex(sbs)
             copyto!(subbands[k], sbs[k])
         end
@@ -518,7 +543,7 @@ function dfb_decompose!(
 end
 
 """
-    dfb_reconstruct(subbands, qfp::QuincunxFilterPair) -> bandpass
+    dfb_reconstruct(subbands, qfp::QuincunxFilterPair; threading=Auto()) -> bandpass
 
 Reconstruct a bandpass image from its `2^l` directional subbands.
 
@@ -538,7 +563,8 @@ true
 """
 function dfb_reconstruct(
         subbands::Vector{<:AbstractMatrix},
-        qfp::QuincunxFilterPair
+        qfp::QuincunxFilterPair;
+        threading::ThreadingPolicy = Auto()
     )
     n = length(subbands)
     n >= 1   || throw(ArgumentError("subbands must be non-empty"))
@@ -546,13 +572,15 @@ function dfb_reconstruct(
     n == 1 && return copy(subbands[1])
     Td = _data_eltype(subbands[1])   # data type (real or complex)
     Tf = _filter_eltype(Td)          # real filter precision
+    threaded = _use_threading(threading, Td)
+
     if is_ladder(qfp)
         sbs = eltype(subbands[1]) === Td ? subbands : [Td.(s) for s in subbands]
         f = Tf === eltype(qfp) ? qfp.f_ladder : Tf.(qfp.f_ladder)
-        return _dfbrec_l(sbs, f)
+        return _dfbrec_l(sbs, f, threaded)
     end
     l_levels = round(Int, log2(n))
-    return _dfb_merge(subbands, l_levels, 1, _convert_qfp(Tf, qfp))
+    return _dfb_merge(subbands, l_levels, 1, _convert_qfp(Tf, qfp), threaded)
 end
 
 """
@@ -561,19 +589,23 @@ end
 
 In-place DFB synthesis. `bandpass` is modified to store the reconstructed image.
 If a `workspace` is provided, intermediate allocations are avoided.
+
+**Keyword arguments:**
+- `threading::ThreadingPolicy`: Sets the threading strategy. Defaults to `Auto()`.
 """
 function dfb_reconstruct!(
         bandpass::AbstractMatrix, subbands::Vector{<:AbstractMatrix}, qfp::QuincunxFilterPair;
-        workspace = nothing
+        workspace = nothing,
+        threading::ThreadingPolicy = Auto()
     )
     if workspace !== nothing
         _arena_reset!(workspace.inv_scratch)
         _with_arena(workspace.inv_scratch) do
-            bp = dfb_reconstruct(subbands, qfp)
+            bp = dfb_reconstruct(subbands, qfp; threading = threading)
             copyto!(bandpass, bp)
         end
     else
-        bp = dfb_reconstruct(subbands, qfp)
+        bp = dfb_reconstruct(subbands, qfp; threading = threading)
         copyto!(bandpass, bp)
     end
     return bandpass
@@ -583,33 +615,45 @@ end
 
 function _dfb_split(
         img::AbstractMatrix, remaining::Int, depth::Int,
-        qfp::QuincunxFilterPair
+        qfp::QuincunxFilterPair, threaded::Bool = false
     )
     shear_dir = isodd(depth) ? :h : :v
     qfb_dir = isodd(depth) ? :col : :row
     sh = shear(img, shear_dir)
-    sb0, sb1 = qfb_decompose(sh, qfp; dir = qfb_dir)
-    sb0 = inv_shear(sb0, shear_dir)
-    sb1 = inv_shear(sb1, shear_dir)
+    _sb0, _sb1 = qfb_decompose(sh, qfp; dir = qfb_dir)
+    sb0 = inv_shear(_sb0, shear_dir)
+    sb1 = inv_shear(_sb1, shear_dir)
     remaining == 1 && return [sb0, sb1]
-    return vcat(
-        _dfb_split(sb0, remaining - 1, depth + 1, qfp),
-        _dfb_split(sb1, remaining - 1, depth + 1, qfp)
-    )
+
+    if threaded
+        t0 = Threads.@spawn _dfb_split(sb0, remaining - 1, depth + 1, qfp, threaded)
+        r1 = _dfb_split(sb1, remaining - 1, depth + 1, qfp, threaded)
+        r0 = fetch(t0)::typeof(r1)
+        return vcat(r0, r1)
+    else
+        return vcat(
+            _dfb_split(sb0, remaining - 1, depth + 1, qfp, threaded),
+            _dfb_split(sb1, remaining - 1, depth + 1, qfp, threaded)
+        )
+    end
 end
 
 function _dfb_merge(
         sbs::Vector{<:AbstractMatrix}, l::Int, depth::Int,
-        qfp::QuincunxFilterPair
+        qfp::QuincunxFilterPair, threaded::Bool = false
     )
     shear_dir = isodd(depth) ? :h : :v
     qfb_dir = isodd(depth) ? :col : :row
     half = length(sbs) ÷ 2
     if l == 1
         sb0, sb1 = sbs[1], sbs[2]
+    elseif threaded
+        t0 = Threads.@spawn _dfb_merge(sbs[1:half], l - 1, depth + 1, qfp, threaded)
+        sb1 = _dfb_merge(sbs[(half + 1):end], l - 1, depth + 1, qfp, threaded)
+        sb0 = fetch(t0)::typeof(sb1)
     else
-        sb0 = _dfb_merge(sbs[1:half], l - 1, depth + 1, qfp)
-        sb1 = _dfb_merge(sbs[(half + 1):end], l - 1, depth + 1, qfp)
+        sb0 = _dfb_merge(sbs[1:half], l - 1, depth + 1, qfp, threaded)
+        sb1 = _dfb_merge(sbs[(half + 1):end], l - 1, depth + 1, qfp, threaded)
     end
     sh0 = shear(sb0, shear_dir)
     sh1 = shear(sb1, shear_dir)

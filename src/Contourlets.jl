@@ -25,8 +25,10 @@ using FFTW
 using LinearAlgebra
 
 using LoopVectorization
+using Polyester
 
 # ── Types (must come before filters which use them) ──────────────────────────
+include("threading.jl")
 include("types.jl")
 
 # ── Filter coefficients and utilities ────────────────────────────────────────
@@ -93,6 +95,8 @@ export
 
     # Workspace
     make_workspace, make_nsct_workspace,
-    estimate_workspace_size
+    estimate_workspace_size,
+
+    ThreadingPolicy, Auto, Enabled, Disabled
 
 end # module

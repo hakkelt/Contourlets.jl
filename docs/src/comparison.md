@@ -30,6 +30,7 @@ reproduce the cross-language benchmarks and validation below.
 | Package manager integration | Julia Pkg | File download | File download |
 | Unit tests with PR guarantees | ✅ | ❌ | ❌ |
 | Type-stable, JET-verified | ✅ | N/A | N/A |
+| Hybrid Multithreading (Real/Complex) | ✅ | ❌ | ❌ |
 
 ¹ A GPU extension runs the multiscale pyramid stage (the heavy
 separable convolutions, plus the primitive sampling/shearing kernels) on any
@@ -89,33 +90,33 @@ same machine using the `benchmark/matlab/run_matlab_benchmarks.m` script.
 
 | Image size | Contourlets.jl (allocating) | Contourlets.jl (workspace) | MATLAB `pdfbdec` |
 |------------|:---------------------------:|:--------------------------:|:----------------:|
-| 64 × 64    | 1.36 ms | 1.02 ms | 5.44 ms |
-| 128 × 128  | 6.97 ms | 6.98 ms | 7.83 ms |
-| 256 × 256  | 16.82 ms | 16.55 ms | 17.35 ms |
+| 64 × 64    | 0.52 ms | 0.49 ms | 5.44 ms |
+| 128 × 128  | 1.84 ms | 1.75 ms | 7.83 ms |
+| 256 × 256  | 7.12 ms | 6.85 ms | 17.35 ms |
 
 ### CT Inverse Pass (Float64, J=2, L=[2,3])
 
 | Image size | Contourlets.jl (allocating) | Contourlets.jl (workspace) | MATLAB `pdfbrec` |
 |------------|:---------------------------:|:--------------------------:|:----------------:|
-| 64 × 64    | 0.91 ms | 1.11 ms | 6.80 ms |
-| 128 × 128  | 6.05 ms | 6.05 ms | 7.97 ms |
-| 256 × 256  | 14.19 ms | 14.48 ms | 80.78 ms |
+| 64 × 64    | 0.42 ms | 0.37 ms | 6.80 ms |
+| 128 × 128  | 1.40 ms | 1.30 ms | 7.97 ms |
+| 256 × 256  | 5.32 ms | 5.01 ms | 80.78 ms |
 
 ### NSCT Forward / Inverse Pass (Float64, J=2, L=[2,3])
 
 | Image size | Contourlets.jl fwd | Contourlets.jl inv | MATLAB `nsctdec` | MATLAB `nsctrec` |
 |------------|:------------------:|:------------------:|:----------------:|:----------------:|
-| 64 × 64    |  79.5 ms |  53.2 ms |  289.54 ms |  282.64 ms |
-| 128 × 128  | 180.9 ms | 175.9 ms | 1132.12 ms | 1120.81 ms |
-| 256 × 256  | 723.9 ms | 705.5 ms | 4472.38 ms | 4684.56 ms |
+| 64 × 64    |  13.87 ms |  18.74 ms |  289.54 ms |  282.64 ms |
+| 128 × 128  | 43.34 ms | 56.63 ms | 1132.12 ms | 1120.81 ms |
+| 256 × 256  | 114.79 ms | 140.04 ms | 4472.38 ms | 4684.56 ms |
 
 ### Laplacian Pyramid (Float64, one level)
 
 | Image size | `lp_decompose` | `lp_reconstruct` |
 |------------|:--------------:|:----------------:|
-| 64 × 64    | 0.19 ms | 0.09 ms |
-| 128 × 128  | 0.76 ms | 0.34 ms |
-| 256 × 256  | 4.94 ms | 1.39 ms |
+| 64 × 64    | 0.18 ms | 0.08 ms |
+| 128 × 128  | 0.71 ms | 0.32 ms |
+| 256 × 256  | 2.90 ms | 1.31 ms |
 
 > **Methodology:** Parameters J=2, L_array=[2,3] for CT/NSCT.  Julia times are
 > medians of repeated samples using `BenchmarkTools.jl` with JIT warmup excluded; MATLAB
@@ -129,7 +130,8 @@ same machine using the `benchmark/matlab/run_matlab_benchmarks.m` script.
 > 1. Type-stable `Val{B}`-dispatched boundary conditions (zero dynamic dispatch)
 > 2. Column-major inner loops for cache efficiency
 > 3. A preallocated-buffer workspace API for iterative use
-> 
+> 4. **Hybrid Threading Architecture**: `LoopVectorization.@turbo` for zero-overhead SIMD acceleration on `Real` arrays, and `Polyester.@batch` to parallelize non-vectorizable `Complex` kernels seamlessly across all CPU cores.
+>
 > *Note on GPU benchmarks*: GPU benchmarks (`ct_forward` and `nsct_forward` via CUDA.jl or AMDGPU.jl)
 > are excluded from this table because MATLAB does not have a native GPU Contourlet
 > implementation for comparison. On typical hardware, using `CuArray(img)` speeds up

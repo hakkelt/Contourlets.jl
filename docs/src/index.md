@@ -51,3 +51,12 @@ end
 | [`Q2345`](@ref) | Default "23-45" (Phoong et al. 1995) ladder DFB filter pair |
 
 See the [Theory](@ref theory) page for the mathematical background, and the [API Reference](@ref) for the complete public interface.
+
+## Performance & Threading
+
+Contourlets.jl provides an explicit `ThreadingPolicy` configuration via `threading` keyword arguments. By default, it uses the `Auto()` policy which delivers maximum throughput via a hybrid architecture:
+- **Real-valued Data:** Multithreading is disabled by default, utilizing `LoopVectorization.@turbo` for zero-overhead, single-threaded SIMD acceleration.
+- **Complex-valued Data:** Multithreading is enabled by default, utilizing `Polyester.@batch` to distribute non-vectorizable inner loops efficiently across CPU cores with near-zero latency.
+Users can explicitly opt into or out of multithreading by passing `threading=Enabled()` or `threading=Disabled()`.
+- **GPU Acceleration:** `ContourletsGPUExt` seamlessly runs the transforms on device-resident arrays for any supported GPU array backend via KernelAbstractions.jl.
+

@@ -34,13 +34,14 @@ julia> length(coeffs.subbands[2])
 """
 function ct_forward(
         image::AbstractMatrix, params::ContourletParams;
-        workspace::Union{ContourletWorkspace, Nothing} = nothing
+        workspace::Union{ContourletWorkspace, Nothing} = nothing,
+        threading::ThreadingPolicy = Auto()
     )
     if workspace !== nothing
         Tw = eltype(workspace)   # the workspace dictates the data type
         coeffs = similar_coefficients(params, size(image); Td = Tw)
         img = Tw === eltype(image) ? image : Tw.(image)
-        return ct_forward!(coeffs, img, workspace)
+        return ct_forward!(coeffs, img, workspace; threading = threading)
     end
     Td = _data_eltype(image)       # data type (real or complex)
     Tf = _filter_eltype(Td)        # real filter precision
@@ -54,7 +55,7 @@ function ct_forward(
     coarse = img
     for j in 1:J
         coarse_j, bp_j = lp_decompose(coarse, fp)
-        subbands[j] = dfb_decompose(bp_j, L[j], qfp)
+        subbands[j] = dfb_decompose(bp_j, L[j], qfp; threading = threading)
         coarse = coarse_j
     end
     return ContourletCoefficients(coarse, subbands, p_out)
@@ -68,7 +69,8 @@ In-place CT forward pass reusing preallocated workspace buffers.
 function ct_forward!(
         coeffs::ContourletCoefficients{T},
         image::AbstractMatrix,
-        ws::ContourletWorkspace{T}
+        ws::ContourletWorkspace{T};
+        threading::ThreadingPolicy = Auto()
     ) where {T}
     params = coeffs.params
     J = params.J
@@ -87,7 +89,7 @@ function ct_forward!(
             tmp2_j = _scratch_like(current, n1, n2)
 
             lp_decompose!(coarse_j, bp_j, current, fp; tmp = tmp_j, tmp2 = tmp2_j)
-            sbs = dfb_decompose(bp_j, L[j], qfp)   # DFB transients use the arena
+            sbs = dfb_decompose(bp_j, L[j], qfp; threading = threading)   # DFB transients use the arena
             for (k, sb) in enumerate(sbs)
                 copyto!(coeffs.subbands[j][k], sb)
             end
@@ -117,7 +119,7 @@ julia> maximum(abs, rec .- x) < 1e-12
 true
 ```
 """
-function ct_inverse(coeffs::ContourletCoefficients{T}) where {T}
+function ct_inverse(coeffs::ContourletCoefficients{T}; threading::ThreadingPolicy = Auto()) where {T}
     params = coeffs.params
     J = params.J
     fp = params.lp_filters
@@ -125,7 +127,7 @@ function ct_inverse(coeffs::ContourletCoefficients{T}) where {T}
     coarse = copy(coeffs.coarse)
 
     for j in J:-1:1
-        bp = dfb_reconstruct(coeffs.subbands[j], qfp)
+        bp = dfb_reconstruct(coeffs.subbands[j], qfp; threading = threading)
         coarse = lp_reconstruct(coarse, bp, fp)
     end
     return coarse
@@ -134,12 +136,13 @@ end
 """
     ct_inverse!(image, coeffs::ContourletCoefficients, ws::ContourletWorkspace) -> image
 
-In-place CT inverse pass.
+In-place CT inverse pass reusing preallocated workspace buffers.
 """
 function ct_inverse!(
         image::AbstractMatrix{T},
         coeffs::ContourletCoefficients{T},
-        ws::ContourletWorkspace{T}
+        ws::ContourletWorkspace{T};
+        threading::ThreadingPolicy = Auto()
     ) where {T}
     params = coeffs.params
     J = params.J
@@ -152,7 +155,7 @@ function ct_inverse!(
         copyto!(current, coeffs.coarse)
 
         for j in J:-1:1
-            bp = dfb_reconstruct(coeffs.subbands[j], qfp)   # DFB transients use the arena
+            bp = dfb_reconstruct(coeffs.subbands[j], qfp; threading = threading)   # DFB transients use the arena
             n1, n2 = size(bp)
             tmp_j = _scratch_like(current, n1, n2)
             tmp2_j = _scratch_like(current, n1, n2)

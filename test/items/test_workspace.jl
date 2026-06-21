@@ -78,7 +78,7 @@ end
     # Results still match the allocating reference exactly (real-linear, bit-for-bit).
     ref = nsct_forward(x, p)
     @test coeffs.coarse == ref.coarse
-    @test all(isapprox(coeffs.subbands[j][k], ref.subbands[j][k]; atol=1e-10) for j in 1:2 for k in eachindex(ref.subbands[j]))
+    @test all(isapprox(coeffs.subbands[j][k], ref.subbands[j][k]; atol = 1.0e-10) for j in 1:2 for k in eachindex(ref.subbands[j]))
 end
 
 @testitem "CT workspace path is allocation-free" begin
@@ -92,11 +92,11 @@ end
     # One untimed call to ensure everything is compiled
     ct_forward!(coeffs, x, ws)
     ct_inverse!(img_out, coeffs, ws)
-    
+
     # We want this to be as low as possible
     fwd_allocs = @allocated ct_forward!(coeffs, x, ws)
     inv_allocs = @allocated ct_inverse!(img_out, coeffs, ws)
-    
+
     println("fwd allocs: ", fwd_allocs)
     println("inv allocs: ", inv_allocs)
     @test fwd_allocs < 1000

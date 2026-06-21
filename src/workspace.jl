@@ -262,7 +262,8 @@ function make_nsct_workspace(
         image_size::Tuple{Int, Int};
         T::Type{<:Number} = Float64,
         M::Type{<:AbstractMatrix} = Matrix{promote_type(Tp, T)},
-        prewarm::Bool = true
+        prewarm::Bool = true,
+        threading::ThreadingPolicy = Auto()
     ) where {Tp}
     Td = promote_type(Tp, T)         # data buffer type (may be complex)
     Tf = _filter_eltype(Td)          # real filter precision
@@ -283,6 +284,8 @@ function make_nsct_workspace(
 
     if M <: Array
         tmp_d = zeros(Td, n1, n2)
+        threaded = _use_threading(threading, Td)
+        FFTW.set_num_threads(threaded ? Threads.nthreads() : 1)
         fft_plan_fwd = is_real ? plan_rfft(tmp_d, flags = FFTW.MEASURE) : plan_fft(tmp_d, flags = FFTW.MEASURE)
         fft_plan_inv = is_real ? plan_irfft(fft_buffer_c, n1, flags = FFTW.MEASURE) : plan_ifft(fft_buffer_c, flags = FFTW.MEASURE)
     else

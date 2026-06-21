@@ -76,7 +76,7 @@ end
 
 # ── Per-stage device methods (dispatched by the generic tree recursion) ───────
 
-function Contourlets._nsqfb_decompose(image::_AbstractGPUMatrix, qup, dir::Tuple{Int, Int})
+function Contourlets._nsqfb_decompose(image::_AbstractGPUMatrix, qup, dir::Tuple{Int, Int}, threaded::Bool = false)
     backend = _gpu_backend(image)
     T = eltype(image)
     di, dj = dir
@@ -93,7 +93,7 @@ end
 
 function Contourlets._nsqfb_decompose!(
         sb0::_AbstractGPUMatrix, sb1::_AbstractGPUMatrix, image::_AbstractGPUMatrix,
-        qup, dir::Tuple{Int, Int}
+        qup, dir::Tuple{Int, Int}, threaded::Bool = false
     )
     backend = _gpu_backend(image)
     di, dj = dir
@@ -107,7 +107,7 @@ function Contourlets._nsqfb_decompose!(
 end
 
 function Contourlets._nsqfb_reconstruct(
-        sb0::_AbstractGPUMatrix, sb1::_AbstractGPUMatrix, qup, dir::Tuple{Int, Int}
+        sb0::_AbstractGPUMatrix, sb1::_AbstractGPUMatrix, qup, dir::Tuple{Int, Int}, threaded::Bool = false
     )
     backend = _gpu_backend(sb0)
     T = eltype(sb0)
@@ -124,7 +124,7 @@ end
 
 function Contourlets._nsqfb_reconstruct!(
         out::_AbstractGPUMatrix, sb0::_AbstractGPUMatrix, sb1::_AbstractGPUMatrix,
-        qup, dir::Tuple{Int, Int}
+        qup, dir::Tuple{Int, Int}, threaded::Bool = false
     )
     backend = _gpu_backend(sb0)
     di, dj = dir
@@ -139,9 +139,10 @@ end
 
 # ── Public NSDFB entry points (device dispatch) ───────────────────────────────
 
-function nsdfb_decompose(
+function Contourlets.nsdfb_decompose(
         bandpass::_AbstractGPUMatrix, l_levels::Int,
-        qfp::QuincunxFilterPair, tree_level::Int
+        qfp::QuincunxFilterPair, tree_level::Int;
+        threading::Contourlets.ThreadingPolicy = Contourlets.Auto()
     )
     l_levels >= 0 || throw(ArgumentError("l_levels must be ≥ 0"))
     tree_level >= 1 || throw(ArgumentError("tree_level must be ≥ 1"))
@@ -151,12 +152,14 @@ function nsdfb_decompose(
     img = Td === eltype(bandpass) ? bandpass : Td.(bandpass)
     backend = _gpu_backend(bandpass)
     qup = _qup_to_device(backend, Contourlets._upsample_qfp_1d(qfp, 2^(tree_level - 1), Tf))
-    return Contourlets._nsdfb_split(img, l_levels, 1, qup)
+    threaded = Contourlets._use_threading(threading, Td)
+    return Contourlets._nsdfb_split(img, l_levels, 1, qup, threaded)
 end
 
-function nsdfb_reconstruct(
+function Contourlets.nsdfb_reconstruct(
         subbands::Vector{<:_AbstractGPUMatrix},
-        qfp::QuincunxFilterPair, tree_level::Int
+        qfp::QuincunxFilterPair, tree_level::Int;
+        threading::Contourlets.ThreadingPolicy = Contourlets.Auto()
     )
     n = length(subbands)
     ispow2(n) || throw(ArgumentError("number of subbands must be a power of 2"))
@@ -166,5 +169,6 @@ function nsdfb_reconstruct(
     backend = _gpu_backend(subbands[1])
     qup = _qup_to_device(backend, Contourlets._upsample_qfp_1d(qfp, 2^(tree_level - 1), Tf))
     l_levels = round(Int, log2(n))
-    return Contourlets._nsdfb_merge(subbands, l_levels, 1, qup)
+    threaded = Contourlets._use_threading(threading, Td)
+    return Contourlets._nsdfb_merge(subbands, l_levels, 1, qup, threaded)
 end

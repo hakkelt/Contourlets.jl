@@ -45,7 +45,7 @@ SUITE["primitives"] = BenchmarkGroup()
 # ╚════════════════════════════════════════════════════════════════════════════╝
 
 const RNG = MersenneTwister(1234)
-const TEST_SIZES = [64, 256]
+const TEST_SIZES = [64, 128, 256]
 
 # ╔════════════════════════════════════════════════════════════════════════════╗
 # ║ SIZE-SPECIFIC BENCHMARKS                                                   ║

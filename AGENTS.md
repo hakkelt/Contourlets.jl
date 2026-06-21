@@ -214,3 +214,16 @@ output.
   avoid index-vector gathers (use `circshift`), and size work vectors from the
   actual array type, not `Matrix{T}`. Tests use GPUEnv.jl on JLArrays (CI) and
   any real backend present (`:gpu` tag).
+- **Hybrid Threading Architecture** — CPU performance utilizes a dual-path 
+  architecture to achieve maximum performance on both `Real` and `Complex` 
+  data. For real data (`Float32`/`Float64`), we rely strictly on 
+  `LoopVectorization.@turbo` for SIMD acceleration on a single thread (avoiding 
+  costly task spawns). Because `LoopVectorization` does not support complex 
+  numbers, complex data falls back to an un-vectorized inner loop which is
+  parallelized across CPU cores using `Polyester.@batch`. `Polyester`'s 
+  near-zero overhead persistent thread pool avoids the task-spawning latency 
+  that destroys recursive performance, allowing `ComplexF64` transforms to execute 
+  at virtually the same wall-clock speed as SIMD-accelerated `Float64` transforms. 
+  Public API `threading::ThreadingPolicy` kwargs (`Auto`, `Enabled`, `Disabled`)
+  allow users to explicitly control this behavior, with `Auto` enabling multithreading
+  for complex data and disabling it for real data by default.

@@ -1,0 +1,7 @@
+[submodule "matlab/Contourlet-transform"]
+	path = matlab/Contourlet-transform
+	url = https://github.com/aliibraheemshash/Contourlet-transform.git
+	branch = master
+[submodule "matlab/Nonsubsampled-Contourlet-Toolbox"]
+	path = matlab/Nonsubsampled-Contourlet-Toolbox
+	url = https://github.com/ssalili/Nonsubsampled-Contourlet-Toolbox.git

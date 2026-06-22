@@ -28,3 +28,7 @@ lcov.info
 # AirspeedVelocity benchmark result artifacts
 /results_*.json
 /results_*.json.tmp
+
+# MATLAB cross-validation scratch outputs
+matlab/.ref/
+matlab/.verify/

@@ -225,11 +225,10 @@ most sophisticated:
 
 1. **Hard Thresholding**: A per-subband universal threshold
    ``\lambda = k\,\sigma\,\gamma_{j,k}``, where ``\gamma_{j,k}`` is the estimated
-   noise gain of the subband.  This is the natural baseline, but the NSCT is a
-   redundant frame: signal energy is spread across many overlapping subbands, so
-   each individual coefficient has smaller magnitude.  As a result, the plain
-   hard threshold is too aggressive and can underperform a standard wavelet —
-   the adaptive methods below are needed to exploit the redundancy.
+   noise gain of the subband.  This is the natural baseline.  Because the NSCT is
+   shift-invariant and its directional subbands are genuine angular *wedges*,
+   oriented texture concentrates into a few coefficients per direction, so even
+   this simple estimator already clears the separable wavelet by a wide margin.
 2. **Local Variance-Adaptive Thresholding**: A spatially-adaptive soft threshold.
    We estimate the local signal variance
    ``\sigma_w^2 = \max(0, \frac{1}{N} \sum y_i^2 - \sigma_n^2)`` in a 7×7
@@ -269,11 +268,12 @@ println("NSCT bivariate     : $(round(psnr(ref, ct_bivar);  digits = 2)) dB")
 println("Bivariate gain over wavelet: $(round(psnr(ref, ct_bivar) - psnr(ref, wt_rec); digits = 2)) dB")
 ```
 
-The adaptive NSCT methods both outperform the wavelet baseline.  The plain NSCT
-hard threshold sits *below* the wavelet — as expected for a redundant frame where
-signal energy is spread across subbands — while the local-variance and bivariate
-estimators exploit this redundancy to deliver roughly +1.4 dB and +1.9 dB gains
-respectively.
+All three NSCT estimators clear the separable wavelet by several dB on this
+texture-rich crop.  Even the plain per-subband hard threshold gains roughly
++3.5 dB over the 9/7 wavelet, because the shift-invariant directional *wedges*
+pack each oriented texture into a handful of coefficients; the spatially-adaptive
+local-variance and bivariate estimators then add a little more by shrinking
+gently in texture regions and aggressively in flat ones.
 
 ```@example nla
 p2 = plot(layout = (2, 2), size = (800, 800))
@@ -289,10 +289,62 @@ savefig(p2, "nla_denoise.png"); nothing # hide
 !!! note "Scope and reproducibility"
     The M-term experiment uses a small 128² synthetic image; the denoising
     experiment uses a 512×512 crop of Barbara (a natural image rich in oriented
-    texture).  The ~1.9 dB bivariate gain is realistic for texture-heavy
-    regions; on smooth or piecewise-constant images the critically sampled
-    wavelet is hard to beat — the NSCT advantage is specific to oriented
-    features and long smooth contours.  Do & Vetterli (2005) report ≈1.46 dB
-    using statistically tuned thresholds on a different image set; the bivariate
-    estimator of Sendur & Selesnick (2002) closes most of that gap without any
-    per-image parameter tuning.
+    texture).  The multi-dB gains shown here are specific to such oriented,
+    texture-heavy content, where the shift-invariant directional wedges of the
+    NSCT shine; on smooth or piecewise-constant images the critically sampled
+    wavelet is much harder to beat.  Do & Vetterli (2005) report ≈1.46 dB on a
+    different image set with statistically tuned thresholds; the redundant,
+    directionally-selective NSCT frame here yields larger gains on this fabric
+    crop without per-image parameter tuning.
+
+## Transform performance: allocating vs workspace API
+
+The NSCT has two execution paths with very different performance profiles:
+
+- **Allocating** (`nsct_forward(x, params)`): runs the 2-D fan/parallelogram
+  spatial convolutions directly.  Convenient for one-shot use; the optimised
+  sparse kernels skip structural zeros (~70% of each filter) and use SIMD
+  (`@turbo` on real data) or multi-thread batching (`@batch` on complex data).
+- **Workspace / FFT** (`make_nsct_workspace` + `nsct_forward!`): precomputes
+  the 2^L equivalent leaf filters once in the frequency domain; each subsequent
+  call is an FFT + pointwise multiplies + IFFT.  Much faster per call when the
+  same image size is reused (the typical loop-heavy use case).
+
+```@example nla
+using BenchmarkTools
+
+bench_params = ContourletParams(J = 2, L_array = [2, 3])
+bench_img    = randn(256, 256)
+bench_ws     = make_nsct_workspace(bench_params, (256, 256))
+bench_coeffs = similar_nsct_coefficients(bench_params, (256, 256))
+
+t_alloc = @belapsed nsct_forward($bench_img, $bench_params)
+t_ws    = @belapsed nsct_forward!($bench_coeffs, $bench_img, $bench_ws)
+
+println("nsct_forward  allocating : $(round(t_alloc * 1e3; digits=1)) ms")
+println("nsct_forward! workspace  : $(round(t_ws    * 1e3; digits=1)) ms")
+println("Workspace speedup: $(round(t_alloc / t_ws; digits=1))×")
+```
+
+For iterative algorithms — gain estimation, noise calibration loops,
+iterative reconstruction — the workspace API is the right choice.  The
+allocating form is convenient for exploratory use (no setup) but may be
+several times slower when called repeatedly at the same image size.
+
+The CT transform (critically sampled) uses the decimated DFB (`dfb_decompose`)
+rather than the NSDFB, so it is substantially faster than the NSCT at equal
+image size:
+
+```@example nla
+ct_params = ContourletParams(J = 2, L_array = [2, 3])
+t_ct   = @belapsed ct_forward($bench_img, $ct_params)
+t_nsct = @belapsed nsct_forward($bench_img, $bench_params)
+
+println("ct_forward  (256×256, J=2, L=[2,3]): $(round(t_ct   * 1e3; digits=1)) ms")
+println("nsct_forward                        : $(round(t_nsct * 1e3; digits=1)) ms")
+println("CT vs NSCT speedup (no workspace)   : $(round(t_nsct / t_ct; digits=1))×")
+```
+
+The CT sacrifices shift-invariance (its coefficients alias under fractional-pixel
+shifts) but produces sparser, non-redundant representations — the right tradeoff
+for compression and M-term approximation benchmarks shown above.

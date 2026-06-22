@@ -49,7 +49,6 @@ make_workspace
 make_nsct_workspace
 similar_coefficients
 similar_nsct_coefficients
-workspace_clear!
 estimate_workspace_size
 ```
 
@@ -74,7 +73,9 @@ qfb_decompose!
 qfb_reconstruct
 qfb_reconstruct!
 dfb_decompose
+dfb_decompose!
 dfb_reconstruct
+dfb_reconstruct!
 dfb_subband_sizes
 nsdfb_decompose
 nsdfb_reconstruct

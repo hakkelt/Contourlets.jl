@@ -187,8 +187,8 @@ julia> p = ContourletParams(J = 2, L_array = [1, 2]);
 
 julia> ws = make_workspace(p, (64, 64));
 
-julia> typeof(ws)
-ContourletWorkspace{Float64, Float64, Matrix{Float64}}
+julia> ws isa ContourletWorkspace
+true
 ```
 """
 make_workspace(

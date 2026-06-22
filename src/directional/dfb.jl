@@ -501,7 +501,9 @@ function dfb_decompose(
     threaded = _use_threading(threading, Td)
 
     if is_ladder(qfp)
-        f = Tf === eltype(qfp) ? qfp.f_ladder : Tf.(qfp.f_ladder)
+        # `f_ladder` stores the unmodulated pkva filter; the fan modulation is
+        # applied once here, the same convention used by the QFB and NSDFB paths.
+        f = _ladder_modulate(Tf.(qfp.f_ladder))
         return _dfbdec_l(img, f, l_levels, threaded)
     end
     return _dfb_split(img, l_levels, 1, _convert_qfp(Tf, qfp), threaded)
@@ -576,7 +578,8 @@ function dfb_reconstruct(
 
     if is_ladder(qfp)
         sbs = eltype(subbands[1]) === Td ? subbands : [Td.(s) for s in subbands]
-        f = Tf === eltype(qfp) ? qfp.f_ladder : Tf.(qfp.f_ladder)
+        # Modulate once at use (see `dfb_decompose`).
+        f = _ladder_modulate(Tf.(qfp.f_ladder))
         return _dfbrec_l(sbs, f, threaded)
     end
     l_levels = round(Int, log2(n))

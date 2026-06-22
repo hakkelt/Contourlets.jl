@@ -70,17 +70,26 @@ basis functions** — elongated, oriented elements (the anisotropy that lets
 contourlets trace smooth contours):
 
 ```@example theory
-N = 64
-sbs = dfb_decompose(zeros(N, N), 2, Q2345)     # 4 directional subbands
+N = 128
+sbs = dfb_decompose(zeros(N, N), 3, Q2345)     # 8 directional subbands
 function basis_element(k)
     s = [zeros(size(sb)) for sb in sbs]
     s[k][size(s[k], 1) ÷ 2 + 1, size(s[k], 2) ÷ 2 + 1] = 1.0
-    return dfb_reconstruct(s, Q2345)
+    b = dfb_reconstruct(s, Q2345)
+    return b .- sum(b) / length(b)   # drop the DC the wedge owning ω=0 carries
 end
 
-p = plot(layout = (1, 4), size = (860, 220))
-for k in 1:4
-    heatmap!(p[k], basis_element(k), color = :RdBu, title = "subband $k",
+# Crop to the central support and use symmetric colour limits so the oriented
+# ridge is visible (the basis functions are well-localised, so most of the
+# N×N canvas is empty).
+p = plot(layout = (2, 4), size = (860, 440))
+w = 24
+for k in 1:8
+    b = basis_element(k)
+    c1, c2 = size(b, 1) ÷ 2, size(b, 2) ÷ 2
+    bc = b[(c1 - w + 1):(c1 + w), (c2 - w + 1):(c2 + w)]
+    cl = maximum(abs, bc)
+    heatmap!(p[k], bc, color = :RdBu, clims = (-cl, cl), title = "subband $k",
         aspect_ratio = :equal, axis = false, colorbar = false)
 end
 savefig(p, "dfb_basis.png"); nothing # hide
@@ -88,14 +97,24 @@ savefig(p, "dfb_basis.png"); nothing # hide
 
 ![](dfb_basis.png)
 
-In the frequency domain those basis functions occupy complementary **wedges**
-that tile the 2-D plane — the directional partition that gives the contourlet
-its name:
+In the frequency domain each channel occupies a complementary **wedge**, and the
+channels together tile the 2-D plane — the directional partition that gives the
+contourlet its name.  This is clearest with a coarser **two-level**
+(four-channel) DFB: its decimated subbands are large enough that each passband
+shows without the spectral folding that makes the deeper (`l = 3`) subbands hard
+to read one at a time.  The four passbands together cover the whole plane (a
+smaller `Nf = 64` window is used so each basis function fills its channel's
+passband — at larger sizes the single reconstructed atom localises and its
+spectrum shrinks to a blob inside the support):
 
 ```@example theory
+Nf = 64
+sbs2 = dfb_decompose(zeros(Nf, Nf), 2, Q2345)   # 4 channels: legible per-subband spectra
 pf = plot(layout = (1, 4), size = (860, 220))
 for k in 1:4
-    spec = log1p.(abs.(fftshift(fft(basis_element(k)))))
+    s = [zeros(size(sb)) for sb in sbs2]
+    s[k][size(s[k], 1) ÷ 2 + 1, size(s[k], 2) ÷ 2 + 1] = 1.0
+    spec = log1p.(abs.(fftshift(fft(dfb_reconstruct(s, Q2345)))))
     heatmap!(pf[k], spec, color = :viridis, title = "subband $k",
         aspect_ratio = :equal, axis = false, colorbar = false)
 end

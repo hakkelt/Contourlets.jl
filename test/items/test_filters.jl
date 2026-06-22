@@ -30,24 +30,27 @@ end
     x = randn(32, 32)
     sbs = dfb_decompose(x, 3, haar)
     @test maximum(abs, dfb_reconstruct(sbs, haar) .- x) < 1.0e-12
-    nsbs = nsdfb_decompose(x, 2, haar, 2)
-    @test maximum(abs, nsdfb_reconstruct(nsbs, haar, 2) .- x) < 1.0e-12
+    # The resampling-matrix NSDFB needs diamond (pkva ladder) filters; haar is not
+    # a directional/diamond filter, so it is rejected with a clear error.
+    @test_throws ArgumentError nsdfb_decompose(x, 2, haar, 2)
 end
 
 @testitem "Q2345 NSDFB equivalent-filter PR identity" begin
-    # 0.5·(G₀H₀ + G₁H₁) = δ exactly (zero delay) — the nonsubsampled PR identity
-    qup = Contourlets._upsample_qfp_1d(Q2345, 1, Float64)
-    a, ca = Contourlets._lag_conv(qup.g0, qup.cg0, qup.h0, qup.c0)
-    b, cb = Contourlets._lag_conv(qup.g1, qup.cg1, qup.h1, qup.c1)
-    c = max(ca, cb)
-    n = c + max(length(a) - ca, length(b) - cb)
-    p = zeros(n)
-    p[(c - ca + 1):(c - ca + length(a))] .+= a
-    p[(c - cb + 1):(c - cb + length(b))] .+= b
-    p .*= qup.scale
-    @test abs(p[c] - 1) < 1.0e-14
-    p[c] = 0
-    @test maximum(abs, p) < 1.0e-14
+    # The equivalent leaf filters reproduce a delta on round-trip: summing the
+    # analysis⊛synthesis equivalent filters per leaf must give the identity (the
+    # nonsubsampled PR identity, here verified through the FFT equivalent filters).
+    using FFTW
+    n1, n2, L = 16, 16, 2
+    F = Contourlets._nsdfb_filters(Q2345, Float64)
+    H, G = Contourlets._build_equivalent_filters(Float64, n1, n2, F, L, true)
+    acc = zeros(ComplexF64, n1 ÷ 2 + 1, n2)
+    for k in eachindex(H)
+        acc .+= H[k] .* G[k]
+    end
+    delta = irfft(acc, n1)
+    @test abs(delta[1, 1] - 1) < 1.0e-12
+    delta[1, 1] = 0
+    @test maximum(abs, delta) < 1.0e-12
 end
 
 @testitem "upsample_filter" begin

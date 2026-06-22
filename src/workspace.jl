@@ -86,24 +86,6 @@ function _allocate_zeros(::Type{M}, Td::Type, dims::Tuple) where {M <: AbstractM
 end
 
 
-# Type of the upsampled 1-D quincunx filter bundle returned by `_upsample_qfp_1d`
-# (analysis/synthesis equivalent filters + origins + reconstruction scale), at the
-# real filter precision `T`.  Cached per LP level in the NSCT workspace so the
-# `nsct_forward!`/`nsct_inverse!` paths never rebuild the à trous filters per call.
-struct _CompactTapsPair{T}
-    vals0::Vector{T}
-    vals1::Vector{T}
-    offs::Vector{Int}
-    dmin::Int
-    dmax::Int
-end
-
-const _QupNT{T} = @NamedTuple{
-    h0::Vector{T}, c0::Int, h1::Vector{T}, c1::Int,
-    g0::Vector{T}, cg0::Int, g1::Vector{T}, cg1::Int, scale::T,
-    taps_h::_CompactTapsPair{T}, taps_g::_CompactTapsPair{T},
-}
-
 """
     ContourletWorkspace{Td, Tf}
 
@@ -222,7 +204,7 @@ function make_workspace(
     # caches are needed.
     ws = ContourletWorkspace{Td, Tf, M}(
         p2, image_size, ScratchArena{M}(), ScratchArena{M}(),
-        _QupNT{Tf}[], Vector{Tf}[], Vector{Tf}[],
+        _NSDFBFilters[], Vector{Tf}[], Vector{Tf}[],
         Vector{Matrix{Complex{Tf}}}[], Vector{Matrix{Complex{Tf}}}[], nothing, nothing, Matrix{Complex{Tf}}(undef, 0, 0), Matrix{Complex{Tf}}(undef, 0, 0)
     )
     # Grow the scratch arena to its steady-state size now (forward + inverse), so
@@ -269,9 +251,11 @@ function make_nsct_workspace(
     Tf = _filter_eltype(Td)          # real filter precision
     p2 = _convert_params(Tf, params)
     J = p2.J
-    # Precompute the à trous upsampled NSDFB and LP filters once per LP level (the
-    # à trous factor is 2^(j-1)); the `!` paths then never rebuild them per call.
-    qup_cache = _QupNT{Tf}[_upsample_qfp_1d(p2.dfb_filters, 2^(j - 1), Tf) for j in 1:J]
+    # Precompute the 2-D NSDFB fan/parallelogram filter bundle (scale independent,
+    # so identical for every LP level) and the à trous upsampled LP filters; the
+    # `!` paths then never rebuild them per call.
+    nsdfb_bundle = _nsdfb_filters(p2.dfb_filters, Tf)
+    qup_cache = [nsdfb_bundle for _ in 1:J]
     lp = p2.lp_filters
     lp_h_cache = Vector{Tf}[upsample_filter(lp.h, 2^(j - 1)) for j in 1:J]
     lp_g_cache = Vector{Tf}[Tf(_NSP_SYNTH_SCALE) .* upsample_filter(lp.g, 2^(j - 1)) for j in 1:J]

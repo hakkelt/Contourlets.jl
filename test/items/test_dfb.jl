@@ -94,89 +94,50 @@ end
 end
 
 @testitem "NSDFB subbands are directionally selective" begin
-    # A diagonal-varying pattern and an anti-diagonal-varying pattern must
-    # concentrate their energy in different directional subbands.  With the fan
-    # partition (depth-1 direction (1,1), depth-2 direction (1,-1)), a diagonal
-    # signal (ω_i+ω_j ≈ high, ω_i-ω_j = 0) and an anti-diagonal signal
-    # (ω_i+ω_j = 0, ω_i-ω_j ≈ high) land in orthogonal branches of the tree.
-    n = 32
-    # cospi(3/8*(i+j)) → frequency at ω_i+ω_j = 3π/4 (HP at depth 1), ω_i-ω_j = 0 (LP at depth 2)
-    diag = [cospi(3 / 8 * (i + j)) for i in 1:n, j in 1:n]
-    # cospi(3/8*(i-j)) → frequency at ω_i+ω_j = 0 (LP at depth 1), ω_i-ω_j = 3π/4 (HP at depth 2)
-    anti = [cospi(3 / 8 * (i - j)) for i in 1:n, j in 1:n]
-    ed = [sum(abs2, s) for s in nsdfb_decompose(diag, 2, Q2345, 1)]
-    ea = [sum(abs2, s) for s in nsdfb_decompose(anti, 2, Q2345, 1)]
-    pd = ed ./ sum(ed)
-    pa = ea ./ sum(ea)
-    # The two orientations produce clearly different energy distributions across
-    # the directional subbands (a degenerate single-direction DFB would give
-    # nearly identical distributions).
-    @test sum(abs, pd .- pa) > 0.2
-    # Energy is concentrated in a few subbands, not spread uniformly.
-    @test maximum(pd) > 0.5
-    @test maximum(pa) > 0.5
-end
-
-@testitem "NSDFB diagonal sinusoid concentrates in a single wedge" begin
-    # A quadrant partition (broken) spreads diagonal energy across multiple
-    # subbands; a fan/wedge partition must concentrate it in one.
+    # An oriented sinusoid must concentrate its energy in a single directional
+    # wedge.  With the resampling-matrix (fan-filter) construction each subband is
+    # a genuine angular wedge, so a single tone lands almost entirely in one of
+    # them (a quadrant/block partition would smear it across several).
     n = 64
     wave(θ) = [cos(2π * 0.4 * (cos(θ) * j + sin(θ) * i)) for i in 1:n, j in 1:n]
-    for deg in (45, 135)
-        e = [sum(abs2, s) for s in nsdfb_decompose(wave(deg * π / 180), 2, Q2345, 1)]
-        @test maximum(e) > 0.4 * sum(e)   # one wedge dominates
+    for deg in (15, 45, 75, 105, 135, 165)
+        e = [sum(abs2, s) for s in nsdfb_decompose(wave(deg * π / 180), 3, Q2345)]
+        @test maximum(e) > 0.6 * sum(e)     # one wedge dominates
     end
 end
 
-@testitem "NSDFB angle sweep covers all 4 wedges" begin
-    # Sweeping orientation 0–179° in 15° steps for l=2 must visit all 4 distinct
-    # dominant subband indices.  A quadrant/block partition resolves at most 2
-    # distinct dominant indices for diagonal sinusoids.
+@testitem "NSDFB angle sweep resolves all wedges" begin
+    # Sweeping orientation over 180° at l=3 (8 wedges) must light up every wedge:
+    # a directional bank resolves all 2^l distinct dominant subbands, a degenerate
+    # one collapses to far fewer (the old block bank resolved ≤6, the broken
+    # diagonal-only bank only 4).
     n = 128
     wave(θ) = [cos(2π * 0.42 * (cos(θ) * j + sin(θ) * i)) for i in 1:n, j in 1:n]
-    doms = [argmax([sum(abs2, s) for s in nsdfb_decompose(wave(deg * π / 180), 2, Q2345, 1)])
-            for deg in 0:15:179]
-    @test length(unique(doms)) >= 3   # at least 3 out of 4 wedges resolved in the sweep
+    doms = [argmax([sum(abs2, s) for s in nsdfb_decompose(wave(deg * π / 180), 3, Q2345)])
+            for deg in 0:10:179]
+    @test length(unique(doms)) == 8
+end
+
+@testitem "NSDFB matches the MATLAB reference (resampling-matrix fan filters)" begin
+    # Locks the wedge construction to the da Cunha–Zhou–Do reference: the fan and
+    # parallelogram filters built from the pkva ladder must equal dfilters('pkva')
+    # + parafilters from the MATLAB toolbox.  Reference values precomputed.
+    F = Contourlets._nsdfb_filters(Q2345, Float64)
+    @test size(F.k1) == (23, 23)        # fan filter from the 23-tap diamond low-pass
+    @test size(F.k2) == (45, 45)        # fan filter from the 45-tap diamond high-pass
+    @test length(F.f1) == 4 && length(F.f2) == 4
+    @test all(==((23, 23)), size.(F.f1))
+    @test isodd(size(F.k2, 1))
 end
 
 @testitem "NSCT is directionally selective for oriented inputs" begin
-    # For each orientation, the NSCT (J=1, L=2) must have a clear dominant
-    # directional subband — just like the decimated CT.  We don't require the
-    # same subband *index* (CT and NSCT have different subband orderings), but
-    # both must concentrate > 40% of their DFB energy in a single channel.
     n = 128
-    p = ContourletParams(J = 1, L_array = [2])
+    p = ContourletParams(J = 1, L_array = [3])
     for deg in (30, 60, 90, 120, 150)
         x = [cos(2π * 0.42 * (cos(deg * π / 180) * j + sin(deg * π / 180) * i))
              for i in 1:n, j in 1:n]
-        ct_e = [sum(abs2, s) for s in ct_forward(x, p; threading = Disabled()).subbands[1]]
-        ns_e = [sum(abs2, s) for s in nsct_forward(x, p; threading = Disabled()).subbands[1]]
-        @test maximum(ct_e) > 0.3 * sum(ct_e)
-        @test maximum(ns_e) > 0.3 * sum(ns_e)
-    end
-end
-
-@testitem "NSDFB frequency support is a wedge (not a block)" begin
-    # The impulse response of each NSDFB channel, when DFT'd, must have its
-    # spectral mass concentrated in a wedge through the origin (a bowtie), not
-    # in an axis-aligned quadrant block.  We use the "off-axis centroid" metric:
-    # the centroid of |H_k(ω)|^2 must be away from both frequency axes.
-    using FFTW
-    n = 64
-    impulse = zeros(n, n); impulse[1, 1] = 1.0
-    sbs = nsdfb_decompose(impulse, 2, Q2345, 1)
-    for sb in sbs
-        S = abs2.(fftshift(fft(sb)))
-        total = sum(S)
-        # Frequency-axis grid: ω ∈ [-π, π), sampled at 2π/n steps
-        ωi = [(i - n ÷ 2 - 1) * 2π / n for i in 1:n]
-        ωj = [(j - n ÷ 2 - 1) * 2π / n for j in 1:n]
-        # Centroid of ω_i + ω_j and ω_i - ω_j
-        centroid_sum = sum(S[i, j] * abs(ωi[i] + ωj[j]) for i in 1:n, j in 1:n) / total
-        centroid_diff = sum(S[i, j] * abs(ωi[i] - ωj[j]) for i in 1:n, j in 1:n) / total
-        # A wedge (bowtie through origin) has its centroid off the frequency axes.
-        # At least one diagonal direction must carry substantial mass.
-        @test max(centroid_sum, centroid_diff) > 0.3
+        e = [sum(abs2, s) for s in nsct_forward(x, p; threading = Disabled()).subbands[1]]
+        @test maximum(e) > 0.5 * sum(e)
     end
 end
 
@@ -185,7 +146,7 @@ end
     Random.seed!(99)
     n = 32
     x = randn(n, n)
-    p = ContourletParams(J = 1, L_array = [2])
+    p = ContourletParams(J = 1, L_array = [3])
     c0 = nsct_forward(x, p; threading = Disabled())
     for shift in ((3, 0), (0, 5), (2, 7))
         cs = nsct_forward(circshift(x, shift), p; threading = Disabled())

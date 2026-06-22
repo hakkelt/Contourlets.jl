@@ -5,13 +5,17 @@
 # factor F = 2^(tree_level-1) via zero-insertion (à trous).
 #
 # Each tree depth splits the input with a two-channel filter bank whose 1-D
-# filters are applied along one of four lattice directions (periodic / circular
-# convolution on the image torus), cycling with depth:
+# filters are applied along a diagonal lattice direction (periodic / circular
+# convolution on the image torus), alternating between the two diagonals:
 #
-#   depth ≡ 1 (mod 4):  (0, 1)   across columns  (horizontal frequency split)
-#   depth ≡ 2 (mod 4):  (1, 0)   across rows     (vertical frequency split)
-#   depth ≡ 3 (mod 4):  (1, 1)   main diagonal
-#   depth ≡ 0 (mod 4):  (1, −1)  anti-diagonal
+#   depth odd:   (1,  1)  main diagonal   → splits ω₁+ω₂ = π  (fan partition)
+#   depth even:  (1, −1)  anti-diagonal   → splits ω₁−ω₂ = π  (fan partition)
+#
+# Filtering along direction (di,dj) applies the 1-D filter as H(z₁^di · z₂^dj),
+# whose passband is a "fan" (bowtie wedge through the origin) in the 2-D
+# frequency plane.  The alternating diagonal/anti-diagonal schedule matches the
+# quincunx fan split of the decimated DFB (Do & Vetterli 2005) so that each NSCT
+# subband is the genuine shift-invariant analog of the corresponding CT subband.
 #
 # Because every stage is a circular convolution, the NSDFB — and hence the
 # NSCT — is exactly invariant under circular shifts of the input.
@@ -29,11 +33,7 @@
 
 # Filtering direction (di, dj) for a given tree depth.
 function _nsdfb_direction(depth::Int)
-    r = mod1(depth, 4)
-    r == 1 && return (0, 1)
-    r == 2 && return (1, 0)
-    r == 3 && return (1, 1)
-    return (1, -1)
+    return isodd(depth) ? (1, 1) : (1, -1)
 end
 
 """

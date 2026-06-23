@@ -312,12 +312,14 @@ end
 
 # ── Two-channel ladder filter bank ────────────────────────────────────────────
 
-# Polyphase decomposition selector.
-_poly_dec(x, kind::Symbol, t) = kind === :q ? _qpdec(x, t) : _ppdec(x, t)
-_poly_rec(p0, p1, kind::Symbol, t) = kind === :q ? _qprec(p0, p1, t) : _pprec(p0, p1, t)
+# Polyphase decomposition selector — dispatch on t's type (Symbol→quincunx, Int→parallelogram).
+_poly_dec(x, t::Symbol) = _qpdec(x, t)
+_poly_dec(x, t::Int) = _ppdec(x, t)
+_poly_rec(p0, p1, t::Symbol) = _qprec(p0, p1, t)
+_poly_rec(p0, p1, t::Int) = _pprec(p0, p1, t)
 
-function _fbdec_l(x::AbstractMatrix{Td}, f::Vector{Tf}, kind::Symbol, t, extmod::Symbol = :per, threaded::Bool = false) where {Td, Tf}
-    p0, p1 = _poly_dec(x, kind, t)
+function _fbdec_l(x::AbstractMatrix{Td}, f::Vector{Tf}, t, extmod::Symbol = :per, threaded::Bool = false) where {Td, Tf}
+    p0, p1 = _poly_dec(x, t)
     s2 = sqrt(Tf(2))
     sef = _sefilter2(p1, f, 1, 1, extmod, threaded)
     y0 = _scratch_like(p0, size(p0, 1), size(p0, 2))
@@ -336,7 +338,7 @@ function _fbdec_l(x::AbstractMatrix{Td}, f::Vector{Tf}, kind::Symbol, t, extmod:
     return y0, y1
 end
 
-function _fbrec_l(y0::AbstractMatrix{Td}, y1::AbstractMatrix{Td}, f::Vector{Tf}, kind::Symbol, t, extmod::Symbol = :per, threaded::Bool = false) where {Td, Tf}
+function _fbrec_l(y0::AbstractMatrix{Td}, y1::AbstractMatrix{Td}, f::Vector{Tf}, t, extmod::Symbol = :per, threaded::Bool = false) where {Td, Tf}
     s2 = sqrt(Tf(2))
     sef = _sefilter2(y0, f, 0, 0, extmod, threaded)
     p1 = _scratch_like(y1, size(y1, 1), size(y1, 2))
@@ -352,7 +354,7 @@ function _fbrec_l(y0::AbstractMatrix{Td}, y1::AbstractMatrix{Td}, f::Vector{Tf},
     else
         @. p0 = s2 * y0 + sef
     end
-    return _poly_rec(p0, p1, kind, t)
+    return _poly_rec(p0, p1, t)
 end
 
 # ── Backsampling (diagonal overall sampling) ──────────────────────────────────
@@ -406,25 +408,25 @@ end
 function _dfbdec_l(x::AbstractMatrix{Td}, f::Vector{Tf}, n::Int, threaded::Bool = false) where {Td, Tf}
     n == 0 && return [copy(x)]
     if n == 1
-        y0, y1 = _fbdec_l(x, f, :q, :q1r, :qper_col, threaded)
+        y0, y1 = _fbdec_l(x, f, :q1r, :qper_col, threaded)
         y = [y0, y1]
     else
-        x0, x1 = _fbdec_l(x, f, :q, :q1r, :qper_col, threaded)
+        x0, x1 = _fbdec_l(x, f, :q1r, :qper_col, threaded)
         M = typeof(x0)
         y = Vector{M}(undef, 4)
-        y[2], y[1] = _fbdec_l(x0, f, :q, :q2c, :per, threaded)
-        y[4], y[3] = _fbdec_l(x1, f, :q, :q2c, :per, threaded)
+        y[2], y[1] = _fbdec_l(x0, f, :q2c, :per, threaded)
+        y[4], y[3] = _fbdec_l(x1, f, :q2c, :per, threaded)
 
         for l in 3:n
             y_old = y
             y = Vector{M}(undef, 2^l)
             for k in 1:(2^(l - 2))
                 i = mod(k - 1, 2) + 1
-                y[2k], y[2k - 1] = _fbdec_l(y_old[k], f, :p, i, :per, threaded)
+                y[2k], y[2k - 1] = _fbdec_l(y_old[k], f, i, :per, threaded)
             end
             for k in (2^(l - 2) + 1):(2^(l - 1))
                 i = mod(k - 1, 2) + 3
-                y[2k], y[2k - 1] = _fbdec_l(y_old[k], f, :p, i, :per, threaded)
+                y[2k], y[2k - 1] = _fbdec_l(y_old[k], f, i, :per, threaded)
             end
         end
     end
@@ -444,23 +446,23 @@ function _dfbrec_l(y::Vector{<:AbstractMatrix{Td}}, f::Vector{Tf}, threaded::Boo
     reverse!(@view y[(half + 1):end])
     _rebacksamp!(y)
     if n == 1
-        return _fbrec_l(y[1], y[2], f, :q, :q1r, :qper_col, threaded)
+        return _fbrec_l(y[1], y[2], f, :q1r, :qper_col, threaded)
     end
     for l in n:-1:3
         y_old = y
         y = Vector{M}(undef, 2^(l - 1))
         for k in 1:(2^(l - 2))
             i = mod(k - 1, 2) + 1
-            y[k] = _fbrec_l(y_old[2k], y_old[2k - 1], f, :p, i, :per, threaded)
+            y[k] = _fbrec_l(y_old[2k], y_old[2k - 1], f, i, :per, threaded)
         end
         for k in (2^(l - 2) + 1):(2^(l - 1))
             i = mod(k - 1, 2) + 3
-            y[k] = _fbrec_l(y_old[2k], y_old[2k - 1], f, :p, i, :per, threaded)
+            y[k] = _fbrec_l(y_old[2k], y_old[2k - 1], f, i, :per, threaded)
         end
     end
-    x0 = _fbrec_l(y[2], y[1], f, :q, :q2c, :per, threaded)
-    x1 = _fbrec_l(y[4], y[3], f, :q, :q2c, :per, threaded)
-    return _fbrec_l(x0, x1, f, :q, :q1r, :qper_col, threaded)
+    x0 = _fbrec_l(y[2], y[1], f, :q2c, :per, threaded)
+    x1 = _fbrec_l(y[4], y[3], f, :q2c, :per, threaded)
+    return _fbrec_l(x0, x1, f, :q1r, :qper_col, threaded)
 end
 
 # ── Public API ────────────────────────────────────────────────────────────────

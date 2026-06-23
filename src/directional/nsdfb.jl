@@ -259,17 +259,16 @@ function _nsdfb_filters(qfp::QuincunxFilterPair, ::Type{Tf}) where {Tf}
 end
 
 # Thread-safe memoized wrapper — used by the public allocating path.
-# The return type annotation concretises what the Dict{..,Any} cache returns so
-# callers (including JET) see a concrete type rather than Any.
-function _nsdfb_filters_cached(
-        qfp::QuincunxFilterPair, ::Type{Tf}
-    )::_NSDFBFilters{SparseFilter2D{Tf}} where {Tf}
+# Use a local typeassert (not a function-level return annotation) so callers see a
+# concrete return type without triggering a convert(T, ::Any) runtime dispatch on LTS.
+function _nsdfb_filters_cached(qfp::QuincunxFilterPair, ::Type{Tf}) where {Tf}
     key = (objectid(qfp), Tf)
-    return lock(_NSDFB_FILTER_CACHE_LOCK) do
+    result = lock(_NSDFB_FILTER_CACHE_LOCK) do
         get!(_NSDFB_FILTER_CACHE, key) do
             _nsdfb_filters(qfp, Tf)
         end
     end
+    return result::_NSDFBFilters{SparseFilter2D{Tf}}
 end
 
 # ── Periodic convolution kernels (data type Td, filter type Tf) ───────────────

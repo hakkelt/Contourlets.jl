@@ -256,6 +256,66 @@ end
     end
 end
 
+@testitem "GPU DFB with non-ladder filter (exercises shear kernels)" tags = [:gpu] setup = [GPUBackends] begin
+    using GPUEnv, Random
+    Random.seed!(73)
+    x = randn(16, 16)
+    # Haar-like non-ladder pair: is_ladder == false → _dfb_split path → shear!/inv_shear!
+    haar = QuincunxFilterPair([0.5 0.5], [1.0 1.0], (1, 1), (1, 2))
+    for backend in GPUBackends.backends
+        xg = to_gpu(backend, x)
+        # l=2 forces depth 1 (:h shear) and depth 2 (:v shear), hitting all 4 kernels
+        sbs = dfb_decompose(xg, 2, haar)
+        @test length(sbs) == 4
+        @test !(sbs[1] isa Array)
+        # CPU reference
+        sbs_cpu = dfb_decompose(x, 2, haar)
+        for k in 1:4
+            @test maximum(abs, Array(sbs[k]) .- sbs_cpu[k]) < 1.0e-12
+        end
+        rec = dfb_reconstruct(sbs, haar)
+        @test !(rec isa Array)
+        @test maximum(abs, Array(rec) .- x) < 1.0e-12
+    end
+end
+
+@testitem "GPU qfb_decompose boundary clamping" tags = [:gpu] setup = [GPUBackends] begin
+    using GPUEnv, Random
+    Random.seed!(74)
+    x = randn(8, 8)
+    # 5-tap filter centred at position 3: for the first output column (j=2),
+    # tap l=5 gives jj = 2-2 = 0 < 1; for the last column (j=8), tap l=1
+    # gives jj = 8+2 = 10 > 8.  Both clamping branches are reached.
+    h5 = Float64[1 / 16 1 / 4 3 / 8 1 / 4 1 / 16]   # 1×5
+    wide_qfp = QuincunxFilterPair(h5, h5, (1, 3), (1, 3))
+    for backend in GPUBackends.backends
+        xg = to_gpu(backend, x)
+        sb0, sb1 = qfb_decompose(xg, wide_qfp; dir = :col)
+        @test !(sb0 isa Array)
+        @test size(sb0) == (8, 4)
+        @test all(isfinite, Array(sb0))
+    end
+end
+
+@testitem "GPU make_nsct_workspace migrates filter caches to device" tags = [:gpu] setup = [GPUBackends] begin
+    using GPUEnv, Random
+    Random.seed!(75)
+    p = ContourletParams(J = 1, L_array = [2])
+    x = randn(32, 32)
+    for backend in GPUBackends.backends
+        xg = to_gpu(backend, x)
+        # make_nsct_workspace(image, params) infers M from image → dispatches
+        # _device_qup_cache and _device_lp_cache GPU overloads
+        ws = make_nsct_workspace(xg, p; prewarm = false)
+        @test ws isa ContourletWorkspace
+        # NSDFB filter bundles should now be on the device
+        @test !(ws.qup_cache[1].k1 isa Array)
+        # à-trous LP filter vectors should also be on the device
+        @test !(ws.lp_h_cache[1] isa Array)
+        @test !(ws.lp_g_cache[1] isa Array)
+    end
+end
+
 @testitem "GPU Adapt.adapt_structure for CT/NSCT coefficients" tags = [:gpu] setup = [GPUBackends] begin
     using GPUEnv, Random
     # Adapt is loaded transitively by JLArrays / KernelAbstractions (GPUEnv dep).

@@ -321,12 +321,13 @@ _poly_rec(p0, p1, t::Int) = _pprec(p0, p1, t)
 function _fbdec_l(x::AbstractMatrix{Td}, f::Vector{Tf}, t, extmod::Symbol = :per, threaded::Bool = false) where {Td, Tf}
     p0, p1 = _poly_dec(x, t)
     s2 = sqrt(Tf(2))
+    inv_s2 = one(Tf) / s2
     sef = _sefilter2(p1, f, 1, 1, extmod, threaded)
     y0 = _scratch_like(p0, size(p0, 1), size(p0, 2))
     if Td <: Real && y0 isa Array
-        @turbo @. y0 = (p0 - sef) / s2
+        @turbo @. y0 = (p0 - sef) * inv_s2
     else
-        @. y0 = (p0 - sef) / s2
+        @. y0 = (p0 - sef) * inv_s2
     end
     sef = _sefilter2(y0, f, 0, 0, extmod, threaded)
     y1 = _scratch_like(p1, size(p1, 1), size(p1, 2))
@@ -340,12 +341,13 @@ end
 
 function _fbrec_l(y0::AbstractMatrix{Td}, y1::AbstractMatrix{Td}, f::Vector{Tf}, t, extmod::Symbol = :per, threaded::Bool = false) where {Td, Tf}
     s2 = sqrt(Tf(2))
+    inv_s2 = one(Tf) / s2
     sef = _sefilter2(y0, f, 0, 0, extmod, threaded)
     p1 = _scratch_like(y1, size(y1, 1), size(y1, 2))
     if Td <: Real && p1 isa Array
-        @turbo @. p1 = (-(one(Tf) / s2)) * (y1 + sef)
+        @turbo @. p1 = (-inv_s2) * (y1 + sef)
     else
-        @. p1 = (-(one(Tf) / s2)) * (y1 + sef)
+        @. p1 = (-inv_s2) * (y1 + sef)
     end
     sef = _sefilter2(p1, f, 1, 1, extmod, threaded)
     p0 = _scratch_like(y0, size(y0, 1), size(y0, 2))

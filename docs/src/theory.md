@@ -208,25 +208,44 @@ of a 2-level NSCT:
 ```@example theory
 N_nsct = 64
 params_nsct = ContourletParams(J=2, L_array=[2, 1])
-composite_freq_nsct = zeros(N_nsct, N_nsct)
+ref_nsct = nsct_forward(zeros(N_nsct, N_nsct), params_nsct)
+n_l1 = length(ref_nsct.subbands[1])   # 4  (2^L_array[1])
+n_l2 = length(ref_nsct.subbands[2])   # 2  (2^L_array[2])
+mid = N_nsct ÷ 2 + 1
 
-# Compute frequency response of the coarse low-pass level
-c_nsct = nsct_forward(zeros(N_nsct, N_nsct), params_nsct)
-c_nsct.coarse[size(c_nsct.coarse,1)÷2+1, size(c_nsct.coarse,2)÷2+1] = 1.0
-composite_freq_nsct .= max.(composite_freq_nsct, abs.(fftshift(fft(nsct_inverse(c_nsct)))))
-
-# Compute frequency responses of all directional wedges across both scales
-for j in 1:length(c_nsct.subbands)
-    for k in 1:length(c_nsct.subbands[j])
-        c_dir_nsct = nsct_forward(zeros(N_nsct, N_nsct), params_nsct)
-        # In NSCT, every subband is exactly N x N
-        c_dir_nsct.subbands[j][k][size(c_dir_nsct.subbands[j][k],1)÷2+1, size(c_dir_nsct.subbands[j][k],2)÷2+1] = 1.0
-        composite_freq_nsct .= max.(composite_freq_nsct, abs.(fftshift(fft(nsct_inverse(c_dir_nsct)))))
+function nsct_spec(params, j, k)        # j=0 → coarse
+    c = nsct_forward(zeros(N_nsct, N_nsct), params)
+    if j == 0
+        c.coarse[mid, mid] = 1.0
+    else
+        c.subbands[j][k][mid, mid] = 1.0
     end
+    log1p.(abs.(fftshift(fft(nsct_inverse(c)))))
 end
 
-p_nsct = heatmap(log1p.(composite_freq_nsct), color = :viridis, title = "NSCT Frequency Tiling",
-    aspect_ratio = :equal, axis = false, colorbar = false, size=(400, 400))
+# Layout: row 1 = 4 finest-scale subbands, row 2 = 2 coarser subbands + coarse LP + composite
+p_nsct = plot(layout = (2, 4), size = (860, 440))
+
+for k in 1:n_l1
+    heatmap!(p_nsct[k], nsct_spec(params_nsct, 1, k), color = :viridis,
+        title = "scale 1, dir $k", aspect_ratio = :equal, axis = false, colorbar = false)
+end
+for k in 1:n_l2
+    heatmap!(p_nsct[n_l1 + k], nsct_spec(params_nsct, 2, k), color = :viridis,
+        title = "scale 2, dir $k", aspect_ratio = :equal, axis = false, colorbar = false)
+end
+heatmap!(p_nsct[n_l1 + n_l2 + 1], nsct_spec(params_nsct, 0, 0), color = :viridis,
+    title = "coarse LP", aspect_ratio = :equal, axis = false, colorbar = false)
+
+# Composite: per-pixel max across all channels
+composite_nsct = zeros(N_nsct, N_nsct)
+composite_nsct .= max.(composite_nsct, exp.(nsct_spec(params_nsct, 0, 0)) .- 1)
+for j in 1:length(ref_nsct.subbands), k in 1:length(ref_nsct.subbands[j])
+    composite_nsct .= max.(composite_nsct, exp.(nsct_spec(params_nsct, j, k)) .- 1)
+end
+heatmap!(p_nsct[n_l1 + n_l2 + 2], log1p.(composite_nsct), color = :viridis,
+    title = "composite", aspect_ratio = :equal, axis = false, colorbar = false)
+
 savefig(p_nsct, "nsct_tiling.png"); nothing # hide
 ```
 

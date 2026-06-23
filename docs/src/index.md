@@ -22,12 +22,12 @@ params = ContourletParams(J=4, L_array=parabolic_levels(4))
 
 # ── Contourlet Transform (critically sampled) ────────────────────────────────
 coeffs = ct_forward(img, params)
-rec    = ct_inverse(coeffs)
+rec    = ct_inverse(coeffs, params)
 @assert maximum(abs, rec .- img) < 1e-12
 
 # ── Nonsubsampled CT (shift-invariant) ───────────────────────────────────────
 ns_coeffs = nsct_forward(img, params)
-ns_rec    = nsct_inverse(ns_coeffs)
+ns_rec    = nsct_inverse(ns_coeffs, params)
 @assert maximum(abs, ns_rec .- img) < 1e-12
 
 # ── Preallocated-buffer iterative usage ──────────────────────────────────────

@@ -7,9 +7,9 @@ using PrecompileTools
     @compile_workload begin
         # Allocating CT / NSCT round trips.
         c = ct_forward(img, params)
-        ct_inverse(c)
+        ct_inverse(c, params)
         nc = nsct_forward(img, params)
-        nsct_inverse(nc)
+        nsct_inverse(nc, params)
 
         # In-place (workspace) paths — the iterative-algorithm entry points.
         ws = make_workspace(params, size(img))

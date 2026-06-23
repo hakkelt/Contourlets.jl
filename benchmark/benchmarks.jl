@@ -79,7 +79,7 @@ for sz in TEST_SIZES
         coeffs_ct = ct_forward(img, p_ct)
 
         # CT Inverse: allocating version
-        SUITE["CT"][sz_str]["inverse"] = @benchmarkable ct_inverse($coeffs_ct)
+        SUITE["CT"][sz_str]["inverse"] = @benchmarkable ct_inverse($coeffs_ct, $p_ct)
 
         # CT Inverse: in-place with workspace
         img_out_ct = similar(img)
@@ -100,7 +100,7 @@ for sz in TEST_SIZES
         coeffs_nsct = nsct_forward(img, p_nsct)
 
         # NSCT Inverse: allocating version
-        SUITE["NSCT"][sz_str]["inverse"] = @benchmarkable nsct_inverse($coeffs_nsct)
+        SUITE["NSCT"][sz_str]["inverse"] = @benchmarkable nsct_inverse($coeffs_nsct, $p_nsct)
 
         # NSCT Inverse: in-place with workspace
         img_out_nsct = similar(img)
@@ -132,7 +132,7 @@ for sz in TEST_SIZES
 
             coeffs_ct_gpu = ct_forward(img_gpu, p_ct_gpu)
             SUITE["CT"][sz_str]["inverse_gpu"] = @benchmarkable begin
-                ct_inverse($coeffs_ct_gpu, $img_gpu)
+                ct_inverse($coeffs_ct_gpu, $p_ct_gpu)
                 synchronize_backend($GPU_BACKEND)
             end
 
@@ -164,7 +164,7 @@ for sz in TEST_SIZES
 
             coeffs_nsct_gpu = nsct_forward(img_gpu, p_nsct_gpu)
             SUITE["NSCT"][sz_str]["inverse_gpu"] = @benchmarkable begin
-                nsct_inverse($coeffs_nsct_gpu, $img_gpu)
+                nsct_inverse($coeffs_nsct_gpu, $p_nsct_gpu)
                 synchronize_backend($GPU_BACKEND)
             end
 

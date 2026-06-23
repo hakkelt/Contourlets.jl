@@ -13,7 +13,7 @@ params = ContourletParams(J=2, L_array=[2, 3])
 
 # ── Forward / inverse ───────────────────────────────────────────────────────
 ns = nsct_forward(img, params)
-rec = nsct_inverse(ns)
+rec = nsct_inverse(ns, params)
 
 err = maximum(abs, rec .- img)
 println("NSCT PR error: ", err)      # < 2e-15

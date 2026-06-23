@@ -23,7 +23,7 @@
 GPU Discrete Contourlet Transform forward pass.  Both the Laplacian-pyramid and
 the directional filter-bank stages run on the device, and the returned
 coefficients keep their arrays on the device (matching the CPU `ct_forward` to
-Float32 precision).  `ct_inverse(coeffs)` then reconstructs on the device too.
+Float32 precision).  `ct_inverse(coeffs, params)` then reconstructs on the device too.
 """
 function ct_forward(image::_AbstractGPUMatrix, params::ContourletParams)
     Td = Contourlets._data_eltype(image)        # data type (real or complex)
@@ -42,29 +42,7 @@ function ct_forward(image::_AbstractGPUMatrix, params::ContourletParams)
         subbands[j] = dev_sb
         coarse = coarse_j
     end
-    return ContourletCoefficients(coarse, subbands, p)   # device-resident coeffs
-end
-
-"""
-    ct_inverse(coeffs::ContourletCoefficients, device::AbstractGPUArray) -> GPU Matrix
-
-Inverse Contourlet Transform on GPU.  Pass any device array `device` (e.g. the
-input image used for the forward pass); its KernelAbstractions backend selects
-the output device.  Both the directional reconstruction and the pyramid
-synthesis run on the device.
-"""
-function ct_inverse(coeffs::ContourletCoefficients{T}, device::AbstractGPUArray) where {T}
-    backend = _gpu_backend(device)
-    J = coeffs.params.J
-    fp = coeffs.params.lp_filters
-    qfp = coeffs.params.dfb_filters
-    coarse = _to_device(backend, coeffs.coarse)
-    for j in J:-1:1
-        dev_sbs = [_to_device(backend, s) for s in coeffs.subbands[j]]  # subbands → device
-        bp = dfb_reconstruct(dev_sbs, qfp)                  # GPU DFB
-        coarse = lp_reconstruct(coarse, bp, fp)             # GPU
-    end
-    return coarse
+    return ContourletCoefficients(coarse, subbands)   # device-resident coeffs
 end
 
 # ── Nonsubsampled Contourlet Transform ────────────────────────────────────────
@@ -91,39 +69,17 @@ function nsct_forward(image::_AbstractGPUMatrix, params::ContourletParams)
         subbands[j] = dev_sb
         coarse = coarse_j
     end
-    return NSCTCoefficients(coarse, subbands, p)   # device-resident coeffs
-end
-
-"""
-    nsct_inverse(coeffs::NSCTCoefficients, device::AbstractGPUArray) -> GPU Matrix
-
-Inverse NSCT on GPU.  Pass any device array `device`; its KernelAbstractions
-backend selects the output device.
-"""
-function nsct_inverse(coeffs::NSCTCoefficients{T}, device::AbstractGPUArray) where {T}
-    backend = _gpu_backend(device)
-    J = coeffs.params.J
-    fp = coeffs.params.lp_filters
-    qfp = coeffs.params.dfb_filters
-    coarse = _to_device(backend, coeffs.coarse)
-    for j in J:-1:1
-        dev_sbs = [_to_device(backend, s) for s in coeffs.subbands[j]]  # subbands → device
-        bp = nsdfb_reconstruct(dev_sbs, qfp, j)                    # GPU NSDFB
-        coarse = nsp_reconstruct(coarse, bp, fp, j)               # GPU
-    end
-    return coarse
+    return NSCTCoefficients(coarse, subbands)   # device-resident coeffs
 end
 
 # ── Moving whole coefficient sets between host and device ─────────────────────
 # `Adapt.adapt(CuArray, coeffs)` moves the data arrays to the device and
-# `Adapt.adapt(Array, coeffs)` brings them back; the real filters in `params`
-# stay on the host either way.
+# `Adapt.adapt(Array, coeffs)` brings them back.
 
 function Adapt.adapt_structure(to, c::ContourletCoefficients)
     return ContourletCoefficients(
         Adapt.adapt(to, c.coarse),
         [[Adapt.adapt(to, s) for s in lvl] for lvl in c.subbands],
-        c.params,
     )
 end
 
@@ -131,6 +87,5 @@ function Adapt.adapt_structure(to, c::NSCTCoefficients)
     return NSCTCoefficients(
         Adapt.adapt(to, c.coarse),
         [[Adapt.adapt(to, s) for s in lvl] for lvl in c.subbands],
-        c.params,
     )
 end

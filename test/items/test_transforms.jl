@@ -5,7 +5,7 @@
     params = ContourletParams(J = 2, L_array = [2, 3])
     c = ct_forward(x, params)
     @test c isa ContourletCoefficients
-    rec = ct_inverse(c)
+    rec = ct_inverse(c, params)
     @test maximum(abs, rec .- x) < 1.0e-12
 end
 
@@ -25,7 +25,7 @@ end
     x = randn(Float32, 32, 32)
     p = ContourletParams(J = 1, L_array = [2])
     c = ct_forward(x, p)
-    rec = ct_inverse(c)
+    rec = ct_inverse(c, p)
     @test eltype(rec) == Float32
     @test maximum(abs, rec .- x) < 1.0e-4
 end
@@ -37,7 +37,7 @@ end
     params = ContourletParams(J = 2, L_array = [2, 3])
     nc = nsct_forward(x, params)
     @test nc isa NSCTCoefficients
-    rec = nsct_inverse(nc)
+    rec = nsct_inverse(nc, params)
     @test maximum(abs, rec .- x) < 1.0e-12
 end
 
@@ -86,7 +86,7 @@ end
     p = ContourletParams(J = 0, L_array = Int[])
     c = ct_forward(x, p)
     @test c.coarse == x
-    rec = ct_inverse(c)
+    rec = ct_inverse(c, p)
     @test maximum(abs, rec .- x) < 1.0e-14
 end
 

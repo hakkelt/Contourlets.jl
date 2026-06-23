@@ -163,14 +163,14 @@ composite_freq = zeros(N, N)
 # Compute frequency response of the coarse low-pass level
 c = ct_forward(zeros(N, N), params)
 c.coarse[size(c.coarse,1)÷2+1, size(c.coarse,2)÷2+1] = 1.0
-composite_freq .= max.(composite_freq, abs.(fftshift(fft(ct_inverse(c)))))
+composite_freq .= max.(composite_freq, abs.(fftshift(fft(ct_inverse(c, params)))))
 
 # Compute frequency responses of all directional wedges across both scales
 for j in 1:length(c.subbands)
     for k in 1:length(c.subbands[j])
         c_dir = ct_forward(zeros(N, N), params)
         c_dir.subbands[j][k][size(c_dir.subbands[j][k],1)÷2+1, size(c_dir.subbands[j][k],2)÷2+1] = 1.0
-        composite_freq .= max.(composite_freq, abs.(fftshift(fft(ct_inverse(c_dir)))))
+        composite_freq .= max.(composite_freq, abs.(fftshift(fft(ct_inverse(c_dir, params)))))
     end
 end
 
@@ -220,7 +220,7 @@ function nsct_spec(params, j, k)        # j=0 → coarse
     else
         c.subbands[j][k][mid, mid] = 1.0
     end
-    log1p.(abs.(fftshift(fft(nsct_inverse(c)))))
+    log1p.(abs.(fftshift(fft(nsct_inverse(c, params)))))
 end
 
 # Layout: row 1 = 4 finest-scale subbands, row 2 = 2 coarser subbands + coarse LP + composite

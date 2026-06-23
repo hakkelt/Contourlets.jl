@@ -204,10 +204,9 @@ output.
   Each device kernel reproduces the CPU reduction order, so GPU
   `ct_forward`/`nsct_forward` match the CPU path (to Float32 precision). Results
   stay on the device: the coefficient containers carry a storage-type parameter
-  (`ContourletCoefficients{Td,Tf,A}`, `A<:AbstractMatrix`), so a GPU forward
-  returns device-resident coeffs and the single-arg `ct_inverse(coeffs)`
-  reconstructs on the device (the `(coeffs, device)` overload remains for host
-  coeffs). Use `Array(·)` / `Adapt.adapt` to move coeffs across. Complex device
+  (`ContourletCoefficients{Td,A}`, `A<:AbstractMatrix`), so a GPU forward
+  returns device-resident coeffs and `ct_inverse(coeffs, params)`
+  reconstructs on the device. Use `Array(·)` / `Adapt.adapt` to move coeffs across. Complex device
   arrays work too: the GPU kernels keep filters real (`real(T)`) and accumulate
   in the data type, mirroring the CPU split. Shared src must stay
   device-portable — allocate scratch with `_zeros_like`/`similar` (not `zeros`),

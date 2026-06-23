@@ -54,7 +54,7 @@ function nsct_forward(
         subbands[j] = nsdfb_decompose(bp_j, L[j], qfp, j; threading = threading)
         coarse = coarse_j
     end
-    return NSCTCoefficients(coarse, subbands, p_out)
+    return NSCTCoefficients(coarse, subbands)
 end
 
 """
@@ -68,7 +68,7 @@ function nsct_forward!(
         ws::ContourletWorkspace{T, Tf};
         threading::ThreadingPolicy = Auto()
     ) where {T, Tf}
-    params = coeffs.params
+    params = ws.params
     J = params.J
     L = params.L_array
     fp = params.lp_filters
@@ -113,7 +113,7 @@ function nsct_forward!(
 end
 
 """
-    nsct_inverse(coeffs::NSCTCoefficients) -> Matrix
+    nsct_inverse(coeffs::NSCTCoefficients, params::ContourletParams) -> Matrix
 
 NSCT inverse pass.
 
@@ -125,14 +125,17 @@ julia> x = randn(Xoshiro(2), 32, 32);
 
 julia> p = ContourletParams(J = 2, L_array = [1, 2]);
 
-julia> rec = nsct_inverse(nsct_forward(x, p));
+julia> rec = nsct_inverse(nsct_forward(x, p), p);
 
 julia> maximum(abs, rec .- x) < 1e-12
 true
 ```
 """
-function nsct_inverse(coeffs::NSCTCoefficients{T}; threading::ThreadingPolicy = Auto()) where {T}
-    params = coeffs.params
+function nsct_inverse(
+        coeffs::NSCTCoefficients{T},
+        params::ContourletParams;
+        threading::ThreadingPolicy = Auto()
+    ) where {T}
     J = params.J
     fp = params.lp_filters
     qfp = params.dfb_filters
@@ -156,7 +159,7 @@ function nsct_inverse!(
         ws::ContourletWorkspace{T, Tf};
         threading::ThreadingPolicy = Auto()
     ) where {T, Tf}
-    params = coeffs.params
+    params = ws.params
     J = params.J
     fp = params.lp_filters
 
@@ -243,5 +246,5 @@ function similar_nsct_coefficients(
         subbands[j] = [_allocate_zeros(M, Td, (n1, n2)) for _ in 1:n_dirs]
     end
     coarse = _allocate_zeros(M, Td, (n1, n2))
-    return NSCTCoefficients(coarse, subbands, params)
+    return NSCTCoefficients(coarse, subbands)
 end

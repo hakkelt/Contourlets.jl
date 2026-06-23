@@ -62,11 +62,11 @@ for n in sizes
         writedlm(joinpath(iodir, @sprintf("jl_ct_%d_j%d_sb%02d.csv", n, j, k)), coeffs_ct.subbands[j][k], ',')
     end
     writedlm(joinpath(iodir, @sprintf("jl_ct_%d_coarse.csv", n)), coeffs_ct.coarse, ',')
-    rec_ct = ct_inverse(coeffs_ct)
+    rec_ct = ct_inverse(coeffs_ct, params)
     writedlm(joinpath(iodir, @sprintf("jl_ct_%d_rec.csv", n)), rec_ct, ',')
 
     td_ct = timeit(() -> ct_forward(x, params))
-    tr_ct = timeit(() -> ct_inverse(coeffs_ct))
+    tr_ct = timeit(() -> ct_inverse(coeffs_ct, params))
     push!(timing_rows, ("ct", n, td_ct, tr_ct))
     @printf("[julia] CT     n=%-4d  J=%d  L=%s  dec %.4f s  rec %.4f s\n", n, J, L_array, td_ct, tr_ct)
 
@@ -76,11 +76,11 @@ for n in sizes
         writedlm(joinpath(iodir, @sprintf("jl_nsct_%d_j%d_sb%02d.csv", n, j, k)), coeffs_nsct.subbands[j][k], ',')
     end
     writedlm(joinpath(iodir, @sprintf("jl_nsct_%d_coarse.csv", n)), coeffs_nsct.coarse, ',')
-    rec_nsct = nsct_inverse(coeffs_nsct)
+    rec_nsct = nsct_inverse(coeffs_nsct, params)
     writedlm(joinpath(iodir, @sprintf("jl_nsct_%d_rec.csv", n)), rec_nsct, ',')
 
     td_nsct = timeit(() -> nsct_forward(x, params))
-    tr_nsct = timeit(() -> nsct_inverse(coeffs_nsct))
+    tr_nsct = timeit(() -> nsct_inverse(coeffs_nsct, params))
     push!(timing_rows, ("nsct", n, td_nsct, tr_nsct))
     @printf("[julia] NSCT   n=%-4d  J=%d  L=%s  dec %.4f s  rec %.4f s\n", n, J, L_array, td_nsct, tr_nsct)
 

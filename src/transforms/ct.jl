@@ -58,7 +58,7 @@ function ct_forward(
         subbands[j] = dfb_decompose(bp_j, L[j], qfp; threading = threading)
         coarse = coarse_j
     end
-    return ContourletCoefficients(coarse, subbands, p_out)
+    return ContourletCoefficients(coarse, subbands)
 end
 
 """
@@ -72,7 +72,7 @@ function ct_forward!(
         ws::ContourletWorkspace{T};
         threading::ThreadingPolicy = Auto()
     ) where {T}
-    params = coeffs.params
+    params = ws.params
     J = params.J
     L = params.L_array
     fp = params.lp_filters
@@ -101,7 +101,7 @@ function ct_forward!(
 end
 
 """
-    ct_inverse(coeffs::ContourletCoefficients) -> Matrix
+    ct_inverse(coeffs::ContourletCoefficients, params::ContourletParams) -> Matrix
 
 Discrete Contourlet Transform inverse pass.
 
@@ -113,14 +113,17 @@ julia> x = randn(Xoshiro(1), 64, 64);
 
 julia> p = ContourletParams(J = 2, L_array = [1, 2]);
 
-julia> rec = ct_inverse(ct_forward(x, p));
+julia> rec = ct_inverse(ct_forward(x, p), p);
 
 julia> maximum(abs, rec .- x) < 1e-12
 true
 ```
 """
-function ct_inverse(coeffs::ContourletCoefficients{T}; threading::ThreadingPolicy = Auto()) where {T}
-    params = coeffs.params
+function ct_inverse(
+        coeffs::ContourletCoefficients{T},
+        params::ContourletParams;
+        threading::ThreadingPolicy = Auto()
+    ) where {T}
     J = params.J
     fp = params.lp_filters
     qfp = params.dfb_filters
@@ -144,7 +147,7 @@ function ct_inverse!(
         ws::ContourletWorkspace{T};
         threading::ThreadingPolicy = Auto()
     ) where {T}
-    params = coeffs.params
+    params = ws.params
     J = params.J
     fp = params.lp_filters
     qfp = params.dfb_filters
@@ -231,5 +234,5 @@ function similar_coefficients(
         cur_n2 = cld(cur_n2, 2)
     end
     coarse = _allocate_zeros(M, Td, (cur_n1, cur_n2))
-    return ContourletCoefficients(coarse, subbands, params)
+    return ContourletCoefficients(coarse, subbands)
 end

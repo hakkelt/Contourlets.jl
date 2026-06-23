@@ -163,50 +163,39 @@ _convert_params(::Type{Tf}, p::ContourletParams) where {Tf <: AbstractFloat} =
 )
 
 """
-    ContourletCoefficients{Td, Tf, A}
+    ContourletCoefficients{Td, A}
 
-Output of `ct_forward`.  `Td` is the data element type (real or complex), `Tf` the
-real filter precision, and `A <: AbstractMatrix{Td}` the storage array type — so the
-coefficients live wherever they were computed (a host `Matrix` for CPU input, a
-device array such as `CuMatrix` for a GPU input — no implicit transfer).  Contains:
+Output of `ct_forward`.  `Td` is the data element type (real or complex) and
+`A <: AbstractMatrix{Td}` the storage array type — so the coefficients live wherever
+they were computed (a host `Matrix` for CPU input, a device array such as `CuMatrix`
+for a GPU input — no implicit transfer).  Contains:
 - `coarse`: the low-pass residual after `J` LP stages.
 - `subbands`: `Vector` of length `J`; `subbands[j]` is a `Vector` of `2^L_array[j]`
   directional subband matrices.
-- `params`: the `ContourletParams{Tf}` (real filters) used to produce these.
 """
-struct ContourletCoefficients{Td <: Number, Tf <: AbstractFloat, A <: AbstractMatrix{Td}}
+struct ContourletCoefficients{Td <: Number, A <: AbstractMatrix{Td}}
     coarse::A                      # storage array type A (host or device)
     subbands::Vector{Vector{A}}    # [scale][direction]
-    params::ContourletParams{Tf}   # real filter precision Tf
 end
 
-# Infer (Td, Tf, A) from the arguments.
-ContourletCoefficients(
-    coarse::A,
-    subbands::Vector{Vector{A}},
-    params::ContourletParams{Tf}
-) where {Tf <: AbstractFloat, A <: AbstractMatrix} =
-    ContourletCoefficients{eltype(A), Tf, A}(coarse, subbands, params)
+# Infer (Td, A) from the arguments.
+ContourletCoefficients(coarse::A, subbands::Vector{Vector{A}}) where {A <: AbstractMatrix} =
+    ContourletCoefficients{eltype(A), A}(coarse, subbands)
 
 """
-    NSCTCoefficients{Td, Tf, A}
+    NSCTCoefficients{Td, A}
 
 Output of `nsct_forward`.  Same structure as `ContourletCoefficients` (data type `Td`,
-real filter precision `Tf`, storage type `A`) but each subband matrix has the same
-spatial size as the input image (no downsampling).
+storage type `A`) but each subband matrix has the same spatial size as the input image
+(no downsampling).
 """
-struct NSCTCoefficients{Td <: Number, Tf <: AbstractFloat, A <: AbstractMatrix{Td}}
+struct NSCTCoefficients{Td <: Number, A <: AbstractMatrix{Td}}
     coarse::A
     subbands::Vector{Vector{A}}
-    params::ContourletParams{Tf}
 end
 
-NSCTCoefficients(
-    coarse::A,
-    subbands::Vector{Vector{A}},
-    params::ContourletParams{Tf}
-) where {Tf <: AbstractFloat, A <: AbstractMatrix} =
-    NSCTCoefficients{eltype(A), Tf, A}(coarse, subbands, params)
+NSCTCoefficients(coarse::A, subbands::Vector{Vector{A}}) where {A <: AbstractMatrix} =
+    NSCTCoefficients{eltype(A), A}(coarse, subbands)
 
 """
     parabolic_levels(J, l_j0=1) -> Vector{Int}

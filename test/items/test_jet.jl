@@ -61,10 +61,10 @@
     p = ContourletParams(J = 2, L_array = [1, 2])
     @test_call target_modules = (Contourlets,) ct_forward(x, p)
     coeffs = ct_forward(x, p)
-    @test_call target_modules = (Contourlets,) ct_inverse(coeffs)
+    @test_call target_modules = (Contourlets,) ct_inverse(coeffs, p)
     @test_call target_modules = (Contourlets,) nsct_forward(x, p)
     nc_coeffs = nsct_forward(x, p)
-    @test_call target_modules = (Contourlets,) nsct_inverse(nc_coeffs)
+    @test_call target_modules = (Contourlets,) nsct_inverse(nc_coeffs, p)
 
     # ── Workspace ────────────────────────────────────────────────────────────
     @test_call target_modules = (Contourlets,) make_workspace(p, (16, 16))
@@ -115,10 +115,10 @@ end
     p = ContourletParams(J = 2, L_array = [1, 2])
     @test_opt target_modules = (Contourlets,) ct_forward(x, p)
     coeffs = ct_forward(x, p)
-    @test_opt target_modules = (Contourlets,) ct_inverse(coeffs)
+    @test_opt target_modules = (Contourlets,) ct_inverse(coeffs, p)
     @test_opt target_modules = (Contourlets,) nsct_forward(x, p)
     nc = nsct_forward(x, p)
-    @test_opt target_modules = (Contourlets,) nsct_inverse(nc)
+    @test_opt target_modules = (Contourlets,) nsct_inverse(nc, p)
 
     # ── Workspace API ────────────────────────────────────────────────────────
     ws = make_workspace(p, (16, 16))

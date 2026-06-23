@@ -114,8 +114,8 @@ for n in SIZES
 
     benchmark_case(
         "ct inverse", "$(n)x$(n)",
-        () -> ct_inverse(c_cpu),
-        () -> ct_inverse(c_gpu, xg),
+        () -> ct_inverse(c_cpu, p),
+        () -> ct_inverse(c_gpu, p),
     )
     benchmark_case(
         "ct inverse!", "$(n)x$(n)",
@@ -170,8 +170,8 @@ for n in SIZES
 
     benchmark_case(
         "nsct inverse", "$(n)x$(n)",
-        () -> nsct_inverse(c_cpu),
-        () -> nsct_inverse(c_gpu, xg),
+        () -> nsct_inverse(c_cpu, p),
+        () -> nsct_inverse(c_gpu, p),
     )
     benchmark_case(
         "nsct inverse!", "$(n)x$(n)",

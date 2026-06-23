@@ -11,8 +11,7 @@
     c = ct_forward(z, p)
     @test eltype(c.coarse) == ComplexF64
     @test all(eltype(sb) == ComplexF64 for level in c.subbands for sb in level)
-    @test eltype(c.params) == Float64           # filters stay real
-    rec = ct_inverse(c)
+    rec = ct_inverse(c, p)
     @test eltype(rec) == ComplexF64
     @test maximum(abs, rec .- z) < 1.0e-12
 end
@@ -42,7 +41,7 @@ end
     z = complex.(randn(48, 48), randn(48, 48))
     c = nsct_forward(z, p)
     @test eltype(c.coarse) == ComplexF64
-    rec = nsct_inverse(c)
+    rec = nsct_inverse(c, p)
     @test maximum(abs, rec .- z) < 1.0e-12
     # circular-shift invariance carries over to complex data
     s = (5, 3)
@@ -59,11 +58,10 @@ end
     z = ComplexF32.(complex.(randn(Float32, 64, 64), randn(Float32, 64, 64)))
     c = ct_forward(z, p)
     @test eltype(c.coarse) == ComplexF32
-    @test eltype(c.params) == Float32           # filter precision tracks the data
-    @test maximum(abs, ct_inverse(c) .- z) < 1.0f-4
+    @test maximum(abs, ct_inverse(c, p) .- z) < 1.0f-4
     n = nsct_forward(z, p)
     @test eltype(n.coarse) == ComplexF32
-    @test maximum(abs, nsct_inverse(n) .- z) < 1.0f-4
+    @test maximum(abs, nsct_inverse(n, p) .- z) < 1.0f-4
 end
 
 @testitem "complex workspace path matches allocating" tags = [:ct, :nsct] begin
@@ -76,7 +74,7 @@ end
     @test ws isa ContourletWorkspace{ComplexF64, Float64}
     cw = ct_forward(z, p; workspace = ws)
     @test cw.coarse ≈ ct_forward(z, p).coarse
-    @test maximum(abs, ct_inverse(cw) .- z) < 1.0e-12
+    @test maximum(abs, ct_inverse(cw, p) .- z) < 1.0e-12
 
     wsn = make_nsct_workspace(ComplexF64, (64, 64), p)
     nw = nsct_forward(z, p; workspace = wsn)

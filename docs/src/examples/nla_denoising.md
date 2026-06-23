@@ -32,7 +32,7 @@ function ct_subband_gains(params, sz)
     for j in eachindex(template.subbands), k in eachindex(template.subbands[j])
         c = ct_forward(zeros(sz...), params)
         c.subbands[j][k] .= randn(size(c.subbands[j][k]))
-        γ[j][k] = sqrt(sum(abs2, ct_inverse(c)) / length(c.subbands[j][k]))
+        γ[j][k] = sqrt(sum(abs2, ct_inverse(c, params)) / length(c.subbands[j][k]))
     end
     return γ
 end
@@ -47,7 +47,7 @@ function ct_nla(img, params, γ, M)
         sb = c.subbands[j][k]
         @. sb = ifelse(abs(sb) * γ[j][k] >= thr, sb, 0.0)
     end
-    return ct_inverse(c)
+    return ct_inverse(c, params)
 end
 
 # M-term wavelet approximation (keep the M largest dwt coefficients).
@@ -78,7 +78,7 @@ function nsct_denoise(noisy, params, gains, σ, k)
         sb = c.subbands[j][kk]
         @. sb = ifelse(abs(sb) >= λ, sb, 0.0)
     end
-    return nsct_inverse(c)
+    return nsct_inverse(c, params)
 end
 
 function wt_denoise(noisy, λ)
@@ -115,7 +115,7 @@ function nsct_local_variance_denoise(noisy, params, gains, σ; window_size=7)
         end
         c.subbands[j][kk] .= out
     end
-    return nsct_inverse(c)
+    return nsct_inverse(c, params)
 end
 
 function nsct_bivariate_denoise(noisy, params, gains, σ; window_size=7)
@@ -160,7 +160,7 @@ function nsct_bivariate_denoise(noisy, params, gains, σ; window_size=7)
         end
         c.subbands[j][kk] .= out
     end
-    return nsct_inverse(c)
+    return nsct_inverse(c, params)
 end
 ```
 

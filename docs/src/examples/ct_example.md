@@ -20,7 +20,7 @@ println("Coarse size:  ", size(coeffs.coarse))
 println("Subbands per scale: ", map(length, coeffs.subbands))
 
 # ── Perfect reconstruction ──────────────────────────────────────────────────
-rec   = ct_inverse(coeffs)
+rec   = ct_inverse(coeffs, params)
 err   = maximum(abs, rec .- img)
 println("PR error: ", err)           # < 1e-12
 @assert err < 1e-12
@@ -46,7 +46,6 @@ println("Iterative loop completed without error")
 |-------|------|-------------|
 | `coarse` | `Matrix{T}` | Low-frequency residual (size ≈ N/2^J × M/2^J) |
 | `subbands[j]` | `Vector{Matrix{T}}` | `2^L_array[j]` directional subbands at scale `j` |
-| `params` | `ContourletParams{T}` | Parameters used to produce these coefficients |
 
 The subbands are ordered by direction angle: subband `k` covers the
 frequency wedge centred at angle ``\pi(k-1)/2^{L_j}``.

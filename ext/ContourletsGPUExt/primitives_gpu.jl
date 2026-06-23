@@ -343,7 +343,7 @@ function qfb_decompose(image::_AbstractGPUMatrix, qfp::QuincunxFilterPair; dir::
     else
         img_t = collect(img')
         sb0_t, sb1_t = qfb_decompose(img_t, qfp; dir = :col)
-        return collect(sb0_t'), collect(sb1_t')
+        return _to_device(backend, collect(sb0_t')), _to_device(backend, collect(sb1_t'))
     end
 end
 

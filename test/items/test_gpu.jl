@@ -173,3 +173,113 @@ end
         @test maximum(abs, Array(nr) .- x) < 1.0e-11
     end
 end
+
+@testitem "GPU primitives error paths" tags = [:gpu] setup = [GPUBackends] begin
+    using GPUEnv
+    x = randn(16, 16)
+    for backend in GPUBackends.backends
+        xg = to_gpu(backend, x)
+        dg = similar(xg)
+        h = [0.25, 0.5, 0.25]
+        @test_throws ArgumentError Contourlets.conv2d_sep!(dg, xg, h, h; boundary = :bad)
+        @test_throws ArgumentError Contourlets.shear!(dg, xg, :bad)
+        @test_throws ArgumentError Contourlets.inv_shear!(dg, xg, :bad)
+        @test_throws ArgumentError Contourlets._resamp(xg, 5)
+        @test_throws ArgumentError Contourlets._sefilter2(xg, Float64.(h), 0, 0, :bad)
+    end
+end
+
+@testitem "GPU qx_upsample" tags = [:gpu] setup = [GPUBackends] begin
+    using GPUEnv, Random
+    Random.seed!(57)
+    x = randn(16, 16)
+    for backend in GPUBackends.backends
+        xg = to_gpu(backend, x)
+        qd = qx_downsample(xg)
+        qu = qx_upsample(qd, size(xg))
+        @test size(qu) == size(xg)
+        # upsample should reverse the downsample on even+even sites
+        qu_cpu = qx_upsample(qx_downsample(x), size(x))
+        @test maximum(abs, Array(qu) .- qu_cpu) < 1.0e-12
+    end
+end
+
+@testitem "GPU nsdfb edge cases and error paths" tags = [:gpu] setup = [GPUBackends] begin
+    using GPUEnv, Random
+    Random.seed!(58)
+    x = randn(16, 16)
+    p = ContourletParams(J = 1, L_array = [2])
+    for backend in GPUBackends.backends
+        xg = to_gpu(backend, x)
+        # l_levels == 0 → [copy(bandpass)]
+        sbs0 = nsdfb_decompose(xg, 0, Q2345)
+        @test length(sbs0) == 1
+        @test maximum(abs, Array(sbs0[1]) .- x) < 1.0e-12
+        # nsdfb_reconstruct n == 1 → copy
+        rec1 = nsdfb_reconstruct([xg], Q2345)
+        @test maximum(abs, Array(rec1) .- x) < 1.0e-12
+        # error: l_levels < 0
+        @test_throws ArgumentError nsdfb_decompose(xg, -1, Q2345)
+        # error: non-power-of-2 subbands
+        sbs2 = nsdfb_decompose(xg, 2, Q2345)
+        @test_throws ArgumentError nsdfb_reconstruct(sbs2[1:3], Q2345)
+    end
+end
+
+@testitem "GPU qfb_decompose/reconstruct non-ladder filter" tags = [:gpu] setup = [GPUBackends] begin
+    using GPUEnv, Random
+    Random.seed!(59)
+    x = randn(16, 16)
+    # Haar-like non-ladder QuincunxFilterPair
+    haar = QuincunxFilterPair([0.5 0.5], [1.0 1.0], (1, 1), (1, 2))
+    for backend in GPUBackends.backends
+        xg = to_gpu(backend, x)
+        # :col direction — GPU kernel path
+        sb0g, sb1g = qfb_decompose(xg, haar; dir = :col)
+        sb0c, sb1c = qfb_decompose(x, haar; dir = :col)
+        @test maximum(abs, Array(sb0g) .- sb0c) < 1.0e-12
+        @test maximum(abs, Array(sb1g) .- sb1c) < 1.0e-12
+        # GPU results must stay on device
+        @test !(sb0g isa Array)
+        # synthesis round-trip (col)
+        rec_col = qfb_reconstruct(sb0g, sb1g, haar; dir = :col)
+        @test !(rec_col isa Array)
+        # :row direction — transpose-to-CPU-and-back path
+        sb0r, sb1r = qfb_decompose(xg, haar; dir = :row)
+        @test !(sb0r isa Array)
+        rec_row = qfb_reconstruct(sb0r, sb1r, haar; dir = :row)
+        @test !(rec_row isa Array)
+        @test maximum(abs, Array(rec_row) .- x) < 1.0e-12
+        # ladder filter throws
+        @test_throws ArgumentError qfb_decompose(xg, Q2345)
+        @test_throws ArgumentError qfb_reconstruct(sb0g, sb1g, Q2345)
+    end
+end
+
+@testitem "GPU Adapt.adapt_structure for CT/NSCT coefficients" tags = [:gpu] setup = [GPUBackends] begin
+    using GPUEnv, Random
+    # Adapt is loaded transitively by JLArrays / KernelAbstractions (GPUEnv dep).
+    const Adapt = Base.require(
+        Base.PkgId(Base.UUID("79e6a3ab-5dfb-504d-930d-738a2a938a0e"), "Adapt")
+    )
+    Random.seed!(60)
+    x = randn(32, 32)
+    p = ContourletParams(J = 2, L_array = [2, 3])
+    for backend in GPUBackends.backends
+        xg = to_gpu(backend, x)
+        # CT: move CPU coeffs to device and back via adapt_structure
+        cc = ct_forward(x, p)
+        cc_dev = Adapt.adapt(typeof(xg), cc)
+        @test !(cc_dev.coarse isa Array)
+        cc_host = Adapt.adapt(Array, cc_dev)
+        @test cc_host.coarse isa Array
+        @test maximum(abs, cc_host.coarse .- cc.coarse) < 1.0e-12
+        # NSCT: same round-trip
+        nc = nsct_forward(x, p)
+        nc_dev = Adapt.adapt(typeof(xg), nc)
+        @test !(nc_dev.coarse isa Array)
+        nc_host = Adapt.adapt(Array, nc_dev)
+        @test nc_host.coarse isa Array
+        @test maximum(abs, nc_host.coarse .- nc.coarse) < 1.0e-12
+    end
+end

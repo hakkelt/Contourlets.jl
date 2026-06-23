@@ -102,3 +102,46 @@ end
     @test fwd_allocs < 1000
     @test inv_allocs < 1000
 end
+
+@testitem "make_workspace image-first overload" begin
+    p = ContourletParams(J = 2, L_array = [1, 2])
+    img = randn(32, 32)
+    ws = make_workspace(img, p)
+    @test ws isa ContourletWorkspace
+    @test ws.image_size == (32, 32)
+    coeffs = similar_coefficients(p, (32, 32))
+    ct_forward!(coeffs, img, ws)
+    rec = similar(img)
+    ct_inverse!(rec, coeffs, ws)
+    @test maximum(abs, rec .- img) < 1.0e-12
+end
+
+@testitem "make_nsct_workspace image-first overload" begin
+    p = ContourletParams(J = 2, L_array = [1, 2])
+    img = randn(32, 32)
+    ws = make_nsct_workspace(img, p)
+    @test ws isa ContourletWorkspace
+    @test ws.image_size == (32, 32)
+    coeffs = similar_nsct_coefficients(p, (32, 32))
+    nsct_forward!(coeffs, img, ws)
+    rec = similar(img)
+    nsct_inverse!(rec, coeffs, ws)
+    @test maximum(abs, rec .- img) < 1.0e-12
+end
+
+@testitem "make_nsct_workspace Complex image-first overload" begin
+    using Random
+    Random.seed!(50)
+    p = ContourletParams(J = 2, L_array = [1, 2])
+    img = complex.(randn(32, 32), randn(32, 32))
+    ws = make_nsct_workspace(img, p)
+    @test ws isa ContourletWorkspace{ComplexF64, Float64}
+end
+
+@testitem "_base_array_type on SubArray type" begin
+    x = randn(8, 8)
+    sv = @view x[1:4, 1:4]
+    scratch = Contourlets._scratch_like(sv, 4, 4)
+    @test scratch isa Matrix
+    @test size(scratch) == (4, 4)
+end

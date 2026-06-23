@@ -117,3 +117,10 @@ end
 @testitem "ContourletParams negative L_array entry" begin
     @test_throws ArgumentError ContourletParams(J = 2, L_array = [1, -1])
 end
+
+@testitem "pkva_ladder_filter symmetric 12-tap" begin
+    f = Contourlets.pkva_ladder_filter()
+    @test length(f) == 12
+    @test f == reverse(f)   # symmetric
+    @test f[6] == 0.63       # pkva12 tap check (f[6] = _PKVA12_HALF[1])
+end

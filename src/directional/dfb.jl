@@ -160,20 +160,6 @@ function _extend2(x::AbstractMatrix{T}, ru::Int, rd::Int, cl::Int, cr::Int, extm
             out[i, j] = x[mod1(i - ru, m), mod1(j - cl, n)]
         end
         return out
-    elseif extmod === :qper_row
-        m2 = round(Int, m / 2)
-        out = _scratch_like(x, m + ru + rd, n + cl + cr)
-        @inbounds for j in 1:(n + cl + cr), i in 1:(m + ru + rd)
-            ii = mod1(i - ru, m)
-            jj = j - cl
-            if jj < 1 || jj > n
-                # shift row index by m2 for column extension
-                out[i, j] = x[mod1(ii + m2, m), mod1(jj, n)]
-            else
-                out[i, j] = x[ii, jj]
-            end
-        end
-        return out
     elseif extmod === :qper_col
         n2 = round(Int, n / 2)
         out = _scratch_like(x, m + ru + rd, n + cl + cr)

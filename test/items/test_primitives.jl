@@ -164,3 +164,62 @@ end
     rect_downsample!(y_inplace, x)
     @test y_inplace == y_alloc
 end
+
+@testitem "conv2d_sep! periodic and zero boundaries" begin
+    using Random
+    Random.seed!(60)
+    x = randn(8, 8)
+    h = Float64[0.25, 0.5, 0.25]
+    dst_per = similar(x)
+    conv2d_sep!(dst_per, x, h, h; boundary = :periodic)
+    dst_sym = similar(x)
+    conv2d_sep!(dst_sym, x, h, h; boundary = :symmetric)
+    @test maximum(abs, dst_per[3:6, 3:6] .- dst_sym[3:6, 3:6]) < 1.0e-12
+    dst_zero = similar(x)
+    conv2d_sep!(dst_zero, x, h, h; boundary = :zero)
+    @test size(dst_zero) == size(x)
+    @test all(isfinite, dst_zero)
+    @test maximum(abs, dst_zero[3:6, 3:6] .- dst_sym[3:6, 3:6]) < 1.0e-12
+end
+
+@testitem "conv2d_sep allocating matches in-place" begin
+    using Random
+    Random.seed!(61)
+    x = randn(16, 16)
+    h = Float64[0.25, 0.5, 0.25]
+    dst_alloc = conv2d_sep(x, h, h; boundary = :periodic)
+    dst_ip = similar(x)
+    conv2d_sep!(dst_ip, x, h, h; boundary = :periodic)
+    @test dst_alloc == dst_ip
+end
+
+@testitem "conv2d_sep periodic boundary allocating" begin
+    using Random
+    Random.seed!(95)
+    x = randn(8, 8)
+    h = [0.25, 0.5, 0.25]
+    out = conv2d_sep(x, h, h; boundary = :periodic)
+    @test size(out) == size(x)
+    @test all(isfinite, out)
+end
+
+@testitem "conv2d_sep zero boundary allocating" begin
+    using Random
+    Random.seed!(96)
+    x = randn(8, 8)
+    h = [0.25, 0.5, 0.25]
+    out = conv2d_sep(x, h, h; boundary = :zero)
+    @test size(out) == size(x)
+    @test all(isfinite, out)
+end
+
+@testitem "conv2d! large kernel Enabled() threading" begin
+    using Random
+    Random.seed!(102)
+    x = randn(32, 32)
+    k = randn(6, 6)   # 36 taps > 25 ⇒ FFTW path
+    out_enabled = Contourlets.conv2d(x, k; threading = Enabled())
+    out_auto = Contourlets.conv2d(x, k; threading = Auto())
+    @test size(out_enabled) == size(x)
+    @test maximum(abs, out_enabled .- out_auto) < 1.0e-10
+end

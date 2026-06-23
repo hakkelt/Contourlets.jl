@@ -173,3 +173,53 @@ end
     @test length(c.subbands[2]) == 8
     @test size(c.coarse) == (8, 8)
 end
+
+@testitem "parabolic_levels J=0 returns empty" begin
+    ls = parabolic_levels(0)
+    @test ls == Int[]
+    ls1 = parabolic_levels(0, 2)
+    @test ls1 == Int[]
+end
+
+@testitem "parabolic_levels large l_j0" begin
+    ls = parabolic_levels(5, 2)
+    @test length(ls) == 5
+    @test ls[1] >= ls[end]   # finer scale ≥ coarser scale in direction count
+end
+
+@testitem "Enabled threading policy" begin
+    @test Contourlets._use_threading(Enabled(), Float64) === true
+    @test Contourlets._use_threading(Enabled(), ComplexF64) === true
+end
+
+@testitem "Disabled threading policy" begin
+    @test Contourlets._use_threading(Disabled(), Float64) === false
+    @test Contourlets._use_threading(Disabled(), ComplexF64) === false
+end
+
+@testitem "Auto threading policy dispatch" begin
+    @test Contourlets._use_threading(Auto(), Float64) === false
+    @test Contourlets._use_threading(Auto(), ComplexF64) === true
+    @test Contourlets._use_threading(Auto(), Float32) === false
+    @test Contourlets._use_threading(Auto(), ComplexF32) === true
+end
+
+@testitem "CT with threading=Enabled() and Real data" begin
+    using Random
+    Random.seed!(90)
+    x = randn(32, 32)
+    p = ContourletParams(J = 2, L_array = [2, 3])
+    c = ct_forward(x, p; threading = Enabled())
+    rec = ct_inverse(c, p; threading = Enabled())
+    @test maximum(abs, rec .- x) < 1.0e-12
+end
+
+@testitem "NSCT with threading=Enabled() and Real data" begin
+    using Random
+    Random.seed!(91)
+    x = randn(32, 32)
+    p = ContourletParams(J = 2, L_array = [2, 3])
+    nc = nsct_forward(x, p; threading = Enabled())
+    rec = nsct_inverse(nc, p; threading = Enabled())
+    @test maximum(abs, rec .- x) < 1.0e-12
+end

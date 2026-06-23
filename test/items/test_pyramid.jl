@@ -73,3 +73,9 @@ end
     x = randn(16, 16)
     @test_throws ArgumentError nsp_decompose(x, CDF97, 0)
 end
+
+@testitem "lp_decompose! odd dimension throws" begin
+    x = randn(7, 8)
+    c = zeros(4, 4); bp = zeros(7, 8)
+    @test_throws ArgumentError lp_decompose!(c, bp, x, CDF97)
+end

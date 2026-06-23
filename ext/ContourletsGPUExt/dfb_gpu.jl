@@ -38,19 +38,11 @@ end
 # :qper_row = 2, :qper_col = 3).
 
 @kernel function _extend2_kernel!(
-        out, @Const(x), ru::Int, cl::Int, m::Int, n::Int, mode::Int, m2::Int, n2::Int
+        out, @Const(x), ru::Int, cl::Int, m::Int, n::Int, mode::Int, n2::Int
     )
     I, J = @index(Global, NTuple)
     if mode == 1                      # :per
         @inbounds out[I, J] = x[mod1(I - ru, m), mod1(J - cl, n)]
-    elseif mode == 2                  # :qper_row
-        ii = mod1(I - ru, m)
-        jj = J - cl
-        if jj < 1 || jj > n
-            @inbounds out[I, J] = x[mod1(ii + m2, m), mod1(jj, n)]
-        else
-            @inbounds out[I, J] = x[ii, jj]
-        end
     else                              # :qper_col
         ii = I - ru
         jj = mod1(J - cl, n)
@@ -96,19 +88,16 @@ function Contourlets._sefilter2(
     m, n = size(x)
     mode = if extmod === :per
         1
-    elseif extmod === :qper_row
-        2
     elseif extmod === :qper_col
-        3
+        2
     else
         throw(ArgumentError("unsupported extmod: $extmod"))
     end
-    m2 = round(Int, m / 2)
     n2 = round(Int, n / 2)
     f_d = _ensure_gpu(backend, f)
 
     ext = KernelAbstractions.allocate(backend, Td, m + ru + rd, n + cl + cr)
-    _extend2_kernel!(backend, (16, 16))(ext, x, ru, cl, m, n, mode, m2, n2; ndrange = size(ext))
+    _extend2_kernel!(backend, (16, 16))(ext, x, ru, cl, m, n, mode, n2; ndrange = size(ext))
 
     ncols = n + cl + cr
     tmp = KernelAbstractions.allocate(backend, Td, m, ncols)

@@ -1,11 +1,18 @@
 # Contourlets.jl
 
+[![CI](https://github.com/hakkelt/Contourlets.jl/actions/workflows/CI.yml/badge.svg?branch=master)](https://github.com/hakkelt/Contourlets.jl/actions/workflows/CI.yml)
+[![Documentation (dev)](https://img.shields.io/badge/docs-dev-blue.svg)](https://hakkelt.github.io/Contourlets.jl/dev/)
+[![Coverage](https://codecov.io/gh/hakkelt/Contourlets.jl/branch/master/graph/badge.svg)](https://codecov.io/gh/hakkelt/Contourlets.jl)
+[![Aqua QA](https://raw.githubusercontent.com/JuliaTesting/Aqua.jl/master/badge.svg)](https://github.com/JuliaTesting/Aqua.jl)
+[![JET](https://img.shields.io/badge/%F0%9F%9B%A9%EF%B8%8F_tested_with-JET.jl-233f9a)](https://github.com/aviatesk/JET.jl)
+[![Runic](https://img.shields.io/badge/code%20style-runic-blue.svg)](https://github.com/fredrikekre/Runic.jl)
+
 A Julia package implementing the Discrete Contourlet Transform (CT) and
 Nonsubsampled Contourlet Transform (NSCT) via a Pyramid Directional Filter Bank (PDFB).
 
 | Contourlet frequency tiling | NSCT denoising vs. wavelets |
 |:---:|:---:|
-| [![Contourlet frequency tiling](https://hakkelt.github.io/Contourlets.jl/dev/theory/ct_tiling.png)](https://hakkelt.github.io/Contourlets.jl/dev/theory/) | [![NSCT denoising](https://hakkelt.github.io/Contourlets.jl/dev/examples/nla_denoising/nla_denoise.png)](https://hakkelt.github.io/Contourlets.jl/dev/examples/nla_denoising/) |
+| [![Contourlet frequency tiling](https://hakkelt.github.io/Contourlets.jl/dev/ct_tiling.png)](https://hakkelt.github.io/Contourlets.jl/dev/theory/) | [![NSCT denoising](https://hakkelt.github.io/Contourlets.jl/dev/examples/nla_denoise.png)](https://hakkelt.github.io/Contourlets.jl/dev/examples/nla_denoising/) |
 | Directional wedges tile the frequency plane ([Theory](https://hakkelt.github.io/Contourlets.jl/dev/theory/)). | NSCT recovers edges a separable wavelet smears ([Denoising example](https://hakkelt.github.io/Contourlets.jl/dev/examples/nla_denoising/)). |
 
 ## Features

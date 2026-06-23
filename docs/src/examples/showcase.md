@@ -118,7 +118,7 @@ savefig(p_lp, "lp_demo.png"); nothing # hide
 All transforms have a corresponding inverse function that achieves exact reconstruction (in the absence of numerical roundoff).
 
 ```@example showcase
-img_recon = ct_inverse(coeffs)
+img_recon = ct_inverse(coeffs, params)
 
 # Calculate reconstruction error
 err = maximum(abs.(img_recon .- img))

@@ -414,3 +414,54 @@ end
     # Results must be identical (threading doesn't affect NSDFB result)
     @test maximum(abs, sbs_e[1] .- sbs_d[1]) < 1.0e-14
 end
+
+# ── _extend2 unsupported extmod error ────────────────────────────────────────
+
+@testitem "_extend2 unsupported extmod throws" tags = [:directional] begin
+    x = randn(8, 8)
+    @test_throws ArgumentError Contourlets._extend2(x, 1, 1, 1, 1, :bad)
+end
+
+# ── dfb_reconstruct n=1 (single-subband copy path) ───────────────────────────
+
+@testitem "dfb_reconstruct single subband returns copy" tags = [:directional] begin
+    x = randn(16, 16)
+    sbs = [x]
+    rec = dfb_reconstruct(sbs, Q2345)
+    @test rec == x
+    @test rec !== x   # must be a copy, not the same object
+end
+
+# ── _sefilter2_kernel! sym=true AND threaded=true ─────────────────────────────
+# The threaded sym branch is only reached with a symmetric modulated ladder
+# filter AND threading=Enabled().  Use the same 3-tap symmetric ladder filter
+# from the sym=false test but force threading on.
+
+@testitem "_sefilter2 symmetric filter path threaded" tags = [:directional] begin
+    using Random
+    Random.seed!(100)
+    f_sym = [1.0, 2.0, 1.0]
+    qfp_sym = QuincunxFilterPair{Float64}(
+        reshape([1.0], 1, 1), reshape([1.0], 1, 1),
+        (1, 1), (1, 1), f_sym
+    )
+    x = randn(32, 32)
+    sbs = dfb_decompose(x, 2, qfp_sym; threading = Enabled())
+    @test length(sbs) == 4
+    rec = dfb_reconstruct(sbs, qfp_sym; threading = Enabled())
+    @test size(rec) == size(x)
+    @test maximum(abs, rec .- x) < 1.0e-10
+end
+
+# ── conv2d! large kernel with threading=Enabled() (FFTW threaded plan) ────────
+
+@testitem "conv2d! large kernel Enabled() threading" tags = [:primitives] begin
+    using Random
+    Random.seed!(102)
+    x = randn(32, 32)
+    k = randn(6, 6)   # 36 taps > 25 ⇒ FFTW path
+    out_enabled = Contourlets.conv2d(x, k; threading = Enabled())
+    out_auto = Contourlets.conv2d(x, k; threading = Auto())
+    @test size(out_enabled) == size(x)
+    @test maximum(abs, out_enabled .- out_auto) < 1.0e-10
+end

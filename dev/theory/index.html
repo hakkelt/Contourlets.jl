@@ -47,36 +47,54 @@ composite_freq = zeros(N, N)
 # Compute frequency response of the coarse low-pass level
 c = ct_forward(zeros(N, N), params)
 c.coarse[size(c.coarse,1)÷2+1, size(c.coarse,2)÷2+1] = 1.0
-composite_freq .= max.(composite_freq, abs.(fftshift(fft(ct_inverse(c)))))
+composite_freq .= max.(composite_freq, abs.(fftshift(fft(ct_inverse(c, params)))))
 
 # Compute frequency responses of all directional wedges across both scales
 for j in 1:length(c.subbands)
     for k in 1:length(c.subbands[j])
         c_dir = ct_forward(zeros(N, N), params)
         c_dir.subbands[j][k][size(c_dir.subbands[j][k],1)÷2+1, size(c_dir.subbands[j][k],2)÷2+1] = 1.0
-        composite_freq .= max.(composite_freq, abs.(fftshift(fft(ct_inverse(c_dir)))))
+        composite_freq .= max.(composite_freq, abs.(fftshift(fft(ct_inverse(c_dir, params)))))
     end
 end
 
 p_ct = heatmap(log1p.(composite_freq), color = :viridis, title = &quot;Contourlet Frequency Tiling&quot;,
     aspect_ratio = :equal, axis = false, colorbar = false, size=(400, 400))</code></pre><p><img src="../ct_tiling.png" alt/></p><h2 id="Nonsubsampled-Contourlet-Transform-(NSCT)"><a class="docs-heading-anchor" href="#Nonsubsampled-Contourlet-Transform-(NSCT)">Nonsubsampled Contourlet Transform (NSCT)</a><a id="Nonsubsampled-Contourlet-Transform-(NSCT)-1"></a><a class="docs-heading-anchor-permalink" href="#Nonsubsampled-Contourlet-Transform-(NSCT)" title="Permalink"></a></h2><p>The NSCT replaces every decimated filter bank with its non-subsampled (à trous) counterpart:</p><ul><li><strong>NSP</strong>: at LP level <span>$j$</span>, the filters <span>$h, g$</span> are replaced by <span>$h_j = h$</span> upsampled by <span>$2^{j-1}$</span> (inserting <span>$2^{j-1}-1$</span> zeros between taps).  No downsampling is applied, so all outputs have the same size as the input.</li><li><strong>NSDFB</strong>: every decimation is removed.  At pyramid level <span>$j$</span> the directional filters are à trous upsampled by <span>$2^{j-1}$</span>, and each tree depth filters along one of four cycling lattice directions <span>$(0,1), (1,0), (1,1), (1,-1)$</span>.  The equivalent analysis/synthesis filters of the ladder network give structural perfect reconstruction at every depth.</li></ul><p>All NSP and NSDFB filtering uses periodic (circular) convolution, so the NSCT is <strong>invariant under circular shifts</strong>: a circular shift of the input produces the same circular shift in every subband, with no redistribution of energy.  The cost is redundancy proportional to <span>$1 + \sum_{j=1}^J 2^{L_j}$</span>.</p><p>The frequency tiling remains the same as the decimated CT, but every basis element is perfectly shift-invariant. We can visualize the equivalent frequency partition of a 2-level NSCT:</p><pre><code class="language-julia hljs">N_nsct = 64
 params_nsct = ContourletParams(J=2, L_array=[2, 1])
-composite_freq_nsct = zeros(N_nsct, N_nsct)
+ref_nsct = nsct_forward(zeros(N_nsct, N_nsct), params_nsct)
+n_l1 = length(ref_nsct.subbands[1])   # 4  (2^L_array[1])
+n_l2 = length(ref_nsct.subbands[2])   # 2  (2^L_array[2])
+mid = N_nsct ÷ 2 + 1
 
-# Compute frequency response of the coarse low-pass level
-c_nsct = nsct_forward(zeros(N_nsct, N_nsct), params_nsct)
-c_nsct.coarse[size(c_nsct.coarse,1)÷2+1, size(c_nsct.coarse,2)÷2+1] = 1.0
-composite_freq_nsct .= max.(composite_freq_nsct, abs.(fftshift(fft(nsct_inverse(c_nsct)))))
-
-# Compute frequency responses of all directional wedges across both scales
-for j in 1:length(c_nsct.subbands)
-    for k in 1:length(c_nsct.subbands[j])
-        c_dir_nsct = nsct_forward(zeros(N_nsct, N_nsct), params_nsct)
-        # In NSCT, every subband is exactly N x N
-        c_dir_nsct.subbands[j][k][size(c_dir_nsct.subbands[j][k],1)÷2+1, size(c_dir_nsct.subbands[j][k],2)÷2+1] = 1.0
-        composite_freq_nsct .= max.(composite_freq_nsct, abs.(fftshift(fft(nsct_inverse(c_dir_nsct)))))
+function nsct_spec(params, j, k)        # j=0 → coarse
+    c = nsct_forward(zeros(N_nsct, N_nsct), params)
+    if j == 0
+        c.coarse[mid, mid] = 1.0
+    else
+        c.subbands[j][k][mid, mid] = 1.0
     end
+    log1p.(abs.(fftshift(fft(nsct_inverse(c, params)))))
 end
 
-p_nsct = heatmap(log1p.(composite_freq_nsct), color = :viridis, title = &quot;NSCT Frequency Tiling&quot;,
-    aspect_ratio = :equal, axis = false, colorbar = false, size=(400, 400))</code></pre><p><img src="../nsct_tiling.png" alt/></p><h2 id="References"><a class="docs-heading-anchor" href="#References">References</a><a id="References-1"></a><a class="docs-heading-anchor-permalink" href="#References" title="Permalink"></a></h2><ol><li>M. N. Do and M. Vetterli, &quot;The Contourlet Transform: An Efficient Directional Multiresolution Image Representation,&quot; <em>IEEE Trans. Image Process.</em>, 2005.</li><li>A. L. da Cunha, J. Zhou, and M. N. Do, &quot;The Nonsubsampled Contourlet Transform: Theory, Design, and Applications,&quot; <em>IEEE Trans. Image Process.</em>, 2006.</li><li>R. H. Bamberger and M. J. T. Smith, &quot;A Filter Bank for the Directional Decomposition of Images,&quot; <em>IEEE Trans. Signal Process.</em>, 1992.</li><li>I. Daubechies and W. Sweldens, &quot;Factoring Wavelet Transforms into Lifting Steps,&quot; <em>J. Fourier Anal. Appl.</em>, 1998.</li></ol></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../">« Home</a><a class="docs-footer-nextpage" href="../examples/showcase/">Showcase »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.17.0 on <span class="colophon-date" title="Monday 22 June 2026 12:19">Monday 22 June 2026</span>. Using Julia version 1.12.6.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+# Layout: row 1 = 4 finest-scale subbands, row 2 = 2 coarser subbands + coarse LP + composite
+p_nsct = plot(layout = (2, 4), size = (860, 440))
+
+for k in 1:n_l1
+    heatmap!(p_nsct[k], nsct_spec(params_nsct, 1, k), color = :viridis,
+        title = &quot;scale 1, dir $k&quot;, aspect_ratio = :equal, axis = false, colorbar = false)
+end
+for k in 1:n_l2
+    heatmap!(p_nsct[n_l1 + k], nsct_spec(params_nsct, 2, k), color = :viridis,
+        title = &quot;scale 2, dir $k&quot;, aspect_ratio = :equal, axis = false, colorbar = false)
+end
+heatmap!(p_nsct[n_l1 + n_l2 + 1], nsct_spec(params_nsct, 0, 0), color = :viridis,
+    title = &quot;coarse LP&quot;, aspect_ratio = :equal, axis = false, colorbar = false)
+
+# Composite: per-pixel max across all channels
+composite_nsct = zeros(N_nsct, N_nsct)
+composite_nsct .= max.(composite_nsct, exp.(nsct_spec(params_nsct, 0, 0)) .- 1)
+for j in 1:length(ref_nsct.subbands), k in 1:length(ref_nsct.subbands[j])
+    composite_nsct .= max.(composite_nsct, exp.(nsct_spec(params_nsct, j, k)) .- 1)
+end
+heatmap!(p_nsct[n_l1 + n_l2 + 2], log1p.(composite_nsct), color = :viridis,
+    title = &quot;composite&quot;, aspect_ratio = :equal, axis = false, colorbar = false)</code></pre><p><img src="../nsct_tiling.png" alt/></p><h2 id="References"><a class="docs-heading-anchor" href="#References">References</a><a id="References-1"></a><a class="docs-heading-anchor-permalink" href="#References" title="Permalink"></a></h2><ol><li>M. N. Do and M. Vetterli, &quot;The Contourlet Transform: An Efficient Directional Multiresolution Image Representation,&quot; <em>IEEE Trans. Image Process.</em>, 2005.</li><li>A. L. da Cunha, J. Zhou, and M. N. Do, &quot;The Nonsubsampled Contourlet Transform: Theory, Design, and Applications,&quot; <em>IEEE Trans. Image Process.</em>, 2006.</li><li>R. H. Bamberger and M. J. T. Smith, &quot;A Filter Bank for the Directional Decomposition of Images,&quot; <em>IEEE Trans. Signal Process.</em>, 1992.</li><li>I. Daubechies and W. Sweldens, &quot;Factoring Wavelet Transforms into Lifting Steps,&quot; <em>J. Fourier Anal. Appl.</em>, 1998.</li></ol></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../">« Home</a><a class="docs-footer-nextpage" href="../examples/showcase/">Showcase »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.17.0 on <span class="colophon-date" title="Tuesday 23 June 2026 15:31">Tuesday 23 June 2026</span>. Using Julia version 1.12.6.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>

@@ -157,6 +157,7 @@ function _qfb_col_decompose!(
         iseven(n2) || throw(ArgumentError("ladder QFB requires an even number of columns"))
         _qfb_col_decompose_ladder!(sb0, sb1, image, qfp)
     else
+        iseven(n2) || throw(ArgumentError("non-ladder QFB requires an even number of columns"))
         h = eltype(sb0).(vec(qfp.h_q))
         c_h = qfp.c_h[2]
         _qfb_col_decompose_kernel!(sb0, sb1, image, h, c_h, n1, n2, d2)
@@ -175,7 +176,7 @@ end
                 dc = l - c_h          # column offset (may be negative)
                 jj = j - dc           # column to read from image
                 # symmetric boundary extension (shared helper from conv2d.jl)
-                jj = _clamp_idx(jj, n2, Val(:symmetric))
+                jj = mod1(jj, n2)
                 xval = img[i, jj]
                 lp_val += h[l] * xval
                 # HP = LP modulated by (-1)^dc
@@ -210,6 +211,7 @@ function _qfb_col_reconstruct!(
     if is_ladder(qfp)
         _qfb_col_reconstruct_ladder!(out, sb0, sb1, qfp)
     else
+        iseven(n2) || throw(ArgumentError("non-ladder QFB requires an even number of columns"))
         g = eltype(out).(vec(qfp.g_q))
         c_g = qfp.c_g[2]
         _qfb_col_reconstruct_kernel!(out, sb0, sb1, g, c_g, n1, n2, d2)
@@ -301,13 +303,11 @@ end
             s1 = sb1[i, k2]
             for l in 1:K
                 dc = l - c_g          # column offset
-                j_out = j_src + dc       # scatter to output column
-                if 1 <= j_out <= n2
-                    # LP contribution
-                    out[i, j_out] += g[l] * s0
-                    # HP contribution: g_high = (-1)^dc * g
-                    out[i, j_out] += (iseven(dc) ? g[l] : -g[l]) * s1
-                end
+                j_out = mod1(j_src + dc, n2)   # scatter to output column (periodic)
+                # LP contribution
+                out[i, j_out] += g[l] * s0
+                # HP contribution: g_high = (-1)^dc * g
+                out[i, j_out] += (iseven(dc) ? g[l] : -g[l]) * s1
             end
         end
     end

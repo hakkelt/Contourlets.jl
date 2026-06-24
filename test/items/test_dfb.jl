@@ -1,3 +1,59 @@
+@testitem "QFB modulation-mode PR col-direction (boundary-wrapping filter)" tags = [:directional] begin
+    # Haar pair with c_h=2: analysis reads x[j+1] (wraps for j=n2), synthesis scatters
+    # to j_out=j+1 (wraps for j=n2). PR: sb0+sb1=x[j], sb0-sb1=x[j+1].
+    using Random
+    Random.seed!(30)
+    x = randn(16, 16)
+    qfp_wrap = QuincunxFilterPair(
+        reshape([0.5, 0.5], 1, 2), reshape([1.0, 1.0], 1, 2), (1, 2), (1, 1)
+    )
+    sb0, sb1 = qfb_decompose(x, qfp_wrap; dir = :col)
+    @test size(sb0) == (16, 8)
+    rec = qfb_reconstruct(sb0, sb1, qfp_wrap; dir = :col)
+    @test maximum(abs, rec .- x) < 1.0e-12
+end
+
+@testitem "QFB modulation-mode PR row-direction (boundary-wrapping filter)" tags = [:directional] begin
+    using Random
+    Random.seed!(31)
+    x = randn(16, 16)
+    qfp_wrap = QuincunxFilterPair(
+        reshape([0.5, 0.5], 1, 2), reshape([1.0, 1.0], 1, 2), (1, 2), (1, 1)
+    )
+    sb0, sb1 = qfb_decompose(x, qfp_wrap; dir = :row)
+    @test size(sb0) == (8, 16)
+    rec = qfb_reconstruct(sb0, sb1, qfp_wrap; dir = :row)
+    @test maximum(abs, rec .- x) < 1.0e-12
+end
+
+@testitem "DFB modulation-mode PR (boundary-wrapping filter, l=1..3)" tags = [:directional] begin
+    using Random
+    Random.seed!(32)
+    x = randn(32, 32)
+    qfp_wrap = QuincunxFilterPair(
+        reshape([0.5, 0.5], 1, 2), reshape([1.0, 1.0], 1, 2), (1, 2), (1, 1)
+    )
+    for l in 1:3
+        sbs = dfb_decompose(x, l, qfp_wrap)
+        rec = dfb_reconstruct(sbs, qfp_wrap)
+        @test maximum(abs, rec .- x) < 1.0e-12
+    end
+end
+
+@testitem "QFB non-ladder odd-width throws ArgumentError" tags = [:directional] begin
+    h5 = [1.0, 4.0, 6.0, 4.0, 1.0] / 16.0
+    g5 = [1.0, 4.0, 6.0, 4.0, 1.0] / 8.0
+    qfp5 = QuincunxFilterPair(reshape(h5, 1, 5), reshape(g5, 1, 5), (1, 3), (1, 3))
+    # dir=:col checks n2 of image (columns)
+    @test_throws ArgumentError qfb_decompose(randn(8, 7), qfp5; dir = :col)
+    # dir=:row transposes, so checks n1 of image (rows)
+    @test_throws ArgumentError qfb_decompose(randn(7, 8), qfp5; dir = :row)
+    # reconstruct: out has odd n2
+    out_odd = zeros(8, 7)
+    sb0 = zeros(8, 3); sb1 = zeros(8, 3)
+    @test_throws ArgumentError qfb_reconstruct!(out_odd, sb0, sb1, qfp5; dir = :col)
+end
+
 @testitem "QFB PR col-direction" tags = [:directional] begin
     using Random
     Random.seed!(20)

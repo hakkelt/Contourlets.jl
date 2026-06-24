@@ -1,4 +1,4 @@
-@testitem "LP PR — Float64" begin
+@testitem "LP PR — Float64" tags = [:pyramid] begin
     using Random
     Random.seed!(10)
     x = randn(32, 32)
@@ -9,7 +9,7 @@
     @test maximum(abs, rec .- x) < 1.0e-12
 end
 
-@testitem "LP PR — Float32" begin
+@testitem "LP PR — Float32" tags = [:pyramid] begin
     using Random
     Random.seed!(11)
     x = randn(Float32, 32, 32)
@@ -19,7 +19,7 @@ end
     @test maximum(abs, rec .- x) < 1.0e-4
 end
 
-@testitem "LP in-place round-trip" begin
+@testitem "LP in-place round-trip" tags = [:pyramid] begin
     using Random
     Random.seed!(12)
     x = randn(32, 32)
@@ -30,7 +30,7 @@ end
     @test maximum(abs, rec .- x) < 1.0e-12
 end
 
-@testitem "NSP PR — multiple levels" begin
+@testitem "NSP PR — multiple levels" tags = [:pyramid] begin
     using Random
     Random.seed!(13)
     x = randn(32, 32)
@@ -43,7 +43,7 @@ end
     end
 end
 
-@testitem "NSP in-place decompose/reconstruct" begin
+@testitem "NSP in-place decompose/reconstruct" tags = [:pyramid] begin
     using Random
     Random.seed!(14)
     x = randn(32, 32)
@@ -56,7 +56,7 @@ end
     @test maximum(abs, rec .- x) < 1.0e-12
 end
 
-@testitem "NSP in-place level 2 and 3" begin
+@testitem "NSP in-place level 2 and 3" tags = [:pyramid] begin
     using Random
     Random.seed!(15)
     x = randn(32, 32)
@@ -69,12 +69,12 @@ end
     end
 end
 
-@testitem "NSP decompose invalid level" begin
+@testitem "NSP decompose invalid level" tags = [:pyramid] begin
     x = randn(16, 16)
     @test_throws ArgumentError nsp_decompose(x, CDF97, 0)
 end
 
-@testitem "lp_decompose! odd dimension throws" begin
+@testitem "lp_decompose! odd dimension throws" tags = [:pyramid] begin
     x = randn(7, 8)
     c = zeros(4, 4); bp = zeros(7, 8)
     @test_throws ArgumentError lp_decompose!(c, bp, x, CDF97)

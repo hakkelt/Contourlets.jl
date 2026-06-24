@@ -1,4 +1,4 @@
-@testitem "Aqua quality checks" begin
+@testitem "Aqua quality checks" tags = [:quality] begin
     using Aqua
     Aqua.test_all(
         Contourlets;

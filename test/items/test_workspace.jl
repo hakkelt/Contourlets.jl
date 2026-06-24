@@ -1,18 +1,18 @@
-@testitem "make_workspace allocates correct sizes" begin
+@testitem "make_workspace allocates correct sizes" tags = [:ct] begin
     p = ContourletParams(J = 2, L_array = [2, 3])
     ws = make_workspace(Float64, (32, 32), p)
     @test ws isa ContourletWorkspace
     @test ws.image_size == (32, 32)
 end
 
-@testitem "make_nsct_workspace all same size" begin
+@testitem "make_nsct_workspace all same size" tags = [:nsct] begin
     p = ContourletParams(J = 2, L_array = [2, 3])
     ws = make_nsct_workspace(Float64, (32, 32), p)
     @test ws isa ContourletWorkspace
     @test length(ws.qup_cache) == 2
 end
 
-@testitem "CT with workspace gives same result as without" begin
+@testitem "CT with workspace gives same result as without" tags = [:ct] begin
     using Random
     Random.seed!(40)
     x = randn(32, 32)
@@ -24,7 +24,7 @@ end
     @test maximum(abs, c1.subbands[1][1] .- c2.subbands[1][1]) < 1.0e-12
 end
 
-@testitem "estimate_workspace_size" begin
+@testitem "estimate_workspace_size" tags = [:ct, :nsct] begin
     p = ContourletParams(J = 2, L_array = [2, 3])
     n = estimate_workspace_size(p, (32, 32))
     @test n isa Int
@@ -39,7 +39,7 @@ end
     @test n_ns == 7168
 end
 
-@testitem "make_workspace params (type-first positional API)" begin
+@testitem "make_workspace params (type-first positional API)" tags = [:ct] begin
     p = ContourletParams(J = 2, L_array = [1, 2])
     # Float64 params + Float32 request → promotes to Float64
     ws = make_workspace(Float32, (32, 32), p)
@@ -47,20 +47,20 @@ end
     @test ws.image_size == (32, 32)
 end
 
-@testitem "make_nsct_workspace (keyword T)" begin
+@testitem "make_nsct_workspace (keyword T)" tags = [:nsct] begin
     p = ContourletParams(J = 2, L_array = [2, 3])
     # Float64 params + Float32 request → promotes to Float64
     ws = make_nsct_workspace(p, (32, 32); T = Float32)
     @test ws isa ContourletWorkspace{Float64}
 end
 
-@testitem "make_nsct_workspace (type-first positional API)" begin
+@testitem "make_nsct_workspace (type-first positional API)" tags = [:nsct] begin
     p = ContourletParams(J = 2, L_array = [1, 2])
     ws = make_nsct_workspace(Float32, (32, 32), p)
     @test ws isa ContourletWorkspace{Float64}
 end
 
-@testitem "NSCT workspace path is allocation-free" begin
+@testitem "NSCT workspace path is allocation-free" tags = [:nsct] begin
     using Random
     Random.seed!(43)
     x = randn(64, 64)
@@ -81,7 +81,7 @@ end
     @test all(isapprox(coeffs.subbands[j][k], ref.subbands[j][k]; atol = 1.0e-10) for j in 1:2 for k in eachindex(ref.subbands[j]))
 end
 
-@testitem "CT workspace path is allocation-free" begin
+@testitem "CT workspace path is allocation-free" tags = [:ct] begin
     using Contourlets, Random
     Random.seed!(41)
     x = randn(32, 32)
@@ -103,7 +103,7 @@ end
     @test inv_allocs < 1000
 end
 
-@testitem "make_workspace image-first overload" begin
+@testitem "make_workspace image-first overload" tags = [:ct] begin
     p = ContourletParams(J = 2, L_array = [1, 2])
     img = randn(32, 32)
     ws = make_workspace(img, p)
@@ -116,7 +116,7 @@ end
     @test maximum(abs, rec .- img) < 1.0e-12
 end
 
-@testitem "make_nsct_workspace image-first overload" begin
+@testitem "make_nsct_workspace image-first overload" tags = [:nsct] begin
     p = ContourletParams(J = 2, L_array = [1, 2])
     img = randn(32, 32)
     ws = make_nsct_workspace(img, p)
@@ -129,7 +129,7 @@ end
     @test maximum(abs, rec .- img) < 1.0e-12
 end
 
-@testitem "make_nsct_workspace Complex image-first overload" begin
+@testitem "make_nsct_workspace Complex image-first overload" tags = [:nsct] begin
     using Random
     Random.seed!(50)
     p = ContourletParams(J = 2, L_array = [1, 2])
@@ -138,7 +138,7 @@ end
     @test ws isa ContourletWorkspace{ComplexF64, Float64}
 end
 
-@testitem "_base_array_type on SubArray type" begin
+@testitem "_base_array_type on SubArray type" tags = [:ct] begin
     x = randn(8, 8)
     sv = @view x[1:4, 1:4]
     scratch = Contourlets._scratch_like(sv, 4, 4)

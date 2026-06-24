@@ -1,4 +1,4 @@
-@testitem "conv2d direct backend small kernel" begin
+@testitem "conv2d direct backend small kernel" tags = [:primitives] begin
     using Random
     Random.seed!(1)
     x = randn(16, 16)
@@ -14,7 +14,7 @@
     @test maximum(abs, out .- ref) < 1.0e-13
 end
 
-@testitem "conv2d FFTW backend matches direct (all boundaries)" begin
+@testitem "conv2d FFTW backend matches direct (all boundaries)" tags = [:primitives] begin
     using Random
     Random.seed!(101)
     x = randn(40, 48)
@@ -28,7 +28,7 @@ end
     end
 end
 
-@testitem "rect_downsample / upsample round-trip" begin
+@testitem "rect_downsample / upsample round-trip" tags = [:primitives] begin
     using Random
     Random.seed!(2)
     x = randn(8, 8)
@@ -40,7 +40,7 @@ end
     @test maximum(abs, d2 .- y) < 1.0e-14
 end
 
-@testitem "shear / inv_shear" begin
+@testitem "shear / inv_shear" tags = [:primitives] begin
     using Random
     Random.seed!(3)
     x = randn(8, 8)
@@ -52,7 +52,7 @@ end
     end
 end
 
-@testitem "shear does not alias src/dst" begin
+@testitem "shear does not alias src/dst" tags = [:primitives] begin
     x = randn(8, 8)
     y = copy(x)
     sh = shear(x, :h)          # allocating — never aliases
@@ -63,7 +63,7 @@ end
     @test dst == sh
 end
 
-@testitem "conv2d FFTW backend (large kernel)" begin
+@testitem "conv2d FFTW backend (large kernel)" tags = [:primitives] begin
     using Random
     Random.seed!(4)
     x = randn(32, 32)
@@ -78,7 +78,7 @@ end
     @test all(isfinite, out_fftw)
 end
 
-@testitem "conv2d boundary modes :periodic and :zero" begin
+@testitem "conv2d boundary modes :periodic and :zero" tags = [:primitives] begin
     using Random
     Random.seed!(5)
     x = randn(8, 8)
@@ -93,14 +93,14 @@ end
     @test out_sym[1, 1] != out_per[1, 1] || out_sym[1, 1] != out_zero[1, 1]
 end
 
-@testitem "conv2d! size mismatch error" begin
+@testitem "conv2d! size mismatch error" tags = [:primitives] begin
     x = randn(8, 8)
     k = randn(3, 3)
     dst = zeros(4, 8)
     @test_throws DimensionMismatch Contourlets.conv2d!(dst, x, k)
 end
 
-@testitem "qx_downsample / upsample round-trip" begin
+@testitem "qx_downsample / upsample round-trip" tags = [:primitives] begin
     using Random
     Random.seed!(6)
 
@@ -137,7 +137,7 @@ end
     @test_throws ArgumentError qx_downsample!(zeros(8, 2), randn(8, 5))
 end
 
-@testitem "qx_downsample! in-place" begin
+@testitem "qx_downsample! in-place" tags = [:primitives] begin
     using Random
     Random.seed!(7)
     x = randn(16, 16)
@@ -147,7 +147,7 @@ end
     @test y_inplace == y_alloc
 end
 
-@testitem "qx_upsample! in-place" begin
+@testitem "qx_upsample! in-place" tags = [:primitives] begin
     using Random
     Random.seed!(8)
     x = randn(16, 16)
@@ -158,19 +158,19 @@ end
     @test x_inplace == x_alloc
 end
 
-@testitem "shear! invalid direction throws" begin
+@testitem "shear! invalid direction throws" tags = [:primitives] begin
     x = randn(8, 8)
     dst = similar(x)
     @test_throws ArgumentError shear!(dst, x, :bad)
 end
 
-@testitem "inv_shear! invalid direction throws" begin
+@testitem "inv_shear! invalid direction throws" tags = [:primitives] begin
     x = randn(8, 8)
     dst = similar(x)
     @test_throws ArgumentError inv_shear!(dst, x, :bad)
 end
 
-@testitem "rect_upsample! in-place" begin
+@testitem "rect_upsample! in-place" tags = [:primitives] begin
     using Random
     Random.seed!(9)
     x = randn(8, 8)
@@ -181,7 +181,7 @@ end
     @test up_inplace == up_alloc
 end
 
-@testitem "rect_downsample! in-place" begin
+@testitem "rect_downsample! in-place" tags = [:primitives] begin
     using Random
     Random.seed!(10)
     x = randn(8, 8)
@@ -191,7 +191,7 @@ end
     @test y_inplace == y_alloc
 end
 
-@testitem "conv2d_sep! periodic and zero boundaries" begin
+@testitem "conv2d_sep! periodic and zero boundaries" tags = [:primitives] begin
     using Random
     Random.seed!(60)
     x = randn(8, 8)
@@ -208,7 +208,7 @@ end
     @test maximum(abs, dst_zero[3:6, 3:6] .- dst_sym[3:6, 3:6]) < 1.0e-12
 end
 
-@testitem "conv2d_sep allocating matches in-place" begin
+@testitem "conv2d_sep allocating matches in-place" tags = [:primitives] begin
     using Random
     Random.seed!(61)
     x = randn(16, 16)
@@ -219,7 +219,7 @@ end
     @test dst_alloc == dst_ip
 end
 
-@testitem "conv2d_sep periodic boundary allocating" begin
+@testitem "conv2d_sep periodic boundary allocating" tags = [:primitives] begin
     using Random
     Random.seed!(95)
     x = randn(8, 8)
@@ -229,7 +229,7 @@ end
     @test all(isfinite, out)
 end
 
-@testitem "conv2d_sep zero boundary allocating" begin
+@testitem "conv2d_sep zero boundary allocating" tags = [:primitives] begin
     using Random
     Random.seed!(96)
     x = randn(8, 8)
@@ -301,7 +301,7 @@ end
     end
 end
 
-@testitem "conv2d! large kernel Enabled() threading" begin
+@testitem "conv2d! large kernel Enabled() threading" tags = [:primitives] begin
     using Random
     Random.seed!(102)
     x = randn(32, 32)

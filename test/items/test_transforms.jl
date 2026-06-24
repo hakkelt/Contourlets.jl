@@ -1,4 +1,4 @@
-@testitem "CT forward/inverse PR" begin
+@testitem "CT forward/inverse PR" tags = [:ct] begin
     using Random
     Random.seed!(30)
     x = randn(32, 32)
@@ -9,7 +9,7 @@
     @test maximum(abs, rec .- x) < 1.0e-12
 end
 
-@testitem "CT coeff structure" begin
+@testitem "CT coeff structure" tags = [:ct] begin
     x = zeros(32, 32); x[16, 16] = 1.0
     p = ContourletParams(J = 2, L_array = [2, 3])
     c = ct_forward(x, p)
@@ -19,7 +19,7 @@ end
     @test size(c.coarse) == (8, 8)
 end
 
-@testitem "CT Float32 round-trip" begin
+@testitem "CT Float32 round-trip" tags = [:ct] begin
     using Random
     Random.seed!(31)
     x = randn(Float32, 32, 32)
@@ -30,7 +30,7 @@ end
     @test maximum(abs, rec .- x) < 1.0e-4
 end
 
-@testitem "NSCT forward/inverse PR" begin
+@testitem "NSCT forward/inverse PR" tags = [:nsct] begin
     using Random
     Random.seed!(32)
     x = randn(32, 32)
@@ -41,7 +41,7 @@ end
     @test maximum(abs, rec .- x) < 1.0e-12
 end
 
-@testitem "NSCT shift invariance" begin
+@testitem "NSCT shift invariance" tags = [:nsct] begin
     using Random
     Random.seed!(38)
     x = randn(32, 32)
@@ -58,7 +58,7 @@ end
     end
 end
 
-@testitem "NSCT subband energy is shift invariant" begin
+@testitem "NSCT subband energy is shift invariant" tags = [:nsct] begin
     using Random
     Random.seed!(39)
     x = randn(32, 32)
@@ -68,7 +68,7 @@ end
     @test maximum(abs, e0 .- es) < 1.0e-8
 end
 
-@testitem "NSCT all subbands same size as input" begin
+@testitem "NSCT all subbands same size as input" tags = [:nsct] begin
     x = zeros(32, 32)
     p = ContourletParams(J = 2, L_array = [2, 3])
     nc = nsct_forward(x, p)
@@ -79,7 +79,7 @@ end
     end
 end
 
-@testitem "CT J=0 trivial reconstruction" begin
+@testitem "CT J=0 trivial reconstruction" tags = [:ct] begin
     using Random
     Random.seed!(33)
     x = randn(32, 32)
@@ -90,14 +90,14 @@ end
     @test maximum(abs, rec .- x) < 1.0e-14
 end
 
-@testitem "parabolic_levels helper" begin
+@testitem "parabolic_levels helper" tags = [:ct] begin
     ls = parabolic_levels(4)
     @test length(ls) == 4
     @test all(x -> x >= 1, ls)
     @test issorted(ls; rev = true)  # coarser levels have more directions
 end
 
-@testitem "CT in-place forward/inverse with workspace" begin
+@testitem "CT in-place forward/inverse with workspace" tags = [:ct] begin
     using Random
     Random.seed!(34)
     x = randn(32, 32)
@@ -110,7 +110,7 @@ end
     @test maximum(abs, rec .- x) < 1.0e-12
 end
 
-@testitem "CT in-place forward matches allocating" begin
+@testitem "CT in-place forward matches allocating" tags = [:ct] begin
     using Random
     Random.seed!(35)
     x = randn(32, 32)
@@ -125,7 +125,7 @@ end
     end
 end
 
-@testitem "NSCT in-place forward/inverse with workspace" begin
+@testitem "NSCT in-place forward/inverse with workspace" tags = [:nsct] begin
     using Random
     Random.seed!(36)
     x = randn(32, 32)
@@ -138,7 +138,7 @@ end
     @test maximum(abs, rec .- x) < 1.0e-12
 end
 
-@testitem "NSCT in-place forward matches allocating" begin
+@testitem "NSCT in-place forward matches allocating" tags = [:nsct] begin
     using Random
     Random.seed!(37)
     x = randn(32, 32)
@@ -153,7 +153,7 @@ end
     end
 end
 
-@testitem "similar_nsct_coefficients sizes" begin
+@testitem "similar_nsct_coefficients sizes" tags = [:nsct] begin
     p = ContourletParams(J = 2, L_array = [2, 3])
     nc = similar_nsct_coefficients(p, (64, 64))
     @test size(nc.coarse) == (64, 64)
@@ -166,7 +166,7 @@ end
     end
 end
 
-@testitem "similar_coefficients sizes" begin
+@testitem "similar_coefficients sizes" tags = [:ct] begin
     p = ContourletParams(J = 2, L_array = [2, 3])
     c = similar_coefficients(p, (32, 32))
     @test length(c.subbands[1]) == 4
@@ -174,37 +174,37 @@ end
     @test size(c.coarse) == (8, 8)
 end
 
-@testitem "parabolic_levels J=0 returns empty" begin
+@testitem "parabolic_levels J=0 returns empty" tags = [:ct] begin
     ls = parabolic_levels(0)
     @test ls == Int[]
     ls1 = parabolic_levels(0, 2)
     @test ls1 == Int[]
 end
 
-@testitem "parabolic_levels large l_j0" begin
+@testitem "parabolic_levels large l_j0" tags = [:ct] begin
     ls = parabolic_levels(5, 2)
     @test length(ls) == 5
     @test ls[1] >= ls[end]   # finer scale ≥ coarser scale in direction count
 end
 
-@testitem "Enabled threading policy" begin
+@testitem "Enabled threading policy" tags = [:ct] begin
     @test Contourlets._use_threading(Enabled(), Float64) === true
     @test Contourlets._use_threading(Enabled(), ComplexF64) === true
 end
 
-@testitem "Disabled threading policy" begin
+@testitem "Disabled threading policy" tags = [:ct] begin
     @test Contourlets._use_threading(Disabled(), Float64) === false
     @test Contourlets._use_threading(Disabled(), ComplexF64) === false
 end
 
-@testitem "Auto threading policy dispatch" begin
+@testitem "Auto threading policy dispatch" tags = [:ct] begin
     @test Contourlets._use_threading(Auto(), Float64) === false
     @test Contourlets._use_threading(Auto(), ComplexF64) === true
     @test Contourlets._use_threading(Auto(), Float32) === false
     @test Contourlets._use_threading(Auto(), ComplexF32) === true
 end
 
-@testitem "CT with threading=Enabled() and Real data" begin
+@testitem "CT with threading=Enabled() and Real data" tags = [:ct] begin
     using Random
     Random.seed!(90)
     x = randn(32, 32)
@@ -214,7 +214,7 @@ end
     @test maximum(abs, rec .- x) < 1.0e-12
 end
 
-@testitem "NSCT with threading=Enabled() and Real data" begin
+@testitem "NSCT with threading=Enabled() and Real data" tags = [:nsct] begin
     using Random
     Random.seed!(91)
     x = randn(32, 32)

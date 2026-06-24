@@ -1,4 +1,4 @@
-@testitem "QFB PR col-direction" begin
+@testitem "QFB PR col-direction" tags = [:directional] begin
     using Random
     Random.seed!(20)
     x = randn(32, 32)
@@ -9,7 +9,7 @@
     @test maximum(abs, rec .- x) < 1.0e-12
 end
 
-@testitem "QFB PR row-direction" begin
+@testitem "QFB PR row-direction" tags = [:directional] begin
     using Random
     Random.seed!(21)
     x = randn(32, 32)
@@ -19,7 +19,7 @@ end
     @test maximum(abs, rec .- x) < 1.0e-12
 end
 
-@testitem "DFB PR levels 1–4" begin
+@testitem "DFB PR levels 1–4" tags = [:directional] begin
     using Random
     Random.seed!(22)
     x = randn(32, 32)
@@ -31,7 +31,7 @@ end
     end
 end
 
-@testitem "DFB subband sizes (canonical directional mosaic)" begin
+@testitem "DFB subband sizes (canonical directional mosaic)" tags = [:directional] begin
     x = zeros(64, 64)
     # l=1: two horizontal subbands, rows halved.
     sbs1 = dfb_decompose(x, 1, Q2345)
@@ -57,7 +57,7 @@ end
     end
 end
 
-@testitem "DFB is directionally selective" begin
+@testitem "DFB is directionally selective" tags = [:directional] begin
     # An l=3 DFB has 8 directional wedges.  Sweeping the orientation of a
     # near-Nyquist 2-D sinusoid must light up several *different* dominant
     # subbands — a degenerate (non-directional) DFB would always pick the same
@@ -73,14 +73,14 @@ end
     @test length(unique(doms)) >= 4       # many distinct directions resolved
 end
 
-@testitem "DFB level 0 returns single subband" begin
+@testitem "DFB level 0 returns single subband" tags = [:directional] begin
     x = randn(8, 8)
     sbs = dfb_decompose(x, 0, Q2345)
     @test length(sbs) == 1
     @test sbs[1] == x
 end
 
-@testitem "NSDFB PR levels 1–3, tree_level 1–3" begin
+@testitem "NSDFB PR levels 1–3, tree_level 1–3" tags = [:directional] begin
     using Random
     Random.seed!(23)
     x = randn(32, 32)
@@ -93,7 +93,7 @@ end
     end
 end
 
-@testitem "NSDFB subbands are directionally selective" begin
+@testitem "NSDFB subbands are directionally selective" tags = [:directional] begin
     # An oriented sinusoid must concentrate its energy in a single directional
     # wedge.  With the resampling-matrix (fan-filter) construction each subband is
     # a genuine angular wedge, so a single tone lands almost entirely in one of
@@ -106,7 +106,7 @@ end
     end
 end
 
-@testitem "NSDFB angle sweep resolves all wedges" begin
+@testitem "NSDFB angle sweep resolves all wedges" tags = [:directional] begin
     # Sweeping orientation over 180° at l=3 (8 wedges) must light up every wedge:
     # a directional bank resolves all 2^l distinct dominant subbands, a degenerate
     # one collapses to far fewer (the old block bank resolved ≤6, the broken
@@ -120,7 +120,7 @@ end
     @test length(unique(doms)) == 8
 end
 
-@testitem "NSDFB matches the MATLAB reference (resampling-matrix fan filters)" begin
+@testitem "NSDFB matches the MATLAB reference (resampling-matrix fan filters)" tags = [:directional] begin
     # Locks the wedge construction to the da Cunha–Zhou–Do reference: the fan and
     # parallelogram filters built from the pkva ladder must equal dfilters('pkva')
     # + parafilters from the MATLAB toolbox.  Reference values precomputed.
@@ -132,7 +132,7 @@ end
     @test isodd(size(F.k2, 1))
 end
 
-@testitem "NSCT is directionally selective for oriented inputs" begin
+@testitem "NSCT is directionally selective for oriented inputs" tags = [:nsct, :directional] begin
     n = 128
     p = ContourletParams(J = 1, L_array = [3])
     for deg in (30, 60, 90, 120, 150)
@@ -145,7 +145,7 @@ end
     end
 end
 
-@testitem "NSCT is shift-invariant" begin
+@testitem "NSCT is shift-invariant" tags = [:nsct, :directional] begin
     using Random
     Random.seed!(99)
     n = 32
@@ -165,7 +165,7 @@ end
     end
 end
 
-@testitem "QFB in-place decompose col-direction" begin
+@testitem "QFB in-place decompose col-direction" tags = [:directional] begin
     using Random
     Random.seed!(24)
     x = randn(32, 32)
@@ -177,7 +177,7 @@ end
     @test maximum(abs, sb1 .- sb1_alloc) < 1.0e-14
 end
 
-@testitem "QFB in-place decompose row-direction" begin
+@testitem "QFB in-place decompose row-direction" tags = [:directional] begin
     using Random
     Random.seed!(25)
     x = randn(32, 32)
@@ -189,7 +189,7 @@ end
     @test maximum(abs, sb1 .- sb1_alloc) < 1.0e-14
 end
 
-@testitem "QFB in-place reconstruct col-direction" begin
+@testitem "QFB in-place reconstruct col-direction" tags = [:directional] begin
     using Random
     Random.seed!(26)
     x = randn(32, 32)
@@ -199,7 +199,7 @@ end
     @test maximum(abs, out .- x) < 1.0e-12
 end
 
-@testitem "QFB in-place reconstruct row-direction" begin
+@testitem "QFB in-place reconstruct row-direction" tags = [:directional] begin
     using Random
     Random.seed!(27)
     x = randn(32, 32)
@@ -209,7 +209,7 @@ end
     @test maximum(abs, out .- x) < 1.0e-12
 end
 
-@testitem "dfb_decompose! basic" begin
+@testitem "dfb_decompose! basic" tags = [:directional] begin
     using Random
     Random.seed!(70)
     x = randn(32, 32)
@@ -222,7 +222,7 @@ end
     end
 end
 
-@testitem "dfb_decompose! with workspace" begin
+@testitem "dfb_decompose! with workspace" tags = [:directional] begin
     using Random
     Random.seed!(71)
     x = randn(32, 32)
@@ -237,7 +237,7 @@ end
     end
 end
 
-@testitem "dfb_reconstruct! basic" begin
+@testitem "dfb_reconstruct! basic" tags = [:directional] begin
     using Random
     Random.seed!(72)
     x = randn(32, 32)
@@ -248,7 +248,7 @@ end
     @test maximum(abs, bp .- x) < 1.0e-12
 end
 
-@testitem "dfb_reconstruct! with workspace" begin
+@testitem "dfb_reconstruct! with workspace" tags = [:directional] begin
     using Random
     Random.seed!(73)
     x = randn(32, 32)
@@ -261,22 +261,22 @@ end
     @test maximum(abs, bp .- x) < 1.0e-12
 end
 
-@testitem "dfb_decompose! invalid subbands length" begin
+@testitem "dfb_decompose! invalid subbands length" tags = [:directional] begin
     x = randn(32, 32)
     subbands = [zeros(16, 16)]  # wrong: 1 instead of 4 for l=2
     @test_throws ArgumentError dfb_decompose!(subbands, x, 2, Q2345)
 end
 
-@testitem "dfb_reconstruct error on empty subbands" begin
+@testitem "dfb_reconstruct error on empty subbands" tags = [:directional] begin
     @test_throws ArgumentError dfb_reconstruct(Matrix{Float64}[], Q2345)
 end
 
-@testitem "dfb_reconstruct error on non-power-of-2" begin
+@testitem "dfb_reconstruct error on non-power-of-2" tags = [:directional] begin
     sbs = [randn(32, 11) for _ in 1:3]   # 3 is not a power of 2
     @test_throws ArgumentError dfb_reconstruct(sbs, Q2345)
 end
 
-@testitem "dfb_subband_sizes modulation-mode (ladder=false)" begin
+@testitem "dfb_subband_sizes modulation-mode (ladder=false)" tags = [:directional] begin
     szs = dfb_subband_sizes(64, 64, 2; ladder = false)
     @test length(szs) == 4
     @test all(==((32, 32)), szs)
@@ -290,7 +290,7 @@ end
     @test szs0[1] == (64, 64)
 end
 
-@testitem "DFB threading=Enabled with modulation-mode Haar pair" begin
+@testitem "DFB threading=Enabled with modulation-mode Haar pair" tags = [:directional] begin
     using Random
     Random.seed!(74)
     x = randn(32, 32)
@@ -301,7 +301,7 @@ end
     @test maximum(abs, rec .- x) < 1.0e-12
 end
 
-@testitem "nsdfb_decompose l_levels=0 returns copy" begin
+@testitem "nsdfb_decompose l_levels=0 returns copy" tags = [:directional] begin
     x = randn(16, 16)
     sbs = nsdfb_decompose(x, 0, Q2345, 1)
     @test length(sbs) == 1
@@ -309,7 +309,7 @@ end
     @test sbs[1] !== x   # must be a copy
 end
 
-@testitem "nsdfb_reconstruct n=1 returns copy" begin
+@testitem "nsdfb_reconstruct n=1 returns copy" tags = [:directional] begin
     x = randn(16, 16)
     sbs = [x]
     rec = nsdfb_reconstruct(sbs, Q2345, 1)
@@ -317,12 +317,12 @@ end
     @test rec !== x   # must be a copy
 end
 
-@testitem "nsdfb_reconstruct non-power-of-2 throws" begin
+@testitem "nsdfb_reconstruct non-power-of-2 throws" tags = [:directional] begin
     sbs = [randn(16, 16) for _ in 1:3]
     @test_throws ArgumentError nsdfb_reconstruct(sbs, Q2345, 1)
 end
 
-@testitem "_sparse_to_dense round-trips SparseFilter2D" begin
+@testitem "_sparse_to_dense round-trips SparseFilter2D" tags = [:directional] begin
     F = Contourlets._nsdfb_filters(Q2345, Float64)
     sf = F.k1
     dense = Contourlets._sparse_to_dense(sf)
@@ -332,7 +332,7 @@ end
     @test length(sf2.vals) == length(sf.vals)
 end
 
-@testitem "_efilter2! dense AbstractMatrix fallback" begin
+@testitem "_efilter2! dense AbstractMatrix fallback" tags = [:directional] begin
     using Random
     Random.seed!(80)
     x = randn(8, 8)
@@ -345,7 +345,7 @@ end
     @test maximum(abs, out_dense .- out_sparse) < 1.0e-12
 end
 
-@testitem "_zconv2! dense AbstractMatrix fallback" begin
+@testitem "_zconv2! dense AbstractMatrix fallback" tags = [:directional] begin
     using Random
     Random.seed!(81)
     x = randn(8, 8)
@@ -359,7 +359,7 @@ end
     @test maximum(abs, out_dense .- out_sparse) < 1.0e-12
 end
 
-@testitem "_sefilter2 symmetric filter path" begin
+@testitem "_sefilter2 symmetric filter path" tags = [:directional] begin
     f_sym = [1.0, 2.0, 1.0]
     qfp_sym = QuincunxFilterPair{Float64}(
         reshape([1.0], 1, 1), reshape([1.0], 1, 1),
@@ -373,7 +373,7 @@ end
     @test maximum(abs, rec .- x) < 1.0e-10
 end
 
-@testitem "_sefilter2 symmetric filter path threaded" begin
+@testitem "_sefilter2 symmetric filter path threaded" tags = [:directional] begin
     using Random
     Random.seed!(100)
     f_sym = [1.0, 2.0, 1.0]
@@ -389,51 +389,51 @@ end
     @test maximum(abs, rec .- x) < 1.0e-10
 end
 
-@testitem "_resamp invalid type throws" begin
+@testitem "_resamp invalid type throws" tags = [:directional] begin
     x = randn(8, 8)
     @test_throws ArgumentError Contourlets._resamp(x, 5)
 end
 
-@testitem "_qpdec unsupported type throws" begin
+@testitem "_qpdec unsupported type throws" tags = [:directional] begin
     x = randn(8, 8)
     @test_throws ArgumentError Contourlets._qpdec(x, :bad)
 end
 
-@testitem "_qprec unsupported type throws" begin
+@testitem "_qprec unsupported type throws" tags = [:directional] begin
     p0 = randn(4, 8); p1 = randn(4, 8)
     @test_throws ArgumentError Contourlets._qprec(p0, p1, :bad)
 end
 
-@testitem "_ppdec invalid type throws" begin
+@testitem "_ppdec invalid type throws" tags = [:directional] begin
     x = randn(8, 8)
     @test_throws ArgumentError Contourlets._ppdec(x, 5)
 end
 
-@testitem "_pprec invalid type throws" begin
+@testitem "_pprec invalid type throws" tags = [:directional] begin
     p0 = randn(4, 8); p1 = randn(4, 8)
     @test_throws ArgumentError Contourlets._pprec(p0, p1, 5)
 end
 
-@testitem "_resampz invalid type throws" begin
+@testitem "_resampz invalid type throws" tags = [:directional] begin
     x = randn(8, 8)
     @test_throws ArgumentError Contourlets._resampz(x, 5)
 end
 
-@testitem "nsdfb_decompose threading kwarg is accepted" begin
+@testitem "nsdfb_decompose threading kwarg is accepted" tags = [:directional] begin
     x = randn(16, 16)
     sbs_e = nsdfb_decompose(x, 2, Q2345, 1; threading = Enabled())
     sbs_d = nsdfb_decompose(x, 2, Q2345, 1; threading = Disabled())
     @test maximum(abs, sbs_e[1] .- sbs_d[1]) < 1.0e-14
 end
 
-@testitem "_extend2 unsupported extmod throws" begin
+@testitem "_extend2 unsupported extmod throws" tags = [:directional] begin
     x = randn(8, 8)
     @test_throws ArgumentError Contourlets._extend2(x, 1, 1, 1, 1, :bad)
     # :qper_row was removed as dead code (never called in the DFB tree)
     @test_throws ArgumentError Contourlets._extend2(x, 1, 1, 1, 1, :qper_row)
 end
 
-@testitem "dfb_reconstruct single subband returns copy" begin
+@testitem "dfb_reconstruct single subband returns copy" tags = [:directional] begin
     x = randn(16, 16)
     sbs = [x]
     rec = dfb_reconstruct(sbs, Q2345)

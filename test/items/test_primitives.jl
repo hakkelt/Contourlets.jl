@@ -213,6 +213,68 @@ end
     @test all(isfinite, out)
 end
 
+@testitem "conv2d_sep symmetric: no OOB with long filter on small image" tags = [:primitives] begin
+    using Random
+    Random.seed!(200)
+    # CDF97 analysis filter (9 taps): radius 4 exceeds image radius on 3×3 and 4×4 inputs.
+    # The single-fold reflection formula previously left indices out of [1,n] → OOB under @inbounds.
+    h9 = Float64[
+        0.02674875741081, -0.016864118442875, -0.07822326652899,
+        0.266864118442875, 0.60294901823636, 0.266864118442875,
+        -0.07822326652899, -0.016864118442875, 0.02674875741081,
+    ]
+    for (nr, nc) in [(3, 3), (4, 4)]
+        x = randn(nr, nc)
+        out = conv2d_sep(x, h9, h9; boundary = :symmetric)
+        @test all(isfinite, out)
+        @test size(out) == (nr, nc)
+    end
+end
+
+@testitem "conv2d_sep symmetric: triangle-wave fold matches reference" tags = [:primitives] begin
+    using Random
+    Random.seed!(201)
+    # Independent reference: manually fold indices with the triangle-wave formula,
+    # then convolve — no dependency on the implementation under test.
+    function fold_idx(i, n)
+        n == 1 && return 1
+        p = 2 * (n - 1)
+        m = mod(i - 1, p)
+        return m < n ? m + 1 : p - m + 1
+    end
+    function ref_conv_sep(x, h)
+        n1, n2 = size(x)
+        c = (length(h) + 1) ÷ 2
+        tmp = similar(x)
+        for j in 1:n2, i in 1:n1
+            acc = zero(eltype(x))
+            for k in 1:length(h)
+                acc += h[k] * x[fold_idx(i - (k - c), n1), j]
+            end
+            tmp[i, j] = acc
+        end
+        out = similar(x)
+        for j in 1:n2, i in 1:n1
+            acc = zero(eltype(x))
+            for k in 1:length(h)
+                acc += h[k] * tmp[i, fold_idx(j - (k - c), n2)]
+            end
+            out[i, j] = acc
+        end
+        return out
+    end
+    h9 = Float64[
+        0.02674875741081, -0.016864118442875, -0.07822326652899,
+        0.266864118442875, 0.60294901823636, 0.266864118442875,
+        -0.07822326652899, -0.016864118442875, 0.02674875741081,
+    ]
+    for (nr, nc) in [(3, 3), (4, 4)]
+        x = randn(nr, nc)
+        @test maximum(abs, conv2d_sep(x, h9, h9; boundary = :symmetric) .- ref_conv_sep(x, h9)) <
+              1.0e-12
+    end
+end
+
 @testitem "conv2d! large kernel Enabled() threading" begin
     using Random
     Random.seed!(102)

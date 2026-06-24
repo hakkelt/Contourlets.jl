@@ -13,11 +13,11 @@
     if bmode == 2
         return mod(p - 1, n) + 1
     else
-        p < 1 && (p = 2 - p)
-        p > n && (p = 2 * n - p)
-        p < 1 && (p = 1)
-        p > n && (p = n)
-        return p
+        1 <= p <= n && return p
+        n == 1 && return 1
+        period = 2 * (n - 1)
+        m = mod(p - 1, period)
+        return n - abs(m - (n - 1))
     end
 end
 

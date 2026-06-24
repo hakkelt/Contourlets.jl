@@ -279,6 +279,32 @@ end
     end
 end
 
+@testitem "GPU conv2d_sep matches CPU on small band (OOB regression)" tags = [:gpu] setup = [GPUBackends] begin
+    using GPUEnv, Random
+    Random.seed!(202)
+    # 3×3 and 4×4 bands with a length-9 filter: previously the CPU path read OOB (single-fold
+    # reflection) while the GPU path clamped to the edge, so the two diverged.  Both are now
+    # fixed to use the same triangle-wave fold.
+    h9 = Float64[
+        0.02674875741081, -0.016864118442875, -0.07822326652899,
+        0.266864118442875, 0.60294901823636, 0.266864118442875,
+        -0.07822326652899, -0.016864118442875, 0.02674875741081,
+    ]
+    for (nr, nc) in [(3, 3), (4, 4)]
+        x = randn(nr, nc)
+        for backend in GPUBackends.backends
+            xg = to_gpu(backend, x)
+            for bnd in (:symmetric, :periodic)
+                dg = similar(xg)
+                Contourlets.conv2d_sep!(dg, xg, h9, h9; boundary = bnd)
+                dc = Contourlets.conv2d_sep(x, h9, h9; boundary = bnd)
+                @test all(isfinite, Array(dg))
+                @test maximum(abs, Array(dg) .- dc) < 1.0e-12
+            end
+        end
+    end
+end
+
 @testitem "GPU qfb_decompose boundary clamping" tags = [:gpu] setup = [GPUBackends] begin
     using GPUEnv, Random
     Random.seed!(74)

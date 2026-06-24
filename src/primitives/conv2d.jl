@@ -13,12 +13,16 @@ using FFTW, LinearAlgebra
 # Boundary extension helpers (type-parameterised for zero overhead)
 # ────────────────────────────────────────────────────────────────────────────────
 
-# All boundary helpers take B as a type parameter so they compile to
-# fully specialised (branch-free) code.
+# All boundary helpers take B as a type parameter so the compiler emits
+# fully specialised code with no dispatch overhead per call.
+# The symmetric helper uses an in-range fast path (skips mod for interior
+# pixels) followed by a branch-free abs-fold for out-of-range indices.
 @inline function _clamp_idx(i::Int, n::Int, ::Val{:symmetric})::Int
-    i < 1  && return 2 - i
-    i > n  && return 2n - i
-    return i
+    1 <= i <= n && return i
+    n == 1 && return 1
+    p = 2 * (n - 1)
+    m = mod(i - 1, p)
+    return n - abs(m - (n - 1))
 end
 
 @inline function _clamp_idx(i::Int, n::Int, ::Val{:periodic})::Int

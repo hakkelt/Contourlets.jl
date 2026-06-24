@@ -103,12 +103,38 @@ end
 @testitem "qx_downsample / upsample round-trip" begin
     using Random
     Random.seed!(6)
+
+    # Square case
     x = randn(16, 16)
     y = qx_downsample(x)
     @test size(y) == (16, 8)
     x_rec = qx_upsample(y, size(x))
-    # All non-zero entries of x_rec should match x at quincunx positions
-    @test any(!iszero, x_rec)
+    @test size(x_rec) == size(x)
+    # Retained positions must exactly match x; dropped positions must be zero.
+    for i in 1:16, j in 1:16
+        if isodd(i + j)   # odd-sum: dropped by downsampler
+            @test x_rec[i, j] == 0
+        else               # even-sum: retained
+            @test x_rec[i, j] == x[i, j]
+        end
+    end
+
+    # Non-square even case
+    x2 = randn(8, 6)
+    y2 = qx_downsample(x2)
+    @test size(y2) == (8, 3)
+    x2_rec = qx_upsample(y2, size(x2))
+    for i in 1:8, j in 1:6
+        if isodd(i + j)
+            @test x2_rec[i, j] == 0
+        else
+            @test x2_rec[i, j] == x2[i, j]
+        end
+    end
+
+    # Odd n2 must throw
+    @test_throws ArgumentError qx_downsample(randn(8, 5))
+    @test_throws ArgumentError qx_downsample!(zeros(8, 2), randn(8, 5))
 end
 
 @testitem "qx_downsample! in-place" begin

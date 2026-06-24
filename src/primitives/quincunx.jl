@@ -4,30 +4,26 @@
 #
 #   M_q = [[1, 1], [-1, 1]]   |det M_q| = 2
 #
-# The M_q-lattice ("quincunx sublattice") consists of all integer points
-# (n₁, n₂) with n₁ + n₂ even.  After downsampling by M_q the retained
-# samples form a rectangular grid via the change of coordinates
+# The even-sum sublattice (n₁+n₂ even) contains exactly n2÷2 columns per row:
+#   odd rows  (i odd):  columns j = 1, 3, 5, … (odd+odd = even)
+#   even rows (i even): columns j = 2, 4, 6, … (even+even = even)
 #
-#   (k₁, k₂) = M_q⁻¹ (n₁, n₂) = ((n₁−n₂)/2, (n₁+n₂)/2)
+# Row-parity polyphase packing maps these to a compact n1×(n2÷2) array:
+#   k-th retained sample in row i → dst[i, k],  where j = isodd(i) ? 2k-1 : 2k
 #
-# i.e. we keep (n₁, n₂) whenever n₁+n₂ is even and map
-#   k₁ = (n₁ − n₂)/2,  k₂ = (n₁ + n₂)/2
-#
-# The inverse (upsampling) inserts zeros on the odd-sum sublattice.
+# This is the bijection used by qx_downsample / qx_upsample.  n2 must be even.
 
 """
     qx_downsample!(dst, src) -> dst
 
-In-place quincunx downsampling.  Retains samples at positions where `n₁+n₂` is even.
-The retained samples are written to `dst` in the coordinate frame of M_q⁻¹.
-`dst` must have size `(cld(n1+n2,2), cld(n1+n2,2))` ≈ `(n1+n2)/2 × (n1+n2)/2`.
+In-place quincunx downsampling using row-parity polyphase packing.
 
-For an `n1×n2` image with n1=n2=N (power-of-2), `dst` has size `(N/2 + N/2, N/2)` —
-concretely `(N, N/2)` after the diagonal coordinate change.
+Retains the even-sum sublattice samples (`n₁+n₂` even) and packs them into
+`dst` of size `(n1, n2÷2)`.  For each row `i`, the retained columns are
+`j = 1,3,5,…` (odd rows) or `j = 2,4,6,…` (even rows); the `k`-th retained
+column maps to `dst[i, k]`.
 
-For simplicity this implementation maps (n₁,n₂) with n₁+n₂ even to
-`dst[(n₁-n₂)/2 + offset₁, (n₁+n₂)/2 + offset₂]` with offsets chosen to keep
-indices positive.
+`n2` must be even; throws `ArgumentError` otherwise.
 
 # Examples
 ```jldoctest
@@ -41,17 +37,12 @@ julia> size(qx_downsample(x))
 """
 function qx_downsample!(dst::AbstractMatrix{T}, src::AbstractMatrix{T}) where {T}
     n1, n2 = size(src)
+    iseven(n2) || throw(ArgumentError("qx_downsample requires even number of columns, got n2=$n2"))
     fill!(dst, zero(T))
-    d1, d2 = size(dst)
-    @inbounds for j in 1:n2, i in 1:n1
-        if iseven(i + j)       # quincunx sublattice
-            # coordinate change:  k1 = (i-j)/2 + 1,  k2 = (i+j)/2
-            k1 = (i - j) ÷ 2 + (n2 + 1) ÷ 2   # shift to keep 1-based
-            k2 = (i + j) ÷ 2
-            if 1 <= k1 <= d1 && 1 <= k2 <= d2
-                dst[k1, k2] = src[i, j]
-            end
-        end
+    d2 = size(dst, 2)
+    @inbounds for k in 1:d2, i in 1:n1
+        j = isodd(i) ? 2k - 1 : 2k
+        dst[i, k] = src[i, j]
     end
     return dst
 end
@@ -61,29 +52,25 @@ end
 """
 function qx_downsample(src::AbstractMatrix{T}) where {T}
     n1, n2 = size(src)
-    d1 = n1   # after the skew coordinate change the size becomes n1 × n2/2 (approx)
-    d2 = max(1, n2 ÷ 2)
-    dst = zeros(T, d1, d2)
+    iseven(n2) || throw(ArgumentError("qx_downsample requires even number of columns, got n2=$n2"))
+    dst = zeros(T, n1, n2 ÷ 2)
     return qx_downsample!(dst, src)
 end
 
 """
     qx_upsample!(dst, src) -> dst
 
-In-place quincunx upsampling: inverse of `qx_downsample!`.
-Places `src[k₁,k₂]` back at position `(n₁,n₂)` in `dst` with the even-sum
-constraint; all other entries are set to zero.
+In-place quincunx upsampling: exact inverse of `qx_downsample!`.
+
+Scatters `src[i, k]` back to `dst[i, j]` where `j = isodd(i) ? 2k-1 : 2k`;
+all other entries of `dst` are set to zero.
 """
 function qx_upsample!(dst::AbstractMatrix{T}, src::AbstractMatrix{T}) where {T}
     fill!(dst, zero(T))
-    n1, n2 = size(dst)
     d1, d2 = size(src)
-    @inbounds for k2 in 1:d2, k1 in 1:d1
-        i = k1 + k2 - (n2 + 1) ÷ 2   # inverse of k1 = (i-j)/2 + offset
-        j = k2 * 2 - i               # from k2 = (i+j)/2
-        if 1 <= i <= n1 && 1 <= j <= n2
-            dst[i, j] = src[k1, k2]
-        end
+    @inbounds for k in 1:d2, i in 1:d1
+        j = isodd(i) ? 2k - 1 : 2k
+        dst[i, j] = src[i, k]
     end
     return dst
 end

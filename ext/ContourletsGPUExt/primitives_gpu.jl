@@ -191,54 +191,33 @@ end
 
 # ── Quincunx up/downsampling ─────────────────────────────────────────────────
 
-@kernel function _qx_downsample_kernel!(dst, @Const(src), n2::Int, d2::Int, offset1::Int)
-    idx = @index(Global)
-    # Enumerate (i, j) with i+j even, 1-indexed.  KernelAbstractions forbids an
-    # explicit `return` in a kernel, so guard the body with an `if` instead.
-    n1 = size(src, 1)
-    total = n1 * size(src, 2)
-    if idx <= total
-        i = ((idx - 1) % n1) + 1
-        j = ((idx - 1) ÷ n1) + 1
-        if iseven(i + j)
-            k1 = (i - j) ÷ 2 + offset1
-            k2 = (i + j) ÷ 2
-            if 1 <= k1 <= size(dst, 1) && 1 <= k2 <= d2
-                @inbounds dst[k1, k2] = src[i, j]
-            end
-        end
-    end
+@kernel function _qx_downsample_kernel!(dst, @Const(src))
+    i, k = @index(Global, NTuple)
+    j = isodd(i) ? 2k - 1 : 2k
+    @inbounds dst[i, k] = src[i, j]
 end
 
-@kernel function _qx_upsample_kernel!(dst, @Const(src), n2_dst::Int, offset1::Int)
-    k1, k2 = @index(Global, NTuple)
-    i = k1 + k2 - offset1
-    j = k2 * 2 - i
-    n1 = size(dst, 1)
-    if 1 <= i <= n1 && 1 <= j <= n2_dst
-        @inbounds dst[i, j] = src[k1, k2]
-    end
+@kernel function _qx_upsample_kernel!(dst, @Const(src))
+    i, k = @index(Global, NTuple)
+    j = isodd(i) ? 2k - 1 : 2k
+    @inbounds dst[i, j] = src[i, k]
 end
 
 function qx_downsample!(dst::_AbstractGPUMatrix{T}, src::_AbstractGPUMatrix{T}) where {T}
-    n1, n2 = size(src)
     d1, d2 = size(dst)
     backend = _gpu_backend(src)
     fill!(dst, zero(T))
-    offset1 = (n2 + 1) ÷ 2
-    kernel = _qx_downsample_kernel!(backend, 256)
-    kernel(dst, src, n2, d2, offset1; ndrange = n1 * n2)
+    kernel = _qx_downsample_kernel!(backend, (16, 16))
+    kernel(dst, src; ndrange = (d1, d2))
     return dst
 end
 
 function qx_upsample!(dst::_AbstractGPUMatrix{T}, src::_AbstractGPUMatrix{T}) where {T}
-    n1, n2 = size(dst)
     d1, d2 = size(src)
     backend = _gpu_backend(src)
     fill!(dst, zero(T))
-    offset1 = (n2 + 1) ÷ 2
     kernel = _qx_upsample_kernel!(backend, (16, 16))
-    kernel(dst, src, n2, offset1; ndrange = (d1, d2))
+    kernel(dst, src; ndrange = (d1, d2))
     return dst
 end
 

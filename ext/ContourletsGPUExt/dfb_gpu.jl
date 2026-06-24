@@ -35,7 +35,7 @@ end
 # ── Separable periodic filtering (`_sefilter2`) ───────────────────────────────
 # Mirrors the CPU two-pass valid convolution over the periodically extended
 # array, with the boundary extension materialised by a kernel (modes :per = 1,
-# :qper_row = 2, :qper_col = 3).
+# :qper_col = 2).
 
 @kernel function _extend2_kernel!(
         out, @Const(x), ru::Int, cl::Int, m::Int, n::Int, mode::Int, n2::Int

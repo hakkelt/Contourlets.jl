@@ -68,11 +68,14 @@ function nsp_decompose!(
     if h_j === nothing || g_j === nothing
         factor = 2^(level - 1)
         Tf = _filter_eltype(eltype(coarse))
-        # upsample_filter already returns a fresh vector; convert only on type mismatch.
-        h_up = upsample_filter(fp.h, factor)
-        h_j = Tf === eltype(h_up) ? h_up : Tf.(h_up)
-        g_up = upsample_filter(fp.g, factor)
-        g_j = Tf(_NSP_SYNTH_SCALE) .* (Tf === eltype(g_up) ? g_up : Tf.(g_up))
+        if h_j === nothing
+            h_up = upsample_filter(fp.h, factor)
+            h_j = Tf === eltype(h_up) ? h_up : Tf.(h_up)
+        end
+        if g_j === nothing
+            g_up = upsample_filter(fp.g, factor)
+            g_j = Tf(_NSP_SYNTH_SCALE) .* (Tf === eltype(g_up) ? g_up : Tf.(g_up))
+        end
     end
     conv2d_sep!(coarse, image, h_j, h_j; boundary = :periodic, tmp = tmp2)
     conv2d_sep!(tmp, coarse, g_j, g_j; boundary = :periodic, tmp = tmp2)

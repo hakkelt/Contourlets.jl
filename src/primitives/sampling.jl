@@ -1,6 +1,6 @@
 # Rectangular-grid up- and down-sampling operators.
 #
-# Downsampling (↓2): keep every 2nd row AND every 2nd column (even indices 1-based).
+# Downsampling (↓2): keep every 2nd row AND every 2nd column (odd 1-based indices: 1, 3, 5, …).
 # Upsampling   (↑2): insert a zero row and zero column after every kept sample.
 #
 # These operators are adjoint of each other (up to normalisation), which gives the

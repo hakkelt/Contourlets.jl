@@ -114,7 +114,6 @@ function lp_reconstruct!(
     )
     Tf = _filter_eltype(eltype(image))
     g = Tf === eltype(fp) ? fp.g : Tf.(fp.g)
-    n1, n2 = size(bandpass)
     rect_upsample!(tmp, coarse)
     conv2d_sep!(image, tmp, g, g; tmp = tmp2)
     @. image = bandpass + image

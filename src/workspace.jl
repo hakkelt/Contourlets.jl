@@ -124,6 +124,11 @@ struct ContourletWorkspace{Td <: Number, Tf <: AbstractFloat, M <: AbstractMatri
     fft_plan_inv::Any
     fft_buffer_c::Matrix{Complex{Tf}}
     fft_spectrum_bp::Matrix{Complex{Tf}}
+
+    # FFTW thread state frozen at construction time.  The FFT plans are bound to
+    # this thread count and cannot be changed per-call; a mismatch between this
+    # field and a per-call threading kwarg triggers a one-time @warn.
+    fft_threaded::Bool
 end
 
 function ContourletWorkspace{Td, Tf, M}(
@@ -139,12 +144,14 @@ function ContourletWorkspace{Td, Tf, M}(
         fft_plan_fwd::Any,
         fft_plan_inv::Any,
         fft_buffer_c::Matrix{Complex{Tf}},
-        fft_spectrum_bp::Matrix{Complex{Tf}}
+        fft_spectrum_bp::Matrix{Complex{Tf}},
+        fft_threaded::Bool = false
     ) where {Td, Tf, M, Q, L}
     return ContourletWorkspace{Td, Tf, M, Q, L}(
         params, image_size, fwd_scratch, inv_scratch,
         qup_cache, lp_h_cache, lp_g_cache,
-        nsdfb_H_cache, nsdfb_G_cache, fft_plan_fwd, fft_plan_inv, fft_buffer_c, fft_spectrum_bp
+        nsdfb_H_cache, nsdfb_G_cache, fft_plan_fwd, fft_plan_inv, fft_buffer_c, fft_spectrum_bp,
+        fft_threaded
     )
 end
 
@@ -214,13 +221,20 @@ function make_workspace(
 end
 
 """
-    make_nsct_workspace(params::ContourletParams, image_size::Tuple{Int,Int}; T=Float64)
+    make_nsct_workspace(params::ContourletParams, image_size::Tuple{Int,Int}; T=Float64,
+                        threading=Auto()) -> ContourletWorkspace
     make_nsct_workspace(T::Type, image_size::Tuple{Int,Int}, params::ContourletParams)
                         -> ContourletWorkspace
 
 Allocate a workspace for the NSCT transforms.  All buffers have the full `image_size`
 since the NSCT performs no downsampling.
 The second form is a convenience overload with the element type as the first positional argument.
+
+!!! note "FFT threading"
+    The `threading` kwarg controls how many FFTW threads the pre-built FFT plans use.
+    This choice is frozen at construction time: the plans cannot switch thread counts
+    per-call.  Passing a conflicting `threading` kwarg to `nsct_forward!`/`nsct_inverse!`
+    later will emit a one-time warning.  To change FFT threading, create a new workspace.
 """
 make_nsct_workspace(
     T::Type{<:Number}, image_size::Tuple{Int, Int},
@@ -266,10 +280,11 @@ function make_nsct_workspace(
     fft_buffer_c = zeros(Complex{Tf}, init_shape)
     fft_spectrum_bp = zeros(Complex{Tf}, init_shape)
 
+    fft_threaded = false
     if M <: Array
         tmp_d = zeros(Td, n1, n2)
-        threaded = _use_threading(threading, Td)
-        FFTW.set_num_threads(threaded ? Threads.nthreads() : 1)
+        fft_threaded = _use_threading(threading, Td)
+        FFTW.set_num_threads(fft_threaded ? Threads.nthreads() : 1)
         fft_plan_fwd = is_real ? plan_rfft(tmp_d, flags = FFTW.MEASURE) : plan_fft(tmp_d, flags = FFTW.MEASURE)
         fft_plan_inv = is_real ? plan_irfft(fft_buffer_c, n1, flags = FFTW.MEASURE) : plan_ifft(fft_buffer_c, flags = FFTW.MEASURE)
     else
@@ -290,9 +305,10 @@ function make_nsct_workspace(
     ws = ContourletWorkspace{Td, Tf, M}(
         p2, image_size, ScratchArena{M}(), ScratchArena{M}(),
         qup_cache, lp_h_cache, lp_g_cache,
-        nsdfb_H_cache, nsdfb_G_cache, fft_plan_fwd, fft_plan_inv, fft_buffer_c, fft_spectrum_bp
+        nsdfb_H_cache, nsdfb_G_cache, fft_plan_fwd, fft_plan_inv, fft_buffer_c, fft_spectrum_bp,
+        fft_threaded
     )
-    prewarm && _prewarm_nsct!(ws)
+    prewarm && _prewarm_nsct!(ws; threading = threading)
     return ws
 end
 
@@ -314,7 +330,7 @@ function estimate_workspace_size(
     n1, n2 = image_size
     total = 0
     if nonsubsampled
-        total += 2 * J * n1 * n2          # coarse + bp bufs, full size each level
+        total += 4 * J * n1 * n2          # coarse_j + bp_j + tmp_j + tmp2_j, full size each level
     else
         c1, c2 = n1, n2
         for j in 1:J

@@ -78,9 +78,10 @@ function ct_forward!(
     fp = params.lp_filters
     qfp = params.dfb_filters
 
+    img = T === eltype(image) ? image : T.(image)
     _arena_reset!(ws.fwd_scratch)
     _with_arena(ws.fwd_scratch) do
-        current = image
+        current = img
         for j in 1:J
             n1, n2 = size(current)
             coarse_j = _scratch_like(current, cld(n1, 2), cld(n2, 2))

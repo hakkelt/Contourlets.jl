@@ -35,8 +35,12 @@ end
     n_ns = estimate_workspace_size(p, (32, 32); nonsubsampled = true)
     @test n_ns isa Int
     @test n_ns > 0
-    # Analytical: 2*2*1024 + 3*1024 = 4096 + 3072 = 7168
-    @test n_ns == 7168
+    # Analytical: 4 bufs/level * 2 levels * 1024 + 3*1024 = 8192 + 3072 = 11264
+    @test n_ns == 11264
+    # Estimate must be ≥ actual scratch arena size after a warm forward pass
+    ws = make_nsct_workspace(p, (32, 32))
+    actual = length(ws.fwd_scratch.bufs) * 32 * 32
+    @test n_ns >= actual
 end
 
 @testitem "make_workspace params (type-first positional API)" tags = [:ct] begin
@@ -144,4 +148,26 @@ end
     scratch = Contourlets._scratch_like(sv, 4, 4)
     @test scratch isa Matrix
     @test size(scratch) == (4, 4)
+end
+
+@testitem "NSCT workspace threading mismatch warns" tags = [:nsct] begin
+    using Random, Logging
+    Random.seed!(99)
+    x = randn(32, 32)
+    p = ContourletParams(J = 2, L_array = [2, 3])
+    # Build with Disabled (fft_threaded=false) then call with Enabled (wants true).
+    ws = make_nsct_workspace(p, (32, 32); threading = Disabled())
+    coeffs = similar_nsct_coefficients(p, (32, 32))
+    @test_logs (:warn,) nsct_forward!(coeffs, x, ws; threading = Enabled())
+end
+
+@testitem "NSCT workspace fft_threaded field reflects construction threading" tags = [:nsct] begin
+    p = ContourletParams(J = 1, L_array = [1])
+    ws_auto = make_nsct_workspace(p, (32, 32); threading = Auto())
+    ws_ena = make_nsct_workspace(p, (32, 32); threading = Enabled())
+    ws_dis = make_nsct_workspace(p, (32, 32); threading = Disabled())
+    # Auto() on Float64 → not threaded
+    @test ws_auto.fft_threaded === false
+    @test ws_ena.fft_threaded === true
+    @test ws_dis.fft_threaded === false
 end

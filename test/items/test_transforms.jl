@@ -79,15 +79,8 @@ end
     end
 end
 
-@testitem "CT J=0 trivial reconstruction" tags = [:ct] begin
-    using Random
-    Random.seed!(33)
-    x = randn(32, 32)
-    p = ContourletParams(J = 0, L_array = Int[])
-    c = ct_forward(x, p)
-    @test c.coarse == x
-    rec = ct_inverse(c, p)
-    @test maximum(abs, rec .- x) < 1.0e-14
+@testitem "ContourletParams J=0 throws" tags = [:ct] begin
+    @test_throws ArgumentError ContourletParams(J = 0, L_array = Int[])
 end
 
 @testitem "parabolic_levels helper" tags = [:ct] begin
@@ -222,4 +215,38 @@ end
     nc = nsct_forward(x, p; threading = Enabled())
     rec = nsct_inverse(nc, p; threading = Enabled())
     @test maximum(abs, rec .- x) < 1.0e-12
+end
+
+@testitem "ct_forward! integer image coerced to workspace eltype" tags = [:ct] begin
+    using Random
+    Random.seed!(92)
+    x_int = rand(1:9, 32, 32)
+    p = ContourletParams(J = 2, L_array = [2, 3])
+    ws = make_workspace(p, (32, 32))
+    coeffs = similar_coefficients(p, (32, 32))
+    ct_forward!(coeffs, x_int, ws)
+    x_f64 = Float64.(x_int)
+    coeffs_ref = similar_coefficients(p, (32, 32))
+    ct_forward!(coeffs_ref, x_f64, ws)
+    @test coeffs.coarse == coeffs_ref.coarse
+    for j in 1:2, k in eachindex(coeffs.subbands[j])
+        @test coeffs.subbands[j][k] == coeffs_ref.subbands[j][k]
+    end
+end
+
+@testitem "nsct_forward! integer image coerced to workspace eltype" tags = [:nsct] begin
+    using Random
+    Random.seed!(93)
+    x_int = rand(1:9, 32, 32)
+    p = ContourletParams(J = 2, L_array = [2, 3])
+    ws = make_nsct_workspace(p, (32, 32))
+    coeffs = similar_nsct_coefficients(p, (32, 32))
+    nsct_forward!(coeffs, x_int, ws)
+    x_f64 = Float64.(x_int)
+    coeffs_ref = similar_nsct_coefficients(p, (32, 32))
+    nsct_forward!(coeffs_ref, x_f64, ws)
+    @test coeffs.coarse == coeffs_ref.coarse
+    for j in 1:2, k in eachindex(coeffs.subbands[j])
+        @test coeffs.subbands[j][k] == coeffs_ref.subbands[j][k]
+    end
 end

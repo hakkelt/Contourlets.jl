@@ -137,6 +137,7 @@ function ContourletParams(;
         lp_filters::FilterPair = CDF97,
         dfb_filters::QuincunxFilterPair = Q2345
     )
+    J >= 1               || throw(ArgumentError("J must be ≥ 1"))
     length(L_array) == J || throw(ArgumentError("length(L_array) must equal J"))
     all(>=(0), L_array)  || throw(ArgumentError("L_array entries must be ≥ 0"))
     T = promote_type(eltype(lp_filters), eltype(dfb_filters))

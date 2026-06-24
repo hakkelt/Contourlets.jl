@@ -61,6 +61,12 @@ end
     nsct_forward!(coeffs::NSCTCoefficients, image, ws::ContourletWorkspace) -> coeffs
 
 In-place NSCT forward pass.
+
+!!! note "FFT threading"
+    The FFTW plans in `ws` are bound to the thread count chosen at workspace
+    construction time.  Passing a `threading` kwarg that implies a different
+    thread count will trigger a one-time warning; to change FFT threading,
+    create a new workspace with the desired `threading` policy.
 """
 function nsct_forward!(
         coeffs::NSCTCoefficients{T},
@@ -73,9 +79,15 @@ function nsct_forward!(
     L = params.L_array
     fp = params.lp_filters
 
+    img = T === eltype(image) ? image : T.(image)
+    if ws.fft_plan_fwd !== nothing && _use_threading(threading, T) != ws.fft_threaded
+        @warn "threading kwarg conflicts with workspace FFT thread count; " *
+              "FFT stage uses $(ws.fft_threaded ? "multi" : "single")-threaded plans " *
+              "from workspace construction — create a new workspace to change FFT threading" maxlog=1
+    end
     _arena_reset!(ws.fwd_scratch)
     _with_arena(ws.fwd_scratch) do
-        current = image
+        current = img
         for j in 1:J
             n1, n2 = size(current)
             coarse_j = _scratch_like(current, n1, n2)
@@ -152,6 +164,9 @@ end
     nsct_inverse!(image, coeffs::NSCTCoefficients, ws::ContourletWorkspace) -> image
 
 In-place NSCT inverse pass.
+
+!!! note "FFT threading"
+    See [`nsct_forward!`](@ref) for the FFT threading constraint.
 """
 function nsct_inverse!(
         image::AbstractMatrix{T},
@@ -163,6 +178,11 @@ function nsct_inverse!(
     J = params.J
     fp = params.lp_filters
 
+    if ws.fft_plan_fwd !== nothing && _use_threading(threading, T) != ws.fft_threaded
+        @warn "threading kwarg conflicts with workspace FFT thread count; " *
+              "FFT stage uses $(ws.fft_threaded ? "multi" : "single")-threaded plans " *
+              "from workspace construction — create a new workspace to change FFT threading" maxlog=1
+    end
     _arena_reset!(ws.inv_scratch)
     _with_arena(ws.inv_scratch) do
         current = _scratch_like(image, size(coeffs.coarse, 1), size(coeffs.coarse, 2))
@@ -217,11 +237,11 @@ end
 # + inverse pass on zeros (the per-call allocation sequence is deterministic, so
 # afterwards the first real call allocates nothing).  Called from
 # `make_nsct_workspace(...; prewarm=true)`.
-function _prewarm_nsct!(ws::ContourletWorkspace{Td, Tf, M}) where {Td, Tf, M}
+function _prewarm_nsct!(ws::ContourletWorkspace{Td, Tf, M}; threading::ThreadingPolicy = Auto()) where {Td, Tf, M}
     img = _allocate_zeros(M, Td, ws.image_size)
     coeffs = similar_nsct_coefficients(ws.params, ws.image_size; Td = Td, M = M)
-    nsct_forward!(coeffs, img, ws)
-    nsct_inverse!(img, coeffs, ws)
+    nsct_forward!(coeffs, img, ws; threading = threading)
+    nsct_inverse!(img, coeffs, ws; threading = threading)
     return ws
 end
 

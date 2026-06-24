@@ -320,9 +320,9 @@ function qfb_decompose(image::_AbstractGPUMatrix, qfp::QuincunxFilterPair; dir::
         kernel(sb0, sb1, img, h_d, c_h, n1, n2, d2, K; ndrange = (n1, d2))
         return sb0, sb1
     else
-        img_t = collect(img')
+        img_t = permutedims(img, (2, 1))
         sb0_t, sb1_t = qfb_decompose(img_t, qfp; dir = :col)
-        return _to_device(backend, collect(sb0_t')), _to_device(backend, collect(sb1_t'))
+        return permutedims(sb0_t, (2, 1)), permutedims(sb1_t, (2, 1))
     end
 end
 
@@ -346,9 +346,9 @@ function qfb_reconstruct(
         kernel(out, T.(sb0), T.(sb1), g_d, c_g, n2, d2, K; ndrange = n1)
         return out
     else
-        sb0_t = collect(sb0')
-        sb1_t = collect(sb1')
+        sb0_t = permutedims(sb0, (2, 1))
+        sb1_t = permutedims(sb1, (2, 1))
         rec_t = qfb_reconstruct(sb0_t, sb1_t, qfp; dir = :col)
-        return _to_device(backend, collect(rec_t'))
+        return permutedims(rec_t, (2, 1))
     end
 end

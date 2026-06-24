@@ -265,6 +265,26 @@ end
     @test maximum(abs, out .- x) < 1.0e-12
 end
 
+@testitem "QFB in-place row-direction no extra allocation vs col-direction" tags = [:directional] begin
+    using Random
+    Random.seed!(28)
+    x = randn(32, 32)
+    sb0_row = zeros(16, 32); sb1_row = zeros(16, 32); out_row = zeros(32, 32)
+    sb0_col = zeros(32, 16); sb1_col = zeros(32, 16); out_col = zeros(32, 32)
+    # Warmup both paths
+    qfb_decompose!(sb0_row, sb1_row, x, Q2345; dir = :row)
+    qfb_reconstruct!(out_row, sb0_row, sb1_row, Q2345; dir = :row)
+    qfb_decompose!(sb0_col, sb1_col, x, Q2345; dir = :col)
+    qfb_reconstruct!(out_col, sb0_col, sb1_col, Q2345; dir = :col)
+    # After warmup: row path must not allocate O(n²) matrix copies
+    col_dec_alloc = @allocated qfb_decompose!(sb0_col, sb1_col, x, Q2345; dir = :col)
+    row_dec_alloc = @allocated qfb_decompose!(sb0_row, sb1_row, x, Q2345; dir = :row)
+    @test row_dec_alloc <= col_dec_alloc + 256
+    col_rec_alloc = @allocated qfb_reconstruct!(out_col, sb0_col, sb1_col, Q2345; dir = :col)
+    row_rec_alloc = @allocated qfb_reconstruct!(out_row, sb0_row, sb1_row, Q2345; dir = :row)
+    @test row_rec_alloc <= col_rec_alloc + 256
+end
+
 @testitem "dfb_decompose! basic" tags = [:directional] begin
     using Random
     Random.seed!(70)

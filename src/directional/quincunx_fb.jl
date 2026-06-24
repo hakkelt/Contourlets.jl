@@ -71,11 +71,11 @@ function qfb_decompose!(
     if dir === :col
         return _qfb_col_decompose!(sb0, sb1, image, qfp)
     else
-        sb0_t = collect(sb0')
-        sb1_t = collect(sb1')
-        _qfb_col_decompose!(sb0_t, sb1_t, image', qfp)
-        sb0 .= sb0_t'
-        sb1 .= sb1_t'
+        _qfb_col_decompose!(
+            PermutedDimsArray(sb0, (2, 1)),
+            PermutedDimsArray(sb1, (2, 1)),
+            adjoint(image), qfp
+        )
         return sb0, sb1
     end
 end
@@ -129,8 +129,12 @@ function qfb_reconstruct!(
     if dir === :col
         return _qfb_col_reconstruct!(out, sb0, sb1, qfp)
     else
-        rec_t = _qfb_col_reconstruct(collect(sb0'), collect(sb1'), qfp)
-        out .= rec_t'
+        _qfb_col_reconstruct!(
+            PermutedDimsArray(out, (2, 1)),
+            PermutedDimsArray(sb0, (2, 1)),
+            PermutedDimsArray(sb1, (2, 1)),
+            qfp
+        )
         return out
     end
 end

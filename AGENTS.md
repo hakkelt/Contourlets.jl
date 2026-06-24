@@ -14,7 +14,7 @@ are not repeated here.
 
 ## Commit Rules
 
-- **Commit Message Formatting**: Follow the "Conventional Commits" format with the structure `type(scope): subject` and a detailed description (including performance numbers or context) separated by a blank line. For simple commits affecting only a couple lines, a detailed description is optional. Always append co-author line referencing yourself.
+- **Commit Message Formatting**: Follow the "Conventional Commits" format with the structure `type(scope): subject` and a detailed description (including performance numbers or context) separated by a blank line. For simple commits affecting only a couple lines, a detailed description is optional. Always append co-author line referencing yourself. Do **not** add a `Claude-Session:` trailer line.
 - **Committing Changes**: ONLY commit code upon explicit instruction from the user.
 
 ---

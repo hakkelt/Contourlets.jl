@@ -182,7 +182,6 @@ end
 function rect_downsample!(dst::_AbstractGPUMatrix{T}, src::_AbstractGPUMatrix{T}) where {T}
     d1, d2 = size(dst)
     backend = _gpu_backend(src)
-    fill!(dst, zero(T))
     kernel = _rect_downsample_kernel!(backend, (16, 16))
     kernel(dst, src; ndrange = (d1, d2))
     return dst
@@ -191,7 +190,7 @@ end
 function rect_upsample!(dst::_AbstractGPUMatrix{T}, src::_AbstractGPUMatrix{T}) where {T}
     d1, d2 = size(src)
     backend = _gpu_backend(src)
-    fill!(dst, zero(T))
+    fill!(dst, zero(T))   # sparse write — even rows/cols stay zero
     kernel = _rect_upsample_kernel!(backend, (16, 16))
     kernel(dst, src; ndrange = (d1, d2))
     return dst
@@ -214,7 +213,6 @@ end
 function qx_downsample!(dst::_AbstractGPUMatrix{T}, src::_AbstractGPUMatrix{T}) where {T}
     d1, d2 = size(dst)
     backend = _gpu_backend(src)
-    fill!(dst, zero(T))
     kernel = _qx_downsample_kernel!(backend, (16, 16))
     kernel(dst, src; ndrange = (d1, d2))
     return dst
@@ -223,7 +221,7 @@ end
 function qx_upsample!(dst::_AbstractGPUMatrix{T}, src::_AbstractGPUMatrix{T}) where {T}
     d1, d2 = size(src)
     backend = _gpu_backend(src)
-    fill!(dst, zero(T))
+    fill!(dst, zero(T))   # sparse write — off-quincunx positions stay zero
     kernel = _qx_upsample_kernel!(backend, (16, 16))
     kernel(dst, src; ndrange = (d1, d2))
     return dst
@@ -237,7 +235,7 @@ function qx_downsample(src::_AbstractGPUMatrix{T}) where {T}
     d1 = n1
     d2 = max(1, n2 ÷ 2)
     backend = _gpu_backend(src)
-    dst = KernelAbstractions.zeros(backend, T, d1, d2)
+    dst = KernelAbstractions.allocate(backend, T, d1, d2)   # kernel covers all elements
     return qx_downsample!(dst, src)
 end
 
@@ -246,11 +244,13 @@ end
 """
 function qx_upsample(src::_AbstractGPUMatrix{T}, out_size::Tuple{Int, Int}) where {T}
     backend = _gpu_backend(src)
-    dst = KernelAbstractions.zeros(backend, T, out_size...)
+    dst = KernelAbstractions.allocate(backend, T, out_size...)   # qx_upsample! fills via fill!
     return qx_upsample!(dst, src)
 end
 
 # ── Quincunx Filter Bank (QFB) ────────────────────────────────────────────────
+
+# ── Quincunx Filter Bank (QFB) kernels ────────────────────────────────────────
 
 # GPU kernel: QFB col-direction analysis.
 # Each thread handles one (i, k2) pair where k2 is the output column index.
@@ -310,28 +310,88 @@ end
     end
 end
 
+# GPU kernel: QFB row-direction analysis (mirrors col kernel with axes swapped).
+# Each thread handles one (k1, j) pair where k1 is the output row index.
+@kernel function _qfb_row_decompose_kernel_gpu!(
+        sb0, sb1, @Const(img),
+        @Const(h), c_h::Int, n1::Int, n2::Int, d1::Int, K::Int
+    )
+    k1, j = @index(Global, NTuple)
+    T = eltype(sb0)
+    i = 2 * k1   # even row (1-indexed: i = 2, 4, 6, …)
+    lp_val = zero(T)
+    hp_val = zero(T)
+    @inbounds for l in 1:K
+        dc = l - c_h
+        ii = i - dc
+        if ii < 1
+            ii = 2 - ii
+        end
+        if ii > n1
+            ii = 2 * n1 - ii
+        end
+        if ii < 1
+            ii = 1
+        end
+        if ii > n1
+            ii = n1
+        end
+        xval = img[ii, j]
+        lp_val += h[l] * xval
+        hp_val += (iseven(dc) ? h[l] : -h[l]) * xval
+    end
+    sb0[k1, j] = lp_val
+    sb1[k1, j] = hp_val
+end
+
+# GPU kernel: QFB row-direction synthesis (column-parallel, mirrors col-reconstruct).
+# One thread per column j; loops over all output rows (k1) serially to avoid races.
+@kernel function _qfb_row_reconstruct_kernel_gpu!(
+        out, @Const(sb0), @Const(sb1),
+        @Const(g), c_g::Int, n1::Int, d1::Int, K::Int
+    )
+    j = @index(Global)
+    T = eltype(out)
+    @inbounds for k1 in 1:d1
+        i_src = 2 * k1
+        s0 = sb0[k1, j]
+        s1 = sb1[k1, j]
+        for l in 1:K
+            dc = l - c_g
+            i_out = i_src + dc
+            if 1 <= i_out <= n1
+                out[i_out, j] += g[l] * s0 + (iseven(dc) ? g[l] : -g[l]) * s1
+            end
+        end
+    end
+end
+
 function qfb_decompose(image::_AbstractGPUMatrix, qfp::QuincunxFilterPair; dir::Symbol = :col)
     Contourlets.is_ladder(qfp) &&
         throw(ArgumentError("ladder-mode filter pairs (e.g. Q2345) are not yet supported on GPU"))
     T = promote_type(eltype(image), eltype(qfp))
     backend = _gpu_backend(image)
     img = T.(image)
+    h_vec = vec(qfp.h_q)
+    h_d = _ensure_gpu(backend, eltype(h_vec) === T ? h_vec : T.(h_vec))
+    n1, n2 = size(img)
+    K = length(h_d)
     if dir === :col
-        h_vec = vec(qfp.h_q)
-        h_d = _ensure_gpu(backend, eltype(h_vec) === T ? h_vec : T.(h_vec))
         c_h = qfp.c_h[2]
-        n1, n2 = size(img)
         d2 = n2 ÷ 2
-        sb0 = KernelAbstractions.zeros(backend, T, n1, d2)
-        sb1 = KernelAbstractions.zeros(backend, T, n1, d2)
-        K = length(h_d)
+        sb0 = KernelAbstractions.allocate(backend, T, n1, d2)   # kernel covers all elements
+        sb1 = KernelAbstractions.allocate(backend, T, n1, d2)
         kernel = _qfb_col_decompose_kernel_gpu!(backend, (16, 16))
         kernel(sb0, sb1, img, h_d, c_h, n1, n2, d2, K; ndrange = (n1, d2))
         return sb0, sb1
     else
-        img_t = permutedims(img, (2, 1))
-        sb0_t, sb1_t = qfb_decompose(img_t, qfp; dir = :col)
-        return permutedims(sb0_t, (2, 1)), permutedims(sb1_t, (2, 1))
+        c_h = qfp.c_h[2]
+        d1 = n1 ÷ 2
+        sb0 = KernelAbstractions.allocate(backend, T, d1, n2)   # kernel covers all elements
+        sb1 = KernelAbstractions.allocate(backend, T, d1, n2)
+        kernel = _qfb_row_decompose_kernel_gpu!(backend, (16, 16))
+        kernel(sb0, sb1, img, h_d, c_h, n1, n2, d1, K; ndrange = (d1, n2))
+        return sb0, sb1
     end
 end
 
@@ -346,21 +406,24 @@ function qfb_reconstruct(
     g_vec = vec(qfp.g_q)
     g_d = _ensure_gpu(backend, eltype(g_vec) === T ? g_vec : T.(g_vec))
     c_g = qfp.c_g[2]
-    n1 = size(sb0, 1)
-    n2 = size(sb0, 2) * 2
-    d2 = size(sb0, 2)
+    K = length(g_d)
+    sb0_T = eltype(sb0) === T ? sb0 : T.(sb0)
+    sb1_T = eltype(sb1) === T ? sb1 : T.(sb1)
     if dir === :col
-        out = KernelAbstractions.zeros(backend, T, n1, n2)
-        K = length(g_d)
+        n1 = size(sb0, 1)
+        n2 = size(sb0, 2) * 2
+        d2 = size(sb0, 2)
+        out = KernelAbstractions.zeros(backend, T, n1, n2)   # += accumulation needs zero init
         kernel = _qfb_col_reconstruct_kernel_gpu!(backend, 256)
-        sb0_T = eltype(sb0) === T ? sb0 : T.(sb0)
-        sb1_T = eltype(sb1) === T ? sb1 : T.(sb1)
         kernel(out, sb0_T, sb1_T, g_d, c_g, n2, d2, K; ndrange = n1)
         return out
     else
-        sb0_t = permutedims(sb0, (2, 1))
-        sb1_t = permutedims(sb1, (2, 1))
-        rec_t = qfb_reconstruct(sb0_t, sb1_t, qfp; dir = :col)
-        return permutedims(rec_t, (2, 1))
+        d1 = size(sb0, 1)
+        n1 = d1 * 2
+        n2 = size(sb0, 2)
+        out = KernelAbstractions.zeros(backend, T, n1, n2)   # += accumulation needs zero init
+        kernel = _qfb_row_reconstruct_kernel_gpu!(backend, 256)
+        kernel(out, sb0_T, sb1_T, g_d, c_g, n1, d1, K; ndrange = n2)
+        return out
     end
 end

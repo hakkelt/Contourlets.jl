@@ -195,7 +195,10 @@ function _sefilter2(x::AbstractMatrix{Td}, f::Vector{Tf}, shift1::Int, shift2::I
     # Separable valid convolution with f along both dims (conv flips the filter).
     tmp = _scratch_like(x, m, size(ext, 2))
     out = _scratch_like(x, m, n)
-    return _sefilter2_kernel!(out, tmp, ext, f, L, half, sym, threaded)
+    # Disable threading for small subbands: @batch spawn overhead dominates
+    # when there are fewer than ~1024 elements per worker.
+    effective_threaded = threaded && m * n >= 1024
+    return _sefilter2_kernel!(out, tmp, ext, f, L, half, sym, effective_threaded)
 end
 
 function _sefilter2_kernel!(out::AbstractMatrix{Td}, tmp::AbstractMatrix{Td}, ext::AbstractMatrix{Td}, f::Vector{Tf}, L::Int, half::Int, sym::Bool, threaded::Bool) where {Td, Tf}

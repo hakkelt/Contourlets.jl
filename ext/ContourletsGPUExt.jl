@@ -14,6 +14,7 @@ using KernelAbstractions: Adapt
 # package: their allocating methods are written with broadcasts and dispatch to
 # these GPU primitives (conv2d_sep!, rect_*sample!, …) when given device arrays.
 import Contourlets:
+    _scratch_like,
     conv2d_sep!,
     shear!, inv_shear!, rect_downsample!, rect_upsample!,
     qx_downsample, qx_downsample!, qx_upsample, qx_upsample!,

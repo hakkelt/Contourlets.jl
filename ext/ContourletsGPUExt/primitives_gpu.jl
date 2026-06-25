@@ -83,8 +83,8 @@ function conv2d_sep!(
     # Keep filters real (Tf); the kernels accumulate in the data type Td (= T)
     # so real·complex stays complex without promoting the filter.
     Tf = real(T)
-    h_col_d = _ensure_gpu(backend, Tf.(h_col))
-    h_row_d = _ensure_gpu(backend, Tf.(h_row))
+    h_col_d = _ensure_gpu(backend, h_col isa AbstractVector{Tf} ? h_col : Tf.(h_col))
+    h_row_d = _ensure_gpu(backend, h_row isa AbstractVector{Tf} ? h_row : Tf.(h_row))
 
     _tmp = tmp === nothing ? KernelAbstractions.allocate(backend, T, n1, n2) : tmp
 
@@ -309,7 +309,8 @@ function qfb_decompose(image::_AbstractGPUMatrix, qfp::QuincunxFilterPair; dir::
     backend = _gpu_backend(image)
     img = T.(image)
     if dir === :col
-        h_d = _ensure_gpu(backend, T.(vec(qfp.h_q)))
+        h_vec = vec(qfp.h_q)
+        h_d = _ensure_gpu(backend, eltype(h_vec) === T ? h_vec : T.(h_vec))
         c_h = qfp.c_h[2]
         n1, n2 = size(img)
         d2 = n2 ÷ 2
@@ -334,7 +335,8 @@ function qfb_reconstruct(
         throw(ArgumentError("ladder-mode filter pairs (e.g. Q2345) are not yet supported on GPU"))
     T = promote_type(eltype(sb0), eltype(sb1), eltype(qfp))
     backend = _gpu_backend(sb0)
-    g_d = _ensure_gpu(backend, T.(vec(qfp.g_q)))
+    g_vec = vec(qfp.g_q)
+    g_d = _ensure_gpu(backend, eltype(g_vec) === T ? g_vec : T.(g_vec))
     c_g = qfp.c_g[2]
     n1 = size(sb0, 1)
     n2 = size(sb0, 2) * 2
@@ -343,7 +345,9 @@ function qfb_reconstruct(
         out = KernelAbstractions.zeros(backend, T, n1, n2)
         K = length(g_d)
         kernel = _qfb_col_reconstruct_kernel_gpu!(backend, 256)
-        kernel(out, T.(sb0), T.(sb1), g_d, c_g, n2, d2, K; ndrange = n1)
+        sb0_T = eltype(sb0) === T ? sb0 : T.(sb0)
+        sb1_T = eltype(sb1) === T ? sb1 : T.(sb1)
+        kernel(out, sb0_T, sb1_T, g_d, c_g, n2, d2, K; ndrange = n1)
         return out
     else
         sb0_t = permutedims(sb0, (2, 1))

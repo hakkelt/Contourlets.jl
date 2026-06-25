@@ -37,29 +37,34 @@ end
 # array, with the boundary extension materialised by a kernel (modes :per = 1,
 # :qper_col = 2).
 
-@kernel function _extend2_kernel!(
-        out, @Const(x), ru::Int, cl::Int, m::Int, n::Int, mode::Int, n2::Int
+# Fused pass 1: boundary extension is folded directly into the column filter so
+# the (m+ru+rd, n+cl+cr) `ext` scratch array and its kernel launch are eliminated.
+# Output `tmp` is (m, ncols); the column dimension is still extended (consumed by
+# pass 2), but the row boundary is resolved per-tap from `x` (mirrors the inline
+# indexing the NSDFB `_efilter2_kernel!` already uses).
+@kernel function _sef_pass1_fused_kernel!(
+        tmp, @Const(x), @Const(f),
+        L::Int, ru::Int, cl::Int, m::Int, n::Int, mode::Int, n2::Int
     )
-    I, J = @index(Global, NTuple)
-    if mode == 1                      # :per
-        @inbounds out[I, J] = x[mod1(I - ru, m), mod1(J - cl, n)]
-    else                              # :qper_col
-        ii = I - ru
-        jj = mod1(J - cl, n)
-        if ii < 1 || ii > m
-            @inbounds out[I, J] = x[mod1(ii, m), mod1(jj + n2, n)]
-        else
-            @inbounds out[I, J] = x[ii, jj]
-        end
-    end
-end
-
-@kernel function _sef_pass1_kernel!(tmp, @Const(ext), @Const(f), L::Int)
-    i, j = @index(Global, NTuple)
+    i, j = @index(Global, NTuple)        # i ∈ 1:m, j ∈ 1:ncols
     T = eltype(tmp)
     acc = zero(T)
-    @inbounds for a in 1:L
-        acc += f[a] * ext[i + L - a, j]
+    if mode == 1                          # :per
+        jj = mod1(j - cl, n)
+        @inbounds for a in 1:L
+            ii = mod1((i + L - a) - ru, m)
+            acc += f[a] * x[ii, jj]
+        end
+    else                                  # :qper_col
+        jjr = mod1(j - cl, n)
+        @inbounds for a in 1:L
+            iir = (i + L - a) - ru
+            if iir < 1 || iir > m
+                acc += f[a] * x[mod1(iir, m), mod1(jjr + n2, n)]
+            else
+                acc += f[a] * x[iir, jjr]
+            end
+        end
     end
     @inbounds tmp[i, j] = acc
 end
@@ -82,7 +87,6 @@ function Contourlets._sefilter2(
     L = length(f)
     lf = (L - 1) / 2
     ru = floor(Int, lf) + shift1
-    rd = ceil(Int, lf) - shift1
     cl = floor(Int, lf) + shift2
     cr = ceil(Int, lf) - shift2
     m, n = size(x)
@@ -96,12 +100,9 @@ function Contourlets._sefilter2(
     n2 = round(Int, n / 2)
     f_d = _ensure_gpu(backend, f)
 
-    ext = KernelAbstractions.allocate(backend, Td, m + ru + rd, n + cl + cr)
-    _extend2_kernel!(backend, (16, 16))(ext, x, ru, cl, m, n, mode, n2; ndrange = size(ext))
-
     ncols = n + cl + cr
-    tmp = KernelAbstractions.allocate(backend, Td, m, ncols)
-    _sef_pass1_kernel!(backend, (16, 16))(tmp, ext, f_d, L; ndrange = (m, ncols))
+    tmp = _scratch_like(x, m, ncols)
+    _sef_pass1_fused_kernel!(backend, (16, 16))(tmp, x, f_d, L, ru, cl, m, n, mode, n2; ndrange = (m, ncols))
 
     out = KernelAbstractions.allocate(backend, Td, m, n)
     _sef_pass2_kernel!(backend, (16, 16))(out, tmp, f_d, L; ndrange = (m, n))

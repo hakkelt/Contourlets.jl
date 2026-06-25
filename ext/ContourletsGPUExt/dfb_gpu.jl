@@ -79,8 +79,51 @@ end
     @inbounds out[i, j] = acc
 end
 
+# ── Public DFB entry points (GPU dispatch) ────────────────────────────────────
+# The ladder path's filter must be device-resident before reaching `_sefilter2`;
+# these overloads upload once at the API boundary when no cached filter is supplied.
+
+function Contourlets.dfb_decompose(
+        bandpass::_AbstractGPUMatrix, l_levels::Int, qfp::Contourlets.QuincunxFilterPair;
+        filter = nothing, threading::Contourlets.ThreadingPolicy = Contourlets.Auto()
+    )
+    l_levels >= 0 || throw(ArgumentError("l_levels must be ≥ 0"))
+    l_levels == 0 && return [copy(bandpass)]
+    Td = Contourlets._data_eltype(bandpass)
+    Tf = Contourlets._filter_eltype(Td)
+    img = Td === eltype(bandpass) ? bandpass : Td.(bandpass)
+    if Contourlets.is_ladder(qfp)
+        f = filter !== nothing ? filter :
+            _to_device(_gpu_backend(bandpass), Contourlets._ladder_modulate(Tf.(qfp.f_ladder)))
+        return Contourlets._dfbdec_l(img, f, l_levels, false)
+    end
+    return Contourlets._dfb_split(img, l_levels, 1, Contourlets._convert_qfp(Tf, qfp), false)
+end
+
+function Contourlets.dfb_reconstruct(
+        subbands::Vector{<:_AbstractGPUMatrix}, qfp::Contourlets.QuincunxFilterPair;
+        filter = nothing, threading::Contourlets.ThreadingPolicy = Contourlets.Auto()
+    )
+    n = length(subbands)
+    n >= 1   || throw(ArgumentError("subbands must be non-empty"))
+    ispow2(n) || throw(ArgumentError("number of subbands must be a power of 2"))
+    n == 1 && return copy(subbands[1])
+    Td = Contourlets._data_eltype(subbands[1])
+    Tf = Contourlets._filter_eltype(Td)
+    if Contourlets.is_ladder(qfp)
+        sbs = eltype(subbands[1]) === Td ? subbands : [Td.(s) for s in subbands]
+        f = filter !== nothing ? filter :
+            _to_device(_gpu_backend(subbands[1]), Contourlets._ladder_modulate(Tf.(qfp.f_ladder)))
+        return Contourlets._dfbrec_l(sbs, f, false)
+    end
+    l_levels = round(Int, log2(n))
+    return Contourlets._dfb_merge(subbands, l_levels, 1, Contourlets._convert_qfp(Tf, qfp), false)
+end
+
+# ── Separable periodic filtering (`_sefilter2`) ───────────────────────────────
+
 function Contourlets._sefilter2(
-        x::_AbstractGPUMatrix{Td}, f::Vector{Tf}, shift1::Int, shift2::Int, extmod::Symbol, threaded::Bool = false;
+        x::_AbstractGPUMatrix{Td}, f::AbstractVector{Tf}, shift1::Int, shift2::Int, extmod::Symbol, threaded::Bool = false;
         kwargs...
     ) where {Td, Tf}
     backend = _gpu_backend(x)
@@ -98,13 +141,12 @@ function Contourlets._sefilter2(
         throw(ArgumentError("unsupported extmod: $extmod"))
     end
     n2 = round(Int, n / 2)
-    f_d = _ensure_gpu(backend, f)
 
     ncols = n + cl + cr
     tmp = _scratch_like(x, m, ncols)
-    _sef_pass1_fused_kernel!(backend, (16, 16))(tmp, x, f_d, L, ru, cl, m, n, mode, n2; ndrange = (m, ncols))
+    _sef_pass1_fused_kernel!(backend, (16, 16))(tmp, x, f, L, ru, cl, m, n, mode, n2; ndrange = (m, ncols))
 
     out = KernelAbstractions.allocate(backend, Td, m, n)
-    _sef_pass2_kernel!(backend, (16, 16))(out, tmp, f_d, L; ndrange = (m, n))
+    _sef_pass2_kernel!(backend, (16, 16))(out, tmp, f, L; ndrange = (m, n))
     return out
 end

@@ -32,17 +32,53 @@ function ct_forward(image::_AbstractGPUMatrix, params::ContourletParams)
     fp, qfp = p.lp_filters, p.dfb_filters
     J, L = p.J, p.L_array
     img = Td === eltype(image) ? image : Td.(image)
+    # Upload the DFB ladder filter once for all pyramid levels.
+    dfb_f = if Contourlets.is_ladder(qfp)
+        backend = _gpu_backend(image)
+        _to_device(backend, Contourlets._ladder_modulate(Tf.(qfp.f_ladder)))
+    else
+        nothing
+    end
 
     local subbands
     coarse = img
     for j in 1:J
-        coarse_j, bp_j = lp_decompose(coarse, fp)        # GPU
-        dev_sb = dfb_decompose(bp_j, L[j], qfp)          # GPU DFB — stays on device
+        coarse_j, bp_j = lp_decompose(coarse, fp)                    # GPU
+        dev_sb = dfb_decompose(bp_j, L[j], qfp; filter = dfb_f)     # GPU DFB — stays on device
         j == 1 && (subbands = Vector{typeof(dev_sb)}(undef, J))
         subbands[j] = dev_sb
         coarse = coarse_j
     end
     return ContourletCoefficients(coarse, subbands)   # device-resident coeffs
+end
+
+"""
+    ct_inverse(coeffs::ContourletCoefficients, params::ContourletParams) -> GPU matrix
+
+GPU Discrete Contourlet Transform inverse pass.
+"""
+function ct_inverse(
+        coeffs::ContourletCoefficients{T, <:AbstractGPUMatrix{T}},
+        params::ContourletParams;
+        threading::Contourlets.ThreadingPolicy = Contourlets.Auto()
+    ) where {T}
+    Tf = Contourlets._filter_eltype(T)
+    p = Contourlets._convert_params(Tf, params)
+    fp, qfp = p.lp_filters, p.dfb_filters
+    J = p.J
+    # Upload the DFB ladder filter once for all pyramid levels.
+    dfb_f = if Contourlets.is_ladder(qfp)
+        backend = _gpu_backend(coeffs.coarse)
+        _to_device(backend, Contourlets._ladder_modulate(Tf.(qfp.f_ladder)))
+    else
+        nothing
+    end
+    coarse = copy(coeffs.coarse)
+    for j in J:-1:1
+        bp = dfb_reconstruct(coeffs.subbands[j], qfp; filter = dfb_f)
+        coarse = lp_reconstruct(coarse, bp, fp)
+    end
+    return coarse
 end
 
 # ── Nonsubsampled Contourlet Transform ────────────────────────────────────────

@@ -93,6 +93,12 @@ function Contourlets._device_qup_cache(::Type{M}, qup_cache) where {M <: Abstrac
     return [Contourlets._adapt_nsdfb_filters(M, F) for F in qup_cache]
 end
 
+function Contourlets._device_dfb_filter(::Type{M}, f::AbstractVector) where {M <: AbstractGPUMatrix}
+    backend = KernelAbstractions.get_backend(similar(M, (1, 1)))
+    return _to_device(backend, f)
+end
+Contourlets._device_dfb_filter(::Type{<:AbstractGPUMatrix}, ::Nothing) = nothing
+
 function Contourlets._device_lp_cache(::Type{M}, lp_cache) where {M <: AbstractGPUMatrix}
     backend = KernelAbstractions.get_backend(similar(M, (1, 1)))
     return [_to_device(backend, v) for v in lp_cache]

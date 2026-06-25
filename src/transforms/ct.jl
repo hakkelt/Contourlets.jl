@@ -90,7 +90,7 @@ function ct_forward!(
             tmp2_j = _scratch_like(current, n1, n2)
 
             lp_decompose!(coarse_j, bp_j, current, fp; tmp = tmp_j, tmp2 = tmp2_j)
-            sbs = dfb_decompose(bp_j, L[j], qfp; threading = threading)   # DFB transients use the arena
+            sbs = dfb_decompose(bp_j, L[j], qfp; filter = ws.dfb_f_cache, threading = threading)   # DFB transients use the arena
             for (k, sb) in enumerate(sbs)
                 copyto!(coeffs.subbands[j][k], sb)
             end
@@ -159,7 +159,7 @@ function ct_inverse!(
         copyto!(current, coeffs.coarse)
 
         for j in J:-1:1
-            bp = dfb_reconstruct(coeffs.subbands[j], qfp; threading = threading)   # DFB transients use the arena
+            bp = dfb_reconstruct(coeffs.subbands[j], qfp; filter = ws.dfb_f_cache, threading = threading)   # DFB transients use the arena
             n1, n2 = size(bp)
             tmp_j = _scratch_like(current, n1, n2)
             tmp2_j = _scratch_like(current, n1, n2)

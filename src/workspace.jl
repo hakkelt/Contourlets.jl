@@ -97,7 +97,7 @@ iterations with the mutating `!` entry points.
     A `ContourletWorkspace` is **not thread-safe**.  Create a separate workspace
     per thread (e.g., `[make_workspace(params, sz) for _ in 1:Threads.nthreads()]`).
 """
-struct ContourletWorkspace{Td <: Number, Tf <: AbstractFloat, M <: AbstractMatrix{Td}, Q, L}
+struct ContourletWorkspace{Td <: Number, Tf <: AbstractFloat, M <: AbstractMatrix{Td}, Q, L, DF}
     params::ContourletParams{Tf}     # real filter precision Tf
     image_size::Tuple{Int, Int}
 
@@ -106,6 +106,11 @@ struct ContourletWorkspace{Td <: Number, Tf <: AbstractFloat, M <: AbstractMatri
     # pyramid levels in opposite orders, yielding different buffer size sequences.
     fwd_scratch::ScratchArena{M}
     inv_scratch::ScratchArena{M}
+
+    # Pre-built (possibly device-resident) DFB ladder filter for CT workspaces.
+    # Avoids re-uploading the same filter vector on every ct_forward!/ct_inverse! call.
+    # `nothing` for non-ladder qfp or NSCT workspaces.
+    dfb_f_cache::DF
 
     # Per-level upsampled NSDFB filters (empty for a CT workspace, which uses the
     # un-upsampled ladder filter directly).  Precomputed once at construction.
@@ -145,10 +150,11 @@ function ContourletWorkspace{Td, Tf, M}(
         fft_plan_inv::Any,
         fft_buffer_c::Matrix{Complex{Tf}},
         fft_spectrum_bp::Matrix{Complex{Tf}},
-        fft_threaded::Bool = false
-    ) where {Td, Tf, M, Q, L}
-    return ContourletWorkspace{Td, Tf, M, Q, L}(
-        params, image_size, fwd_scratch, inv_scratch,
+        fft_threaded::Bool = false,
+        dfb_f_cache::DF = nothing
+    ) where {Td, Tf, M, Q, L, DF}
+    return ContourletWorkspace{Td, Tf, M, Q, L, DF}(
+        params, image_size, fwd_scratch, inv_scratch, dfb_f_cache,
         qup_cache, lp_h_cache, lp_g_cache,
         nsdfb_H_cache, nsdfb_G_cache, fft_plan_fwd, fft_plan_inv, fft_buffer_c, fft_spectrum_bp,
         fft_threaded
@@ -157,6 +163,7 @@ end
 
 _device_qup_cache(::Type{M}, qup_cache) where {M <: AbstractMatrix} = qup_cache
 _device_lp_cache(::Type{M}, lp_cache) where {M <: AbstractMatrix} = lp_cache
+_device_dfb_filter(::Type{M}, f) where {M <: AbstractMatrix} = f
 
 Base.eltype(::ContourletWorkspace{Td}) where {Td} = Td
 
@@ -207,12 +214,16 @@ function make_workspace(
     Td = promote_type(Tp, T)         # data buffer type (may be complex)
     Tf = _filter_eltype(Td)          # real filter precision
     p2 = _convert_params(Tf, params)
+    # Build the ladder filter once and upload to device (no-op on CPU).
+    dfb_f = is_ladder(p2.dfb_filters) ? _ladder_modulate(Tf.(p2.dfb_filters.f_ladder)) : nothing
+    dfb_f_cache = _device_dfb_filter(M, dfb_f)
     # CT uses the un-upsampled ladder/LP filters directly, so no per-level filter
     # caches are needed.
     ws = ContourletWorkspace{Td, Tf, M}(
         p2, image_size, ScratchArena{M}(), ScratchArena{M}(),
         _NSDFBFilters[], Vector{Tf}[], Vector{Tf}[],
-        Vector{Matrix{Complex{Tf}}}[], Vector{Matrix{Complex{Tf}}}[], nothing, nothing, Matrix{Complex{Tf}}(undef, 0, 0), Matrix{Complex{Tf}}(undef, 0, 0)
+        Vector{Matrix{Complex{Tf}}}[], Vector{Matrix{Complex{Tf}}}[], nothing, nothing, Matrix{Complex{Tf}}(undef, 0, 0), Matrix{Complex{Tf}}(undef, 0, 0),
+        false, dfb_f_cache
     )
     # Grow the scratch arena to its steady-state size now (forward + inverse), so
     # the first user call is already allocation-free.

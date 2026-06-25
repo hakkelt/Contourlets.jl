@@ -181,7 +181,7 @@ end
 
 # y = X * F1(z1) * F2(z2) * z1^shift1 * z2^shift2, same size as x.
 # Real filter `f` (Tf) applied to data `x` (Td, real or complex); `acc` is Td.
-function _sefilter2(x::AbstractMatrix{Td}, f::Vector{Tf}, shift1::Int, shift2::Int, extmod::Symbol, threaded::Bool = false) where {Td, Tf}
+function _sefilter2(x::AbstractMatrix{Td}, f::AbstractVector{Tf}, shift1::Int, shift2::Int, extmod::Symbol, threaded::Bool = false) where {Td, Tf}
     L = length(f)
     lf = (L - 1) / 2
     ru = floor(Int, lf) + shift1
@@ -201,7 +201,7 @@ function _sefilter2(x::AbstractMatrix{Td}, f::Vector{Tf}, shift1::Int, shift2::I
     return _sefilter2_kernel!(out, tmp, ext, f, L, half, sym, effective_threaded)
 end
 
-function _sefilter2_kernel!(out::AbstractMatrix{Td}, tmp::AbstractMatrix{Td}, ext::AbstractMatrix{Td}, f::Vector{Tf}, L::Int, half::Int, sym::Bool, threaded::Bool) where {Td, Tf}
+function _sefilter2_kernel!(out::AbstractMatrix{Td}, tmp::AbstractMatrix{Td}, ext::AbstractMatrix{Td}, f::AbstractVector{Tf}, L::Int, half::Int, sym::Bool, threaded::Bool) where {Td, Tf}
     m, n = size(out)
     if sym
         if threaded
@@ -292,7 +292,7 @@ function _sefilter2_kernel!(out::AbstractMatrix{Td}, tmp::AbstractMatrix{Td}, ex
 end
 
 # True when f reads the same forwards and backwards (symmetric impulse response).
-@inline function _is_symmetric(f::Vector{T}, L::Int) where {T}
+@inline function _is_symmetric(f::AbstractVector{T}, L::Int) where {T}
     @inbounds for a in 1:(L ÷ 2)
         f[a] == f[L + 1 - a] || return false
     end
@@ -307,7 +307,7 @@ _poly_dec(x, t::Int) = _ppdec(x, t)
 _poly_rec(p0, p1, t::Symbol) = _qprec(p0, p1, t)
 _poly_rec(p0, p1, t::Int) = _pprec(p0, p1, t)
 
-function _fbdec_l(x::AbstractMatrix{Td}, f::Vector{Tf}, t, extmod::Symbol = :per, threaded::Bool = false) where {Td, Tf}
+function _fbdec_l(x::AbstractMatrix{Td}, f::AbstractVector{Tf}, t, extmod::Symbol = :per, threaded::Bool = false) where {Td, Tf}
     p0, p1 = _poly_dec(x, t)
     s2 = sqrt(Tf(2))
     inv_s2 = one(Tf) / s2
@@ -328,7 +328,7 @@ function _fbdec_l(x::AbstractMatrix{Td}, f::Vector{Tf}, t, extmod::Symbol = :per
     return y0, y1
 end
 
-function _fbrec_l(y0::AbstractMatrix{Td}, y1::AbstractMatrix{Td}, f::Vector{Tf}, t, extmod::Symbol = :per, threaded::Bool = false) where {Td, Tf}
+function _fbrec_l(y0::AbstractMatrix{Td}, y1::AbstractMatrix{Td}, f::AbstractVector{Tf}, t, extmod::Symbol = :per, threaded::Bool = false) where {Td, Tf}
     s2 = sqrt(Tf(2))
     inv_s2 = one(Tf) / s2
     sef = _sefilter2(y0, f, 0, 0, extmod, threaded)
@@ -396,7 +396,7 @@ end
 
 # ── Ladder DFB decomposition / reconstruction ─────────────────────────────────
 
-function _dfbdec_l(x::AbstractMatrix{Td}, f::Vector{Tf}, n::Int, threaded::Bool = false) where {Td, Tf}
+function _dfbdec_l(x::AbstractMatrix{Td}, f::AbstractVector{Tf}, n::Int, threaded::Bool = false) where {Td, Tf}
     n == 0 && return [copy(x)]
     if n == 1
         y0, y1 = _fbdec_l(x, f, :q1r, :qper_col, threaded)
@@ -428,7 +428,7 @@ function _dfbdec_l(x::AbstractMatrix{Td}, f::Vector{Tf}, n::Int, threaded::Bool 
     return y
 end
 
-function _dfbrec_l(y::Vector{<:AbstractMatrix{Td}}, f::Vector{Tf}, threaded::Bool = false) where {Td, Tf}
+function _dfbrec_l(y::Vector{<:AbstractMatrix{Td}}, f::AbstractVector{Tf}, threaded::Bool = false) where {Td, Tf}
     n = round(Int, log2(length(y)))
     n == 0 && return copy(y[1])
     y = copy(y)
@@ -484,6 +484,7 @@ julia> length(sbs), size(sbs[1])
 function dfb_decompose(
         bandpass::AbstractMatrix, l_levels::Int,
         qfp::QuincunxFilterPair;
+        filter = nothing,
         threading::ThreadingPolicy = Auto()
     )
     l_levels >= 0 || throw(ArgumentError("l_levels must be ≥ 0"))
@@ -496,7 +497,8 @@ function dfb_decompose(
     if is_ladder(qfp)
         # `f_ladder` stores the unmodulated pkva filter; the fan modulation is
         # applied once here, the same convention used by the QFB and NSDFB paths.
-        f = _ladder_modulate(Tf.(qfp.f_ladder))
+        # When a pre-built (possibly device-resident) filter is supplied, use it directly.
+        f = filter !== nothing ? filter : _ladder_modulate(Tf.(qfp.f_ladder))
         return _dfbdec_l(img, f, l_levels, threaded)
     end
     return _dfb_split(img, l_levels, 1, _convert_qfp(Tf, qfp), threaded)
@@ -559,6 +561,7 @@ true
 function dfb_reconstruct(
         subbands::Vector{<:AbstractMatrix},
         qfp::QuincunxFilterPair;
+        filter = nothing,
         threading::ThreadingPolicy = Auto()
     )
     n = length(subbands)
@@ -572,7 +575,8 @@ function dfb_reconstruct(
     if is_ladder(qfp)
         sbs = eltype(subbands[1]) === Td ? subbands : [Td.(s) for s in subbands]
         # Modulate once at use (see `dfb_decompose`).
-        f = _ladder_modulate(Tf.(qfp.f_ladder))
+        # When a pre-built (possibly device-resident) filter is supplied, use it directly.
+        f = filter !== nothing ? filter : _ladder_modulate(Tf.(qfp.f_ladder))
         return _dfbrec_l(sbs, f, threaded)
     end
     l_levels = round(Int, log2(n))

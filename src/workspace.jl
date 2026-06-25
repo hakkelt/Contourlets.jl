@@ -48,6 +48,19 @@ end
 
 _active_arena() = get(task_local_storage(), :_contourlets_scratch, nothing)
 
+_active_filter_cache() = get(task_local_storage(), :_contourlets_filter_cache, nothing)
+
+function _with_filter_cache(f, cache)
+    store = task_local_storage()
+    prev = get(store, :_contourlets_filter_cache, nothing)
+    store[:_contourlets_filter_cache] = cache
+    try
+        return f()
+    finally
+        store[:_contourlets_filter_cache] = prev
+    end
+end
+
 function _with_arena(f, arena)
     store = task_local_storage()
     prev = get(store, :_contourlets_scratch, nothing)
@@ -134,6 +147,12 @@ struct ContourletWorkspace{Td <: Number, Tf <: AbstractFloat, M <: AbstractMatri
     # this thread count and cannot be changed per-call; a mismatch between this
     # field and a per-call threading kwarg triggers a one-time @warn.
     fft_threaded::Bool
+
+    # Mutable slots for device-accelerated graph execs (e.g. CUDA.CuGraphExec).
+    # Layout: [] = uncaptured; [exec, img_ptr::UInt, coarse_ptr::UInt].
+    # Populated by ContourletsCUDAExt on first ct_forward!/ct_inverse! call.
+    graph_cache::Vector{Any}
+    inv_graph_cache::Vector{Any}
 end
 
 function ContourletWorkspace{Td, Tf, M}(
@@ -151,13 +170,15 @@ function ContourletWorkspace{Td, Tf, M}(
         fft_buffer_c::Matrix{Complex{Tf}},
         fft_spectrum_bp::Matrix{Complex{Tf}},
         fft_threaded::Bool = false,
-        dfb_f_cache::DF = nothing
+        dfb_f_cache::DF = nothing,
+        graph_cache::Vector{Any} = Any[],
+        inv_graph_cache::Vector{Any} = Any[]
     ) where {Td, Tf, M, Q, L, DF}
     return ContourletWorkspace{Td, Tf, M, Q, L, DF}(
         params, image_size, fwd_scratch, inv_scratch, dfb_f_cache,
         qup_cache, lp_h_cache, lp_g_cache,
         nsdfb_H_cache, nsdfb_G_cache, fft_plan_fwd, fft_plan_inv, fft_buffer_c, fft_spectrum_bp,
-        fft_threaded
+        fft_threaded, graph_cache, inv_graph_cache
     )
 end
 

@@ -72,6 +72,16 @@ function ct_forward!(
         ws::ContourletWorkspace{T};
         threading::ThreadingPolicy = Auto()
     ) where {T}
+    _ct_forward_inner!(coeffs, image, ws; threading = threading)
+    return coeffs
+end
+
+function _ct_forward_inner!(
+        coeffs::ContourletCoefficients{T},
+        image::AbstractMatrix,
+        ws::ContourletWorkspace{T};
+        threading::ThreadingPolicy = Auto()
+    ) where {T}
     params = ws.params
     J = params.J
     L = params.L_array
@@ -80,7 +90,7 @@ function ct_forward!(
 
     img = T === eltype(image) ? image : T.(image)
     _arena_reset!(ws.fwd_scratch)
-    _with_arena(ws.fwd_scratch) do
+    return _with_arena(ws.fwd_scratch) do
         current = img
         for j in 1:J
             n1, n2 = size(current)
@@ -98,7 +108,6 @@ function ct_forward!(
         end
         copyto!(coeffs.coarse, current)
     end
-    return coeffs
 end
 
 """
@@ -143,6 +152,16 @@ end
 In-place CT inverse pass reusing preallocated workspace buffers.
 """
 function ct_inverse!(
+        image::AbstractMatrix{T},
+        coeffs::ContourletCoefficients{T},
+        ws::ContourletWorkspace{T};
+        threading::ThreadingPolicy = Auto()
+    ) where {T}
+    _ct_inverse_inner!(image, coeffs, ws; threading = threading)
+    return image
+end
+
+function _ct_inverse_inner!(
         image::AbstractMatrix{T},
         coeffs::ContourletCoefficients{T},
         ws::ContourletWorkspace{T};

@@ -83,10 +83,18 @@ function conv2d_sep!(
     # Keep filters real (Tf); the kernels accumulate in the data type Td (= T)
     # so real·complex stays complex without promoting the filter.
     Tf = real(T)
-    h_col_d = _ensure_gpu(backend, h_col isa AbstractVector{Tf} ? h_col : Tf.(h_col))
-    h_row_d = _ensure_gpu(backend, h_row isa AbstractVector{Tf} ? h_row : Tf.(h_row))
+    # Check for a task-local filter cache (used during CUDA graph capture to
+    # avoid per-call pool allocations that would become graph memory nodes).
+    fcache = Contourlets._active_filter_cache()
+    function _get_filter_d(f::AbstractVector)
+        raw = f isa AbstractVector{Tf} ? f : Tf.(f)
+        (fcache !== nothing && haskey(fcache, f)) && return fcache[f]
+        return _ensure_gpu(backend, raw)
+    end
+    h_col_d = _get_filter_d(h_col)
+    h_row_d = _get_filter_d(h_row)
 
-    _tmp = tmp === nothing ? KernelAbstractions.allocate(backend, T, n1, n2) : tmp
+    _tmp = tmp === nothing ? _scratch_like(dst, n1, n2) : tmp
 
     kernel1 = _conv_cols_kernel!(backend, (16, 16))
     kernel1(_tmp, src, h_col_d, n1, n2, lc, cc, bmode; ndrange = (n1, n2))

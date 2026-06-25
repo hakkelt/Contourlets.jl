@@ -25,19 +25,12 @@ reproduce the cross-language benchmarks and validation below.
 | CDF 9/7 LP filters | ✅ | ✅ | ✅ |
 | "23-45" (pkva) ladder DFB filters | ✅ | ✅ | ✅ |
 | Parabolic-scaling helper | ✅ | ❌ (manual) | ❌ (manual) |
-| GPU support | ✅¹ | ❌ | ❌ |
+| GPU support | ✅ | ❌ | ❌ |
 | Float32 support | ✅ | partial (double only) | partial |
 | Package manager integration | Julia Pkg | File download | File download |
 | Unit tests with PR guarantees | ✅ | ❌ | ❌ |
 | Type-stable, JET-verified | ✅ | N/A | N/A |
 | Hybrid Multithreading (Real/Complex) | ✅ | ❌ | ❌ |
-
-¹ A GPU extension runs the multiscale pyramid stage (the heavy
-separable convolutions, plus the primitive sampling/shearing kernels) on any
-backend — CUDA, AMDGPU, Metal, oneAPI, OpenCL, or the JLArrays CPU mock used in
-CI.  The directional (DFB/NSDFB) stage runs on the host, so GPU `ct_forward` /
-`nsct_forward` are bit-identical to the CPU path.  The extension is exercised on
-every available backend (`:gpu`-tagged tests).
 
 ---
 

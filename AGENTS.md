@@ -178,8 +178,9 @@ julia --project=benchmark --startup-file=no -e '
 include("benchmark/benchmarks.jl"); using BenchmarkTools
 BenchmarkTools.save(".temp/benchmark_results.json", run(SUITE; verbose=true, samples=3, seconds=5))
 '
-benchpkg Contourlets --rev=master,HEAD --script=benchmark/benchmarks.jl \
+benchpkg Contourlets --path . --rev=master,HEAD --script=benchmark/benchmarks.jl \
     --output-dir=.temp/bench --exeflags="--threads=2"
+benchpkgtable Contourlets --path . --rev=master,HEAD --input-dir=.temp/bench --ratio
 ```
 
 **Artifacts** — all generated output (test run outputs, coverage, benchmark JSON, profiles) goes

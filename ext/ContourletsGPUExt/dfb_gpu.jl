@@ -27,7 +27,7 @@ function Contourlets._resamp(x::_AbstractGPUMatrix{T}, type::Int, shift::Int = 1
     (1 <= type <= 4) || throw(ArgumentError("resamp type must be 1..4"))
     m, n = size(x)
     backend = _gpu_backend(x)
-    y = similar(x)
+    y = _scratch_like(x, m, n)
     _resamp_kernel!(backend, (16, 16))(y, x, type, shift, m, n; ndrange = (m, n))
     return y
 end
@@ -146,7 +146,7 @@ function Contourlets._sefilter2(
     tmp = _scratch_like(x, m, ncols)
     _sef_pass1_fused_kernel!(backend, (16, 16))(tmp, x, f, L, ru, cl, m, n, mode, n2; ndrange = (m, ncols))
 
-    out = KernelAbstractions.allocate(backend, Td, m, n)
+    out = _scratch_like(x, m, n)
     _sef_pass2_kernel!(backend, (16, 16))(out, tmp, f, L; ndrange = (m, n))
     return out
 end

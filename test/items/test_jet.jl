@@ -75,13 +75,13 @@
     @test_call target_modules = (Contourlets,) similar_coefficients(p, (16, 16))
     @test_call target_modules = (Contourlets,) similar_nsct_coefficients(p, (16, 16))
     sc = similar_coefficients(p, (16, 16))
-    @test_call target_modules = (Contourlets,) ct_forward!(sc, x, ws)
+    @test_call target_modules = (Contourlets,) ct_forward!(sc, x, p; workspace = ws)
     rec = similar(x)
-    @test_call target_modules = (Contourlets,) ct_inverse!(rec, sc, ws)
+    @test_call target_modules = (Contourlets,) ct_inverse!(rec, sc, p; workspace = ws)
     nsws = make_nsct_workspace(p, (16, 16))
     nsc = similar_nsct_coefficients(p, (16, 16))
-    @test_call target_modules = (Contourlets,) nsct_forward!(nsc, x, nsws)
-    @test_call target_modules = (Contourlets,) nsct_inverse!(rec, nsc, nsws)
+    @test_call target_modules = (Contourlets,) nsct_forward!(nsc, x, p; workspace = nsws)
+    @test_call target_modules = (Contourlets,) nsct_inverse!(rec, nsc, p; workspace = nsws)
 end
 
 @testitem "@test_opt Contourlets core functions" tags = [:jet] begin
@@ -123,7 +123,7 @@ end
     # ── Workspace API ────────────────────────────────────────────────────────
     ws = make_workspace(p, (16, 16))
     sc = similar_coefficients(p, (16, 16))
-    @test_opt target_modules = (Contourlets,) ct_forward!(sc, x, ws)
+    @test_opt target_modules = (Contourlets,) ct_forward!(sc, x, p; workspace = ws)
     rec = similar(x)
-    @test_opt target_modules = (Contourlets,) ct_inverse!(rec, sc, ws)
+    @test_opt target_modules = (Contourlets,) ct_inverse!(rec, sc, p; workspace = ws)
 end

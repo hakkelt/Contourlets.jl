@@ -87,7 +87,7 @@ for n in SIZES
     c_gpu_alloc = similar_coefficients(p, (n, n), Td = Float32, M = typeof(xg))
 
     benchmark_case("ct forward", "$(n)x$(n)", () -> ct_forward(x, p), () -> ct_forward(xg, p))
-    benchmark_case("ct forward!", "$(n)x$(n)", () -> ct_forward!(c_cpu_alloc, x, ws_cpu), () -> ct_forward!(c_gpu_alloc, xg, ws_gpu))
+    benchmark_case("ct forward!", "$(n)x$(n)", () -> ct_forward!(c_cpu_alloc, x, p; workspace = ws_cpu), () -> ct_forward!(c_gpu_alloc, xg, p; workspace = ws_gpu))
 end
 
 print_header("Contourlet Transform — inverse")
@@ -119,8 +119,8 @@ for n in SIZES
     )
     benchmark_case(
         "ct inverse!", "$(n)x$(n)",
-        () -> ct_inverse!(x_out_cpu, c_cpu, ws_cpu),
-        () -> ct_inverse!(x_out_gpu, c_gpu, ws_gpu),
+        () -> ct_inverse!(x_out_cpu, c_cpu, p; workspace = ws_cpu),
+        () -> ct_inverse!(x_out_gpu, c_gpu, p; workspace = ws_gpu),
     )
 end
 
@@ -143,7 +143,7 @@ for n in SIZES
     c_gpu_alloc = similar_nsct_coefficients(p, (n, n), Td = Float32, M = typeof(xg))
 
     benchmark_case("nsct forward", "$(n)x$(n)", () -> nsct_forward(x, p), () -> nsct_forward(xg, p))
-    benchmark_case("nsct forward!", "$(n)x$(n)", () -> nsct_forward!(c_cpu_alloc, x, ws_cpu), () -> nsct_forward!(c_gpu_alloc, xg, ws_gpu))
+    benchmark_case("nsct forward!", "$(n)x$(n)", () -> nsct_forward!(c_cpu_alloc, x, p; workspace = ws_cpu), () -> nsct_forward!(c_gpu_alloc, xg, p; workspace = ws_gpu))
 end
 
 print_header("Nonsubsampled Contourlet Transform — inverse")
@@ -175,8 +175,8 @@ for n in SIZES
     )
     benchmark_case(
         "nsct inverse!", "$(n)x$(n)",
-        () -> nsct_inverse!(x_out_cpu, c_cpu, ws_cpu),
-        () -> nsct_inverse!(x_out_gpu, c_gpu, ws_gpu),
+        () -> nsct_inverse!(x_out_cpu, c_cpu, p; workspace = ws_cpu),
+        () -> nsct_inverse!(x_out_gpu, c_gpu, p; workspace = ws_gpu),
     )
 end
 

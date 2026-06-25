@@ -319,7 +319,7 @@ bench_ws     = make_nsct_workspace(bench_params, (256, 256))
 bench_coeffs = similar_nsct_coefficients(bench_params, (256, 256))
 
 t_alloc = @belapsed nsct_forward($bench_img, $bench_params)
-t_ws    = @belapsed nsct_forward!($bench_coeffs, $bench_img, $bench_ws)
+t_ws    = @belapsed nsct_forward!($bench_coeffs, $bench_img, $bench_params; workspace = $bench_ws)
 
 println("nsct_forward  allocating : $(round(t_alloc * 1e3; digits=1)) ms")
 println("nsct_forward! workspace  : $(round(t_ws    * 1e3; digits=1)) ms")

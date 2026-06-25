@@ -14,13 +14,13 @@ using PrecompileTools
         # In-place (workspace) paths — the iterative-algorithm entry points.
         ws = make_workspace(params, size(img))
         coeffs = similar_coefficients(params, size(img))
-        ct_forward!(coeffs, img, ws)
+        ct_forward!(coeffs, img, params; workspace = ws)
         rec = similar(img)
-        ct_inverse!(rec, coeffs, ws)
+        ct_inverse!(rec, coeffs, params; workspace = ws)
 
         nsws = make_nsct_workspace(params, size(img))
         ncoeffs = similar_nsct_coefficients(params, size(img))
-        nsct_forward!(ncoeffs, img, nsws)
-        nsct_inverse!(rec, ncoeffs, nsws)
+        nsct_forward!(ncoeffs, img, params; workspace = nsws)
+        nsct_inverse!(rec, ncoeffs, params; workspace = nsws)
     end
 end

@@ -73,7 +73,7 @@ for sz in TEST_SIZES
         SUITE["CT"][sz_str]["forward"] = @benchmarkable ct_forward($img, $p_ct)
 
         # CT Forward: in-place with workspace
-        SUITE["CT"][sz_str]["forward!"] = @benchmarkable ct_forward!($coeffs_ct_alloc, $img, $ws_ct)
+        SUITE["CT"][sz_str]["forward!"] = @benchmarkable ct_forward!($coeffs_ct_alloc, $img, $p_ct; workspace = $ws_ct)
 
         # Get coefficients for inverse benchmarks
         coeffs_ct = ct_forward(img, p_ct)
@@ -83,7 +83,7 @@ for sz in TEST_SIZES
 
         # CT Inverse: in-place with workspace
         img_out_ct = similar(img)
-        SUITE["CT"][sz_str]["inverse!"] = @benchmarkable ct_inverse!($img_out_ct, $coeffs_ct, $ws_ct)
+        SUITE["CT"][sz_str]["inverse!"] = @benchmarkable ct_inverse!($img_out_ct, $coeffs_ct, $p_ct; workspace = $ws_ct)
 
         # Setup NSCT with J=3, L_array=[2, 3, 4] to highlight the FFT cascade speedup
         p_nsct = ContourletParams(J = 3, L_array = [2, 3, 4])
@@ -94,7 +94,7 @@ for sz in TEST_SIZES
         SUITE["NSCT"][sz_str]["forward"] = @benchmarkable nsct_forward($img, $p_nsct)
 
         # NSCT Forward: in-place with workspace
-        SUITE["NSCT"][sz_str]["forward!"] = @benchmarkable nsct_forward!($coeffs_nsct_alloc, $img, $ws_nsct)
+        SUITE["NSCT"][sz_str]["forward!"] = @benchmarkable nsct_forward!($coeffs_nsct_alloc, $img, $p_nsct; workspace = $ws_nsct)
 
         # Get NSCT coefficients for inverse benchmark
         coeffs_nsct = nsct_forward(img, p_nsct)
@@ -104,7 +104,7 @@ for sz in TEST_SIZES
 
         # NSCT Inverse: in-place with workspace
         img_out_nsct = similar(img)
-        SUITE["NSCT"][sz_str]["inverse!"] = @benchmarkable nsct_inverse!($img_out_nsct, $coeffs_nsct, $ws_nsct)
+        SUITE["NSCT"][sz_str]["inverse!"] = @benchmarkable nsct_inverse!($img_out_nsct, $coeffs_nsct, $p_nsct; workspace = $ws_nsct)
 
         # Optional GPU Benchmarks if a backend is available
         if @isdefined(GPU_BACKEND)
@@ -126,7 +126,7 @@ for sz in TEST_SIZES
                 synchronize_backend($GPU_BACKEND)
             end
             SUITE["CT"][sz_str]["forward!_gpu"] = @benchmarkable begin
-                ct_forward!($coeffs_ct_gpu_alloc, $img_gpu, $ws_ct_gpu)
+                ct_forward!($coeffs_ct_gpu_alloc, $img_gpu, $p_ct_gpu; workspace = $ws_ct_gpu)
                 synchronize_backend($GPU_BACKEND)
             end
 
@@ -138,7 +138,7 @@ for sz in TEST_SIZES
 
             img_out_ct_gpu = similar(img_gpu)
             SUITE["CT"][sz_str]["inverse!_gpu"] = @benchmarkable begin
-                ct_inverse!($img_out_ct_gpu, $coeffs_ct_gpu, $ws_ct_gpu)
+                ct_inverse!($img_out_ct_gpu, $coeffs_ct_gpu, $p_ct_gpu; workspace = $ws_ct_gpu)
                 synchronize_backend($GPU_BACKEND)
             end
 
@@ -158,7 +158,7 @@ for sz in TEST_SIZES
                 synchronize_backend($GPU_BACKEND)
             end
             SUITE["NSCT"][sz_str]["forward!_gpu"] = @benchmarkable begin
-                nsct_forward!($coeffs_nsct_gpu_alloc, $img_gpu, $ws_nsct_gpu)
+                nsct_forward!($coeffs_nsct_gpu_alloc, $img_gpu, $p_nsct_gpu; workspace = $ws_nsct_gpu)
                 synchronize_backend($GPU_BACKEND)
             end
 
@@ -170,7 +170,7 @@ for sz in TEST_SIZES
 
             img_out_nsct_gpu = similar(img_gpu)
             SUITE["NSCT"][sz_str]["inverse!_gpu"] = @benchmarkable begin
-                nsct_inverse!($img_out_nsct_gpu, $coeffs_nsct_gpu, $ws_nsct_gpu)
+                nsct_inverse!($img_out_nsct_gpu, $coeffs_nsct_gpu, $p_nsct_gpu; workspace = $ws_nsct_gpu)
                 synchronize_backend($GPU_BACKEND)
             end
         end

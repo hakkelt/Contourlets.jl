@@ -1,8 +1,8 @@
 module ContourletsCUDAExt
 
-# CUDA graph capture for ct_forward!.
+# CUDA graph capture for the workspace forward/inverse paths.
 #
-# The workspace-bound `ct_forward!` has a fixed kernel shape for a given
+# The workspace-bound `_ct_forward_ws!` has a fixed kernel shape for a given
 # (image size, params, eltype): same kernels, same sizes, same order every call.
 # That is exactly the precondition for CUDA graph capture.
 #
@@ -26,9 +26,9 @@ using Contourlets
 using CUDA
 
 import Contourlets:
-    ct_forward!, ct_inverse!, ContourletWorkspace, ContourletCoefficients, ThreadingPolicy, Auto
+    _ct_forward_ws!, _ct_inverse_ws!, ContourletWorkspace, ContourletCoefficients, ThreadingPolicy, Auto
 
-function ct_forward!(
+function _ct_forward_ws!(
         coeffs::ContourletCoefficients{T},
         image::AbstractMatrix,
         ws::ContourletWorkspace{T, Tf, M};
@@ -78,7 +78,7 @@ function ct_forward!(
     return coeffs
 end
 
-function ct_inverse!(
+function _ct_inverse_ws!(
         image::AbstractMatrix{T},
         coeffs::ContourletCoefficients{T},
         ws::ContourletWorkspace{T, Tf, M};

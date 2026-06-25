@@ -87,10 +87,10 @@ for n in sizes
     # ── NSCT workspace (FFT path) ─────────────────────────────────────────────
     ws = make_nsct_workspace(params, (n, n))
     coeffs_ws = similar_nsct_coefficients(params, (n, n))
-    nsct_forward!(coeffs_ws, x, ws)
+    nsct_forward!(coeffs_ws, x, params; workspace = ws)
 
-    td_nsct_ws = timeit(() -> nsct_forward!(coeffs_ws, x, ws))
-    tr_nsct_ws = timeit(() -> nsct_inverse!(similar(x), coeffs_ws, ws))
+    td_nsct_ws = timeit(() -> nsct_forward!(coeffs_ws, x, params; workspace = ws))
+    tr_nsct_ws = timeit(() -> nsct_inverse!(similar(x), coeffs_ws, params; workspace = ws))
     push!(timing_rows, ("nsct_ws", n, td_nsct_ws, tr_nsct_ws))
     @printf("[julia] NSCT_WS n=%-4d J=%d  dec %.4f s  rec %.4f s\n", n, J, td_nsct_ws, tr_nsct_ws)
 end

@@ -25,7 +25,18 @@ the directional filter-bank stages run on the device, and the returned
 coefficients keep their arrays on the device (matching the CPU `ct_forward` to
 Float32 precision).  `ct_inverse(coeffs, params)` then reconstructs on the device too.
 """
-function ct_forward(image::_AbstractGPUMatrix, params::ContourletParams)
+function ct_forward(
+        image::_AbstractGPUMatrix, params::ContourletParams;
+        workspace::Union{Contourlets.ContourletWorkspace, Nothing} = nothing,
+        threading::Contourlets.ThreadingPolicy = Contourlets.Auto()
+    )
+    if workspace !== nothing
+        Tw = eltype(workspace)
+        M = Contourlets._ws_matrix_type(workspace)
+        coeffs = Contourlets.similar_coefficients(params, size(image); Td = Tw, M = M)
+        img = Tw === eltype(image) ? image : Tw.(image)
+        return ct_forward!(coeffs, img, params; workspace = workspace, threading = threading)
+    end
     Td = Contourlets._data_eltype(image)        # data type (real or complex)
     Tf = Contourlets._filter_eltype(Td)         # real filter precision
     p = Contourlets._convert_params(Tf, params)
@@ -60,8 +71,15 @@ GPU Discrete Contourlet Transform inverse pass.
 function ct_inverse(
         coeffs::ContourletCoefficients{T, <:AbstractGPUMatrix{T}},
         params::ContourletParams;
+        workspace::Union{Contourlets.ContourletWorkspace, Nothing} = nothing,
         threading::Contourlets.ThreadingPolicy = Contourlets.Auto()
-    ) where {T}
+    ) where {T <: Number}
+    if workspace !== nothing
+        Tw = eltype(workspace)
+        M = Contourlets._ws_matrix_type(workspace)
+        image = Contourlets._allocate_zeros(M, Tw, workspace.image_size)
+        return ct_inverse!(image, coeffs, params; workspace = workspace, threading = threading)
+    end
     Tf = Contourlets._filter_eltype(T)
     p = Contourlets._convert_params(Tf, params)
     fp, qfp = p.lp_filters, p.dfb_filters
@@ -88,7 +106,18 @@ end
 
 GPU Nonsubsampled Contourlet Transform forward pass (GPU pyramid + GPU NSDFB).
 """
-function nsct_forward(image::_AbstractGPUMatrix, params::ContourletParams)
+function nsct_forward(
+        image::_AbstractGPUMatrix, params::ContourletParams;
+        workspace::Union{Contourlets.ContourletWorkspace, Nothing} = nothing,
+        threading::Contourlets.ThreadingPolicy = Contourlets.Auto()
+    )
+    if workspace !== nothing
+        Tw = eltype(workspace)
+        M = Contourlets._ws_matrix_type(workspace)
+        coeffs = Contourlets.similar_nsct_coefficients(params, size(image); Td = Tw, M = M)
+        img = Tw === eltype(image) ? image : Tw.(image)
+        return nsct_forward!(coeffs, img, params; workspace = workspace, threading = threading)
+    end
     Td = Contourlets._data_eltype(image)        # data type (real or complex)
     Tf = Contourlets._filter_eltype(Td)         # real filter precision
     p = Contourlets._convert_params(Tf, params)

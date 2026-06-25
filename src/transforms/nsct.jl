@@ -6,13 +6,13 @@
 # All outputs have the same spatial size as the input.
 
 """
-    nsct_forward(image, params::ContourletParams; workspace=nothing) -> NSCTCoefficients
+    nsct_forward(image, params::ContourletParams; workspace=nothing, threading=Auto()) -> NSCTCoefficients
 
 Nonsubsampled Contourlet Transform forward pass.  Invariant under circular
 shifts of the input.
 
-Optionally pass a preallocated workspace from [`make_nsct_workspace`](@ref) to
-reuse buffers across calls.
+Pass a preallocated workspace from [`make_nsct_workspace`](@ref) via
+`workspace` to reuse buffers across calls.
 
 # Examples
 ```jldoctest
@@ -34,21 +34,21 @@ function nsct_forward(
         threading::ThreadingPolicy = Auto()
     )
     if workspace !== nothing
-        Tw = eltype(workspace)   # the workspace dictates the data type
+        Tw = eltype(workspace)
         coeffs = similar_nsct_coefficients(params, size(image); Td = Tw)
         img = Tw === eltype(image) ? image : Tw.(image)
-        return nsct_forward!(coeffs, img, workspace; threading = threading)
+        return nsct_forward!(coeffs, img, params; workspace = workspace, threading = threading)
     end
-    Td = _data_eltype(image)       # data type (real or complex)
-    Tf = _filter_eltype(Td)        # real filter precision
+    # No-workspace: direct construction keeps the return type concrete (type-stable).
+    Td = _data_eltype(image)
+    Tf = _filter_eltype(Td)
     img = Td === eltype(image) ? image : Td.(image)
     coarse = img
     J = params.J
     L = params.L_array
-    p_out = _convert_params(Tf, params)   # real filters at precision Tf
+    p_out = _convert_params(Tf, params)
     fp, qfp = p_out.lp_filters, p_out.dfb_filters
     subbands = Vector{Vector{Matrix{Td}}}(undef, J)
-
     for j in 1:J
         coarse_j, bp_j = nsp_decompose(coarse, fp, j)
         subbands[j] = nsdfb_decompose(bp_j, L[j], qfp, j; threading = threading)
@@ -58,9 +58,12 @@ function nsct_forward(
 end
 
 """
-    nsct_forward!(coeffs::NSCTCoefficients, image, ws::ContourletWorkspace) -> coeffs
+    nsct_forward!(coeffs::NSCTCoefficients, image, params::ContourletParams; workspace=nothing, threading=Auto()) -> coeffs
 
-In-place NSCT forward pass.
+In-place NSCT forward pass writing into the preallocated `coeffs`.
+
+Pass a `ContourletWorkspace` via `workspace` for an allocation-free pyramid
+stage.  Allocate `coeffs` with [`similar_nsct_coefficients`](@ref).
 
 !!! note "FFT threading"
     The FFTW plans in `ws` are bound to the thread count chosen at workspace
@@ -69,6 +72,68 @@ In-place NSCT forward pass.
     create a new workspace with the desired `threading` policy.
 """
 function nsct_forward!(
+        coeffs::NSCTCoefficients,
+        image::AbstractMatrix,
+        params::ContourletParams;
+        workspace::Union{ContourletWorkspace, Nothing} = nothing,
+        threading::ThreadingPolicy = Auto()
+    )
+    workspace === nothing && return _nsct_forward_noworkspace!(coeffs, image, params; threading = threading)
+    return _nsct_forward_ws_barrier!(coeffs, image, workspace, threading)
+end
+
+# Typed dispatch barrier — forces specialization on the concrete workspace type,
+# avoiding Union-boxing overhead on the hot workspace path.
+function _nsct_forward_ws_barrier!(
+        coeffs::NSCTCoefficients,
+        image::AbstractMatrix,
+        ws::ContourletWorkspace,
+        threading::ThreadingPolicy
+    )
+    T = eltype(ws)
+    img = T === eltype(image) ? image : T.(image)
+    return _nsct_forward_ws!(coeffs, img, ws; threading = threading)
+end
+
+# Internal dispatch seam — overloaded by GPU extension if needed.
+function _nsct_forward_ws!(
+        coeffs::NSCTCoefficients{T},
+        image::AbstractMatrix,
+        ws::ContourletWorkspace{T, Tf};
+        threading::ThreadingPolicy = Auto()
+    ) where {T, Tf}
+    _nsct_forward_inner!(coeffs, image, ws; threading = threading)
+    return coeffs
+end
+
+# No-workspace in-place path: mirrors the allocating body but writes into coeffs.
+function _nsct_forward_noworkspace!(
+        coeffs::NSCTCoefficients,
+        image::AbstractMatrix,
+        params::ContourletParams;
+        threading::ThreadingPolicy = Auto()
+    )
+    Td = eltype(coeffs.coarse)
+    Tf = _filter_eltype(Td)
+    img = Td === eltype(image) ? image : Td.(image)
+    coarse = img
+    J = params.J
+    L = params.L_array
+    p_out = _convert_params(Tf, params)
+    fp, qfp = p_out.lp_filters, p_out.dfb_filters
+    for j in 1:J
+        coarse_j, bp_j = nsp_decompose(coarse, fp, j)
+        sbs = nsdfb_decompose(bp_j, L[j], qfp, j; threading = threading)
+        for (k, sb) in enumerate(sbs)
+            copyto!(coeffs.subbands[j][k], sb)
+        end
+        coarse = coarse_j
+    end
+    copyto!(coeffs.coarse, coarse)
+    return coeffs
+end
+
+function _nsct_forward_inner!(
         coeffs::NSCTCoefficients{T},
         image::AbstractMatrix,
         ws::ContourletWorkspace{T, Tf};
@@ -82,8 +147,8 @@ function nsct_forward!(
     img = T === eltype(image) ? image : T.(image)
     if ws.fft_plan_fwd !== nothing && _use_threading(threading, T) != ws.fft_threaded
         @warn "threading kwarg conflicts with workspace FFT thread count; " *
-              "FFT stage uses $(ws.fft_threaded ? "multi" : "single")-threaded plans " *
-              "from workspace construction — create a new workspace to change FFT threading" maxlog=1
+            "FFT stage uses $(ws.fft_threaded ? "multi" : "single")-threaded plans " *
+            "from workspace construction — create a new workspace to change FFT threading" maxlog = 1
     end
     _arena_reset!(ws.fwd_scratch)
     _with_arena(ws.fwd_scratch) do
@@ -125,7 +190,7 @@ function nsct_forward!(
 end
 
 """
-    nsct_inverse(coeffs::NSCTCoefficients, params::ContourletParams) -> Matrix
+    nsct_inverse(coeffs::NSCTCoefficients, params::ContourletParams; workspace=nothing, threading=Auto()) -> Matrix
 
 NSCT inverse pass.
 
@@ -144,13 +209,73 @@ true
 ```
 """
 function nsct_inverse(
+        coeffs::NSCTCoefficients,
+        params::ContourletParams;
+        workspace::Union{ContourletWorkspace, Nothing} = nothing,
+        threading::ThreadingPolicy = Auto()
+    )
+    if workspace !== nothing
+        Tw = eltype(workspace)
+        M = _ws_matrix_type(workspace)
+        image = _allocate_zeros(M, Tw, workspace.image_size)
+        return nsct_inverse!(image, coeffs, params; workspace = workspace, threading = threading)
+    end
+    return _nsct_inverse_alloc(coeffs, params; threading = threading)
+end
+
+"""
+    nsct_inverse!(image, coeffs::NSCTCoefficients, params::ContourletParams; workspace=nothing, threading=Auto()) -> image
+
+In-place NSCT inverse pass writing the reconstruction into `image`.
+
+Pass a `ContourletWorkspace` via `workspace` for an allocation-free pyramid
+stage.
+
+!!! note "FFT threading"
+    See [`nsct_forward!`](@ref) for the FFT threading constraint.
+"""
+function nsct_inverse!(
+        image::AbstractMatrix,
+        coeffs::NSCTCoefficients,
+        params::ContourletParams;
+        workspace::Union{ContourletWorkspace, Nothing} = nothing,
+        threading::ThreadingPolicy = Auto()
+    )
+    workspace === nothing && return (copyto!(image, _nsct_inverse_alloc(coeffs, params; threading = threading)); image)
+    return _nsct_inverse_ws_barrier!(image, coeffs, workspace, threading)
+end
+
+# Typed dispatch barrier — forces specialization on the concrete workspace type.
+function _nsct_inverse_ws_barrier!(
+        image::AbstractMatrix,
+        coeffs::NSCTCoefficients,
+        ws::ContourletWorkspace,
+        threading::ThreadingPolicy
+    )
+    return _nsct_inverse_ws!(image, coeffs, ws; threading = threading)
+end
+
+# Internal dispatch seam.
+function _nsct_inverse_ws!(
+        image::AbstractMatrix{T},
         coeffs::NSCTCoefficients{T},
+        ws::ContourletWorkspace{T, Tf};
+        threading::ThreadingPolicy = Auto()
+    ) where {T, Tf}
+    _nsct_inverse_inner!(image, coeffs, ws; threading = threading)
+    return image
+end
+
+function _nsct_inverse_alloc(
+        coeffs::NSCTCoefficients,
         params::ContourletParams;
         threading::ThreadingPolicy = Auto()
-    ) where {T}
+    )
     J = params.J
-    fp = params.lp_filters
-    qfp = params.dfb_filters
+    Tf = _filter_eltype(eltype(coeffs.coarse))
+    p_out = _convert_params(Tf, params)
+    fp = p_out.lp_filters
+    qfp = p_out.dfb_filters
     coarse = copy(coeffs.coarse)
 
     for j in J:-1:1
@@ -160,15 +285,7 @@ function nsct_inverse(
     return coarse
 end
 
-"""
-    nsct_inverse!(image, coeffs::NSCTCoefficients, ws::ContourletWorkspace) -> image
-
-In-place NSCT inverse pass.
-
-!!! note "FFT threading"
-    See [`nsct_forward!`](@ref) for the FFT threading constraint.
-"""
-function nsct_inverse!(
+function _nsct_inverse_inner!(
         image::AbstractMatrix{T},
         coeffs::NSCTCoefficients{T},
         ws::ContourletWorkspace{T, Tf};
@@ -180,8 +297,8 @@ function nsct_inverse!(
 
     if ws.fft_plan_fwd !== nothing && _use_threading(threading, T) != ws.fft_threaded
         @warn "threading kwarg conflicts with workspace FFT thread count; " *
-              "FFT stage uses $(ws.fft_threaded ? "multi" : "single")-threaded plans " *
-              "from workspace construction — create a new workspace to change FFT threading" maxlog=1
+            "FFT stage uses $(ws.fft_threaded ? "multi" : "single")-threaded plans " *
+            "from workspace construction — create a new workspace to change FFT threading" maxlog = 1
     end
     _arena_reset!(ws.inv_scratch)
     _with_arena(ws.inv_scratch) do
@@ -240,8 +357,8 @@ end
 function _prewarm_nsct!(ws::ContourletWorkspace{Td, Tf, M}; threading::ThreadingPolicy = Auto()) where {Td, Tf, M}
     img = _allocate_zeros(M, Td, ws.image_size)
     coeffs = similar_nsct_coefficients(ws.params, ws.image_size; Td = Td, M = M)
-    nsct_forward!(coeffs, img, ws; threading = threading)
-    nsct_inverse!(img, coeffs, ws; threading = threading)
+    nsct_forward!(coeffs, img, ws.params; workspace = ws, threading = threading)
+    nsct_inverse!(img, coeffs, ws.params; workspace = ws, threading = threading)
     return ws
 end
 

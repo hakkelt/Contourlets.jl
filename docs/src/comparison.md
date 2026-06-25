@@ -160,8 +160,9 @@ after adding the Contourlet Toolbox to the MATLAB path.
    Contourlets.jl additionally supports `:periodic` and `:zero` via the `boundary` keyword.
 
 4. **Workspace API**: The MATLAB toolbox allocates on every call.  Contourlets.jl
-   provides `ct_forward!(coeffs, img, ws)` which reuses preallocated buffers for
-   the pyramid stage (the directional stage still allocates its subband tree).
+   provides `ct_forward!(coeffs, img, params; workspace=ws)` which reuses
+   preallocated buffers for the pyramid stage (the directional stage still
+   allocates its subband tree when no workspace is supplied).
 
 ### Differences from MATLAB NSCT Toolbox
 

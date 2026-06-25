@@ -97,9 +97,9 @@ end
     p = ContourletParams(J = 2, L_array = [2, 3])
     ws = make_workspace(p, (32, 32))
     coeffs = similar_coefficients(p, (32, 32))
-    ct_forward!(coeffs, x, ws)
+    ct_forward!(coeffs, x, p; workspace = ws)
     rec = similar(x)
-    ct_inverse!(rec, coeffs, ws)
+    ct_inverse!(rec, coeffs, p; workspace = ws)
     @test maximum(abs, rec .- x) < 1.0e-12
 end
 
@@ -110,7 +110,7 @@ end
     p = ContourletParams(J = 2, L_array = [2, 3])
     ws = make_workspace(p, (32, 32))
     coeffs = similar_coefficients(p, (32, 32))
-    ct_forward!(coeffs, x, ws)
+    ct_forward!(coeffs, x, p; workspace = ws)
     coeffs_alloc = ct_forward(x, p)
     @test maximum(abs, coeffs.coarse .- coeffs_alloc.coarse) < 1.0e-12
     for j in 1:2, k in 1:length(coeffs.subbands[j])
@@ -125,9 +125,9 @@ end
     p = ContourletParams(J = 2, L_array = [2, 3])
     ws = make_nsct_workspace(p, (32, 32))
     coeffs = similar_nsct_coefficients(p, (32, 32))
-    nsct_forward!(coeffs, x, ws)
+    nsct_forward!(coeffs, x, p; workspace = ws)
     rec = similar(x)
-    nsct_inverse!(rec, coeffs, ws)
+    nsct_inverse!(rec, coeffs, p; workspace = ws)
     @test maximum(abs, rec .- x) < 1.0e-12
 end
 
@@ -138,7 +138,7 @@ end
     p = ContourletParams(J = 2, L_array = [2, 3])
     ws = make_nsct_workspace(p, (32, 32))
     coeffs = similar_nsct_coefficients(p, (32, 32))
-    nsct_forward!(coeffs, x, ws)
+    nsct_forward!(coeffs, x, p; workspace = ws)
     coeffs_alloc = nsct_forward(x, p)
     @test maximum(abs, coeffs.coarse .- coeffs_alloc.coarse) < 1.0e-12
     for j in 1:2, k in 1:length(coeffs.subbands[j])
@@ -224,10 +224,10 @@ end
     p = ContourletParams(J = 2, L_array = [2, 3])
     ws = make_workspace(p, (32, 32))
     coeffs = similar_coefficients(p, (32, 32))
-    ct_forward!(coeffs, x_int, ws)
+    ct_forward!(coeffs, x_int, p; workspace = ws)
     x_f64 = Float64.(x_int)
     coeffs_ref = similar_coefficients(p, (32, 32))
-    ct_forward!(coeffs_ref, x_f64, ws)
+    ct_forward!(coeffs_ref, x_f64, p; workspace = ws)
     @test coeffs.coarse == coeffs_ref.coarse
     for j in 1:2, k in eachindex(coeffs.subbands[j])
         @test coeffs.subbands[j][k] == coeffs_ref.subbands[j][k]
@@ -241,10 +241,10 @@ end
     p = ContourletParams(J = 2, L_array = [2, 3])
     ws = make_nsct_workspace(p, (32, 32))
     coeffs = similar_nsct_coefficients(p, (32, 32))
-    nsct_forward!(coeffs, x_int, ws)
+    nsct_forward!(coeffs, x_int, p; workspace = ws)
     x_f64 = Float64.(x_int)
     coeffs_ref = similar_nsct_coefficients(p, (32, 32))
-    nsct_forward!(coeffs_ref, x_f64, ws)
+    nsct_forward!(coeffs_ref, x_f64, p; workspace = ws)
     @test coeffs.coarse == coeffs_ref.coarse
     for j in 1:2, k in eachindex(coeffs.subbands[j])
         @test coeffs.subbands[j][k] == coeffs_ref.subbands[j][k]

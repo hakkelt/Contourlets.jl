@@ -114,12 +114,15 @@ Conventions that are non-obvious or specific to this package's API contract:
   first param = data type). The transform is real-linear, so `T(x + i·y)` equals
   `T(x) + i·T(y)` bit-for-bit — a useful correctness invariant. The FFTW conv
   backend is real-only; complex data routes through the direct backend.
-- **In-place companions.** Every public `f(args...)` has an `f!(dst, args...)`
-  that writes into `dst` without allocating; the allocating wrapper is
-  `f(args...) = f!(similar(first_output(args...)), args...)`. Allocating
-  variants take a `workspace::Union{ContourletWorkspace,Nothing}=nothing` kwarg
-  so iterative callers can opt into buffer reuse. Do not allocate inside the
-  `ct_forward!` / `ct_inverse!` / `nsct_forward!` / `nsct_inverse!` paths.
+- **In-place companions.** The top-level transforms follow the convention that
+  `f!(dst, args..., params; workspace=nothing, threading=Auto())` writes into
+  `dst`, and `f(args..., params; workspace=nothing, threading=Auto())` allocates
+  and returns the result — the **only** difference is whether the caller supplies
+  the output container.  Both variants accept the same optional `workspace` kwarg
+  for reusing scratch buffers; pass a `ContourletWorkspace` from
+  `make_workspace`/`make_nsct_workspace` to eliminate per-call allocation in the
+  pyramid stage.  Do not allocate inside the `_ct_forward_ws!` /
+  `_ct_inverse_ws!` / `_nsct_forward_ws!` / `_nsct_inverse_ws!` workspace paths.
 - **Duck-typed public API.** Functions accept `AbstractMatrix` with no
   `where T` constraints (those cause dispatch issues here). Pin the float type
   inside the body via `T_out = float(eltype(image))` and convert filters with

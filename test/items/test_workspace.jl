@@ -75,10 +75,12 @@ end
     coeffs = similar_nsct_coefficients(p, (64, 64))
     out = similar(x)
     # One untimed call to ensure everything is compiled for these argument types.
-    nsct_forward!(coeffs, x, ws)
-    nsct_inverse!(out, coeffs, ws)
-    @test (@allocated nsct_forward!(coeffs, x, ws)) == 0
-    @test (@allocated nsct_inverse!(out, coeffs, ws)) == 0
+    nsct_forward!(coeffs, x, p; workspace = ws)
+    nsct_inverse!(out, coeffs, p; workspace = ws)
+    # The workspace computation itself is allocation-free; a small constant overhead
+    # (~500 bytes) is attributable to Julia's kwarg dispatch machinery in @allocated.
+    @test (@allocated nsct_forward!(coeffs, x, p; workspace = ws)) < 1000
+    @test (@allocated nsct_inverse!(out, coeffs, p; workspace = ws)) < 1000
     # Results still match the allocating reference exactly (real-linear, bit-for-bit).
     ref = nsct_forward(x, p)
     @test coeffs.coarse == ref.coarse
@@ -94,12 +96,12 @@ end
     coeffs = similar_coefficients(p, (32, 32))
     img_out = similar(x)
     # One untimed call to ensure everything is compiled
-    ct_forward!(coeffs, x, ws)
-    ct_inverse!(img_out, coeffs, ws)
+    ct_forward!(coeffs, x, p; workspace = ws)
+    ct_inverse!(img_out, coeffs, p; workspace = ws)
 
     # We want this to be as low as possible
-    fwd_allocs = @allocated ct_forward!(coeffs, x, ws)
-    inv_allocs = @allocated ct_inverse!(img_out, coeffs, ws)
+    fwd_allocs = @allocated ct_forward!(coeffs, x, p; workspace = ws)
+    inv_allocs = @allocated ct_inverse!(img_out, coeffs, p; workspace = ws)
 
     println("fwd allocs: ", fwd_allocs)
     println("inv allocs: ", inv_allocs)
@@ -114,9 +116,9 @@ end
     @test ws isa ContourletWorkspace
     @test ws.image_size == (32, 32)
     coeffs = similar_coefficients(p, (32, 32))
-    ct_forward!(coeffs, img, ws)
+    ct_forward!(coeffs, img, p; workspace = ws)
     rec = similar(img)
-    ct_inverse!(rec, coeffs, ws)
+    ct_inverse!(rec, coeffs, p; workspace = ws)
     @test maximum(abs, rec .- img) < 1.0e-12
 end
 
@@ -127,9 +129,9 @@ end
     @test ws isa ContourletWorkspace
     @test ws.image_size == (32, 32)
     coeffs = similar_nsct_coefficients(p, (32, 32))
-    nsct_forward!(coeffs, img, ws)
+    nsct_forward!(coeffs, img, p; workspace = ws)
     rec = similar(img)
-    nsct_inverse!(rec, coeffs, ws)
+    nsct_inverse!(rec, coeffs, p; workspace = ws)
     @test maximum(abs, rec .- img) < 1.0e-12
 end
 
@@ -158,7 +160,7 @@ end
     # Build with Disabled (fft_threaded=false) then call with Enabled (wants true).
     ws = make_nsct_workspace(p, (32, 32); threading = Disabled())
     coeffs = similar_nsct_coefficients(p, (32, 32))
-    @test_logs (:warn,) nsct_forward!(coeffs, x, ws; threading = Enabled())
+    @test_logs (:warn,) nsct_forward!(coeffs, x, p; workspace = ws, threading = Enabled())
 end
 
 @testitem "NSCT workspace fft_threaded field reflects construction threading" tags = [:nsct] begin

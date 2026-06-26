@@ -276,13 +276,16 @@ end
     qfb_reconstruct!(out_row, sb0_row, sb1_row, Q2345; dir = :row)
     qfb_decompose!(sb0_col, sb1_col, x, Q2345; dir = :col)
     qfb_reconstruct!(out_col, sb0_col, sb1_col, Q2345; dir = :col)
-    # After warmup: row path must not allocate O(n²) matrix copies
+    # After warmup: row path must not allocate O(n²) matrix copies.
+    # Tolerance of 1024 bytes comfortably absorbs the ~400–500 B of PermutedDimsArray /
+    # Adjoint wrapper heap-allocation overhead present in Julia 1.10 (eliminated in 1.11+),
+    # while remaining well below one 32×32 Float64 matrix copy (8192 bytes).
     col_dec_alloc = @allocated qfb_decompose!(sb0_col, sb1_col, x, Q2345; dir = :col)
     row_dec_alloc = @allocated qfb_decompose!(sb0_row, sb1_row, x, Q2345; dir = :row)
-    @test row_dec_alloc <= col_dec_alloc + 256
+    @test row_dec_alloc <= col_dec_alloc + 1024
     col_rec_alloc = @allocated qfb_reconstruct!(out_col, sb0_col, sb1_col, Q2345; dir = :col)
     row_rec_alloc = @allocated qfb_reconstruct!(out_row, sb0_row, sb1_row, Q2345; dir = :row)
-    @test row_rec_alloc <= col_rec_alloc + 256
+    @test row_rec_alloc <= col_rec_alloc + 1024
 end
 
 @testitem "dfb_decompose! basic" tags = [:directional] begin

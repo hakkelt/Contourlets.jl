@@ -64,10 +64,6 @@ caller-supplied output container instead of allocating one.  With `workspace=ws`
 the pyramid stage reuses preallocated scratch buffers — no per-iteration
 allocation.
 
-## Development
-
-This library was implemented with the assistance of [GitHub Copilot](https://github.com/features/copilot) and [Anthropic Claude SDK](https://docs.anthropic.com/en/api/getting-started).
-
 ## References
 
 - Do & Vetterli (2005), "The Contourlet Transform: An Efficient Directional Multiresolution Image Representation"
@@ -83,3 +79,9 @@ reimplementations of algorithms from the BSD-licensed
 [Nonsubsampled Contourlet Toolbox](https://www.mathworks.com/matlabcentral/fileexchange/10049-nonsubsampled-contourlet-toolbox)
 (© A. L. da Cunha, J. Zhou & M. N. Do).  No source code from those toolboxes is
 vendored here; see [`LICENSE`](LICENSE) for the retained attribution.
+
+## Disclaimer
+
+This library was created with the assistance of [Claude](https://claude.com/claude-code),
+[Antigravity](https://antigravity.google/), and
+[GitHub Copilot](https://github.com/features/copilot).

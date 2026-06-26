@@ -3,8 +3,9 @@
 This example applies the Discrete Contourlet Transform to a random image and
 verifies perfect reconstruction.
 
-```julia
-using Contourlets, TestImages, ImageCore, Colors
+```@example ct
+using Contourlets, TestImages, ImageCore, Colors, Plots, Statistics
+Plots.default(show = false)
 
 # Load a natural image (512×512)
 img = Float64.(Gray.(testimage("barbara")))[1:512, 100:611]
@@ -21,7 +22,7 @@ println("Direction counts: ", params.L_array)  # [1, 2, 2]
 `ct_forward` and `ct_inverse` allocate all output buffers internally.  Use this
 for one-shot processing where allocation cost is irrelevant.
 
-```julia
+```@example ct
 coeffs = ct_forward(img, params)
 
 println("Coarse size:        ", size(coeffs.coarse))
@@ -42,7 +43,7 @@ eliminating the top-level allocation while still allocating scratch buffers
 internally.  Use this when you want to control the lifetime of the coefficient
 and image buffers, e.g. when reusing them across outer iterations.
 
-```julia
+```@example ct
 # Allocate output containers once
 coeffs_buf = similar_coefficients(params, size(img))
 img_out    = similar(img)
@@ -64,7 +65,7 @@ internal pyramid scratch buffers across calls.  The output coefficients and
 image are still freshly allocated on each call; only the pyramid stage is
 allocation-free.
 
-```julia
+```@example ct
 ws     = make_workspace(params, size(img))
 
 coeffs = ct_forward(img, params; workspace=ws)   # pyramid scratch reused
@@ -84,7 +85,7 @@ allocation-free: the pyramid scratch buffers and the coefficient/image
 containers are all preallocated.  This is the recommended pattern for
 tight iterative algorithms.
 
-```julia
+```@example ct
 ws         = make_workspace(params, size(img))
 coeffs_buf = similar_coefficients(params, size(img))
 img_out    = similar(img)
@@ -124,3 +125,37 @@ frequency wedge centred at angle ``\pi(k-1)/2^{L_j}``.
 Use [`similar_coefficients`](@ref) to preallocate a matching buffer for
 in-place use, and [`estimate_workspace_size`](@ref) to inspect the scratch
 footprint before constructing the workspace.
+
+### Visualizing the coefficients
+
+We can render the coarse residual together with every directional subband of the
+*Barbara* image.  Each directional subband is critically sampled, so coefficients
+at finer scales live on smaller grids; notice how each subband responds most
+strongly to edges aligned with its frequency wedge.  Each subband is shown with
+its own symmetric grey scale (mid-grey = 0, clipped at the 99th percentile of
+`|coefficient|`) so its directional structure stays visible despite the wide
+range of coefficient magnitudes across scales.
+
+```@example ct
+function plot_coefficients(coeffs)
+    panels = Any[]
+    push!(panels, heatmap(coeffs.coarse; title = "coarse", color = :grays,
+        aspect_ratio = :equal, axis = false, colorbar = false, yflip = true))
+    for j in eachindex(coeffs.subbands), k in eachindex(coeffs.subbands[j])
+        sb = coeffs.subbands[j][k]
+        c  = max(quantile(abs.(vec(sb)), 0.99), eps())   # per-subband contrast
+        push!(panels, heatmap(sb; title = "scale $j dir $k", color = :grays,
+            clims = (-c, c), aspect_ratio = :equal, axis = false,
+            colorbar = false, yflip = true))
+    end
+    n = length(panels)
+    cols = ceil(Int, sqrt(n))
+    rows = ceil(Int, n / cols)
+    plot(panels...; layout = (rows, cols), size = (240 * cols, 240 * rows))
+end
+
+plot_coefficients(ct_forward(img, params))
+savefig("ct_coeffs.png"); nothing # hide
+```
+
+![](ct_coeffs.png)

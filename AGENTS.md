@@ -5,6 +5,31 @@ structure and the conventions that are *specific to this package*. General
 Julia best practices live in the skills under `.agents/skills/` (see below) and
 are not repeated here.
 
+## API Usage Pattern
+
+```julia
+using Contourlets
+
+img = randn(256, 256)
+params = ContourletParams(J=4, L_array=parabolic_levels(4))
+
+# Allocating API
+coeffs = ct_forward(img, params)
+img_rec = ct_inverse(coeffs, params)
+
+# Preallocated-buffer API (for iterative algorithms)
+ws = make_workspace(params, size(img))
+coeffs = similar_coefficients(params, size(img))
+img_out = similar(img)
+for iter in 1:100
+    ct_forward!(coeffs, img, params; workspace=ws)
+    ct_inverse!(img_out, coeffs, params; workspace=ws)
+end
+```
+
+`nsct_forward`/`nsct_inverse` (and `!` variants) follow the same pattern via
+`make_nsct_workspace`. See "In-place companions" below for the naming contract.
+
 ## Quick Start
 
 1. **Read this file** for repository layout and project-specific invariants.
@@ -143,19 +168,15 @@ Conventions that are non-obvious or specific to this package's API contract:
   previously-seen size is sub-millisecond. A `Dict` of plan objects only adds a
   lock and a type-unstable cache. Use `FFTW.MEASURE` for repeated transforms,
   `FFTW.ESTIMATE` when a plan is used once and first-call latency matters.
-- **Static analysis.** Run ReLint before Runic, then Runic before committing:
-  ```bash
-  JULIA_LOAD_PATH="@relint:@stdlib" julia --startup-file=no scripts/relint.jl src/
-  runic src/
-  ```
-  `scripts/relint.jl` suppresses the three rules that are false-positives for this
-  library (`@inbounds`, `return type annotation`, `in`/`tin`, `unsafe-logging`).
-  Install the `relint` CLI once with:
-  ```bash
-  julia -e 'import Pkg; Pkg.activate("relint"; shared=true); Pkg.add(url="https://github.com/RelationalAI-oss/ReLint.jl")'
-  ```
-  After that you can also run the generic CLI (`relint src/`) to see all raw findings.
 - **Formatting.** Runic is mandatory — run `runic src/` before committing.
+- **Static analysis.** Run ReLint after Runic before committing:
+  ```bash
+  runic src/
+  JULIA_LOAD_PATH="@relint:@stdlib" julia --startup-file=no scripts/relint.jl src/
+  ```
+  `scripts/relint.jl` suppresses rules that are false-positives for this library
+  (`@inbounds`, `return type annotation`, `in`/`tin`, `unsafe-logging`).
+  See `scripts/README.md` for one-time setup instructions.
 
 ---
 

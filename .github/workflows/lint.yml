@@ -1,4 +1,4 @@
-name: ReLint
+name: Lint
 
 on:
   push:
@@ -7,20 +7,20 @@ on:
     paths:
       - "src/**/*.jl"
       - "scripts/relint.jl"
-      - ".github/workflows/relint.yml"
+      - ".github/workflows/lint.yml"
   pull_request:
     paths:
       - "src/**/*.jl"
       - "scripts/relint.jl"
-      - ".github/workflows/relint.yml"
+      - ".github/workflows/lint.yml"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ startsWith(github.ref, 'refs/pull/') }}
 
 jobs:
-  relint:
-    name: ReLint static analysis
+  lint:
+    name: Format & static analysis
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -32,6 +32,19 @@ jobs:
           version: "1"
 
       - uses: julia-actions/cache@v2
+
+      - name: Install Runic
+        run: |
+          julia --startup-file=no -e '
+            import Pkg
+            Pkg.activate("runic"; shared=true)
+            Pkg.add("Runic")
+          '
+
+      - name: Check formatting (Runic)
+        run: |
+          JULIA_LOAD_PATH="@runic:@stdlib" julia --startup-file=no \
+            -e 'using Runic; exit(Runic.main(ARGS))' -- --check src/
 
       - name: Install ReLint
         run: |

@@ -27,13 +27,6 @@ Nonsubsampled Contourlet Transform (NSCT) via a Pyramid Directional Filter Bank 
   `make_workspace` and the `workspace=ws` kwarg on both `ct_forward!` and `ct_forward`
 - Parabolic scaling utility `parabolic_levels` for optimal direction count per scale
 
-## Installation
-
-```julia
-using Pkg
-Pkg.add(url="https://github.com/hakkelt/Contourlets.jl")
-```
-
 ## Quick Start
 
 ```julia

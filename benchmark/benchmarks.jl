@@ -11,10 +11,17 @@ covering all major transforms:
   - Laplacian Pyramid (LP) — decomposition and reconstruction
   - Directional Filter Bank (DFB) — decomposition and reconstruction at multiple levels
 
-Benchmarks are run over three image sizes: 64×64, 128×128, 256×256.
+Benchmarks are run over two image sizes: 64×64, 256×256. LP/DFB/NSDFB/primitives
+run only for Float64 (CT/NSCT cover the Float64-vs-ComplexF64 threading split).
 """
 
 using BenchmarkTools, Contourlets, Random, GPUEnv
+
+# Cap each @benchmarkable's tuning + steady-state phase: AirspeedVelocity runs this
+# suite once per compared revision in CI, and revision-to-revision comparisons don't
+# need BenchmarkTools' full-precision default budget.
+BenchmarkTools.DEFAULT_PARAMETERS.samples = 3
+BenchmarkTools.DEFAULT_PARAMETERS.seconds = 1.0
 
 # Detect if a GPU is available and activate it
 const HARDWARE = GPUEnv.detect_gpu_hardware()
@@ -45,7 +52,8 @@ SUITE["primitives"] = BenchmarkGroup()
 # ╚════════════════════════════════════════════════════════════════════════════╝
 
 const RNG = MersenneTwister(1234)
-const TEST_SIZES = [64, 128, 256]
+# Small + large image sizes bracket the CT/NSCT complexity trend.
+const TEST_SIZES = [64, 256]
 
 # ╔════════════════════════════════════════════════════════════════════════════╗
 # ║ SIZE-SPECIFIC BENCHMARKS                                                   ║
@@ -175,70 +183,76 @@ for sz in TEST_SIZES
             end
         end
 
-        # ────────────────────────────────────────────────────────────────────────────
-        # Laplacian Pyramid (LP): decomposition and reconstruction
-        # ────────────────────────────────────────────────────────────────────────────
+        # LP/DFB/NSDFB/primitives run Float64 only: CT/NSCT above dispatch through
+        # this same pyramid/DFB/NSDFB code, so they already cover the real-vs-complex
+        # threading-path split that motivates sweeping T.
+        if T === Float64
+            # ────────────────────────────────────────────────────────────────────────────
+            # Laplacian Pyramid (LP): decomposition and reconstruction
+            # ────────────────────────────────────────────────────────────────────────────
 
-        SUITE["LP"][sz_str] = BenchmarkGroup()
+            SUITE["LP"][sz_str] = BenchmarkGroup()
 
-        # LP Decomposition
-        SUITE["LP"][sz_str]["decompose"] = @benchmarkable lp_decompose($img, CDF97)
+            # LP Decomposition
+            SUITE["LP"][sz_str]["decompose"] = @benchmarkable lp_decompose($img, CDF97)
 
-        # Get LP coefficients for reconstruction benchmark
-        coarse_lp, bandpass_lp = lp_decompose(img, CDF97)
+            # Get LP coefficients for reconstruction benchmark
+            coarse_lp, bandpass_lp = lp_decompose(img, CDF97)
 
-        # LP Reconstruction: lp_reconstruct(coarse::Matrix, bandpass::Matrix, fp::FilterPair) → Matrix
-        SUITE["LP"][sz_str]["reconstruct"] = @benchmarkable lp_reconstruct($coarse_lp, $bandpass_lp, CDF97)
+            # LP Reconstruction: lp_reconstruct(coarse::Matrix, bandpass::Matrix, fp::FilterPair) → Matrix
+            SUITE["LP"][sz_str]["reconstruct"] = @benchmarkable lp_reconstruct($coarse_lp, $bandpass_lp, CDF97)
 
-        # ────────────────────────────────────────────────────────────────────────────
-        # Directional Filter Bank (DFB): decomposition and reconstruction
-        # ────────────────────────────────────────────────────────────────────────────
+            # ────────────────────────────────────────────────────────────────────────────
+            # Directional Filter Bank (DFB): decomposition and reconstruction
+            # ────────────────────────────────────────────────────────────────────────────
 
-        SUITE["DFB"][sz_str] = BenchmarkGroup()
+            SUITE["DFB"][sz_str] = BenchmarkGroup()
 
-        # DFB at multiple decomposition levels (1, 2, 3, 4)
-        for level in [1, 2, 3, 4]
-            level_str = "L=$level"
+            # DFB at the shallowest and deepest decomposition levels (1, 4) — the
+            # intermediate levels (2, 3) interpolate between these two data points.
+            for level in [1, 4]
+                level_str = "L=$level"
 
-            # DFB Forward: dfb_decompose(image::Matrix, level::Int, qfp::QuincunxFilterPair) → Vector{Matrix}
-            SUITE["DFB"][sz_str]["$(level_str) forward"] =
-                @benchmarkable dfb_decompose($img, $level, Q2345)
+                # DFB Forward: dfb_decompose(image::Matrix, level::Int, qfp::QuincunxFilterPair) → Vector{Matrix}
+                SUITE["DFB"][sz_str]["$(level_str) forward"] =
+                    @benchmarkable dfb_decompose($img, $level, Q2345)
 
-            # Get subbands for reconstruction benchmark
-            subbands_dfb = dfb_decompose(img, level, Q2345)
+                # Get subbands for reconstruction benchmark
+                subbands_dfb = dfb_decompose(img, level, Q2345)
 
-            # DFB Inverse: dfb_reconstruct(subbands::Vector{Matrix}, qfp::QuincunxFilterPair) → Matrix
-            SUITE["DFB"][sz_str]["$(level_str) inverse"] =
-                @benchmarkable dfb_reconstruct($subbands_dfb, Q2345)
+                # DFB Inverse: dfb_reconstruct(subbands::Vector{Matrix}, qfp::QuincunxFilterPair) → Matrix
+                SUITE["DFB"][sz_str]["$(level_str) inverse"] =
+                    @benchmarkable dfb_reconstruct($subbands_dfb, Q2345)
+            end
+
+            # ────────────────────────────────────────────────────────────────────────────
+            # Non-Subsampled Directional Filter Bank (NSDFB)
+            # ────────────────────────────────────────────────────────────────────────────
+
+            SUITE["NSDFB"][sz_str] = BenchmarkGroup()
+            for level in [1, 3]
+                level_str = "L=$level"
+                SUITE["NSDFB"][sz_str]["$(level_str) forward"] =
+                    @benchmarkable nsdfb_decompose($img, $level, Q2345, 1)
+                subbands_ns = nsdfb_decompose(img, level, Q2345, 1)
+                SUITE["NSDFB"][sz_str]["$(level_str) inverse"] =
+                    @benchmarkable nsdfb_reconstruct($subbands_ns, Q2345, 1)
+            end
+
+            # ────────────────────────────────────────────────────────────────────────────
+            # Low-level primitives
+            # ────────────────────────────────────────────────────────────────────────────
+
+            SUITE["primitives"][sz_str] = BenchmarkGroup()
+            # Separable convolution (LP workhorse) and the direct/FFTW conv2d backends.
+            k_small = Float64[1.0 2.0 1.0]                       # direct backend (≤25 taps)
+            k_large = randn(RNG, Float64, 7, 7)                  # FFTW backend (>25 taps)
+            SUITE["primitives"][sz_str]["conv2d_sep"] =
+                @benchmarkable conv2d_sep($img, [1.0, 2.0, 1.0], [1.0, 2.0, 1.0])
+            SUITE["primitives"][sz_str]["conv2d_direct"] =
+                @benchmarkable conv2d($img, $k_small, (1, 2))
+            SUITE["primitives"][sz_str]["conv2d_fftw"] =
+                @benchmarkable conv2d($img, $k_large, (4, 4))
         end
-
-        # ────────────────────────────────────────────────────────────────────────────
-        # Non-Subsampled Directional Filter Bank (NSDFB)
-        # ────────────────────────────────────────────────────────────────────────────
-
-        SUITE["NSDFB"][sz_str] = BenchmarkGroup()
-        for level in [1, 2, 3]
-            level_str = "L=$level"
-            SUITE["NSDFB"][sz_str]["$(level_str) forward"] =
-                @benchmarkable nsdfb_decompose($img, $level, Q2345, 1)
-            subbands_ns = nsdfb_decompose(img, level, Q2345, 1)
-            SUITE["NSDFB"][sz_str]["$(level_str) inverse"] =
-                @benchmarkable nsdfb_reconstruct($subbands_ns, Q2345, 1)
-        end
-
-        # ────────────────────────────────────────────────────────────────────────────
-        # Low-level primitives
-        # ────────────────────────────────────────────────────────────────────────────
-
-        SUITE["primitives"][sz_str] = BenchmarkGroup()
-        # Separable convolution (LP workhorse) and the direct/FFTW conv2d backends.
-        k_small = Float64[1.0 2.0 1.0]                       # direct backend (≤25 taps)
-        k_large = randn(RNG, Float64, 7, 7)                  # FFTW backend (>25 taps)
-        SUITE["primitives"][sz_str]["conv2d_sep"] =
-            @benchmarkable conv2d_sep($img, [1.0, 2.0, 1.0], [1.0, 2.0, 1.0])
-        SUITE["primitives"][sz_str]["conv2d_direct"] =
-            @benchmarkable conv2d($img, $k_small, (1, 2))
-        SUITE["primitives"][sz_str]["conv2d_fftw"] =
-            @benchmarkable conv2d($img, $k_large, (4, 4))
     end
 end

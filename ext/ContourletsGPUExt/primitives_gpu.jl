@@ -369,9 +369,13 @@ end
 function qfb_decompose(image::_AbstractGPUMatrix, qfp::QuincunxFilterPair; dir::Symbol = :col)
     Contourlets.is_ladder(qfp) &&
         throw(ArgumentError("ladder-mode filter pairs (e.g. Q2345) are not yet supported on GPU"))
-    T = promote_type(eltype(image), eltype(qfp))
+    # Data eltype is authoritative (mirrors the CPU qfb_decompose): the filter is
+    # converted to match, never promoted, so e.g. a Float32 device image stays
+    # Float32 even against the default Float64 filter constants — Metal (which
+    # has no Float64 support at all) depends on this.
+    T = eltype(image)
     backend = _gpu_backend(image)
-    img = T.(image)
+    img = image
     h_vec = vec(qfp.h_q)
     h_d = _ensure_gpu(backend, eltype(h_vec) === T ? h_vec : T.(h_vec))
     n1, n2 = size(img)
@@ -401,7 +405,8 @@ function qfb_reconstruct(
     )
     Contourlets.is_ladder(qfp) &&
         throw(ArgumentError("ladder-mode filter pairs (e.g. Q2345) are not yet supported on GPU"))
-    T = promote_type(eltype(sb0), eltype(sb1), eltype(qfp))
+    # Data eltype is authoritative (mirrors the CPU qfb_reconstruct) — see qfb_decompose.
+    T = promote_type(eltype(sb0), eltype(sb1))
     backend = _gpu_backend(sb0)
     g_vec = vec(qfp.g_q)
     g_d = _ensure_gpu(backend, eltype(g_vec) === T ? g_vec : T.(g_vec))

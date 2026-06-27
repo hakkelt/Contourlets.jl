@@ -1,4 +1,4 @@
-using PrecompileTools
+using PrecompileTools: @setup_workload, @compile_workload
 
 @setup_workload begin
     img = zeros(Float64, 32, 32)

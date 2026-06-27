@@ -143,6 +143,18 @@ Conventions that are non-obvious or specific to this package's API contract:
   previously-seen size is sub-millisecond. A `Dict` of plan objects only adds a
   lock and a type-unstable cache. Use `FFTW.MEASURE` for repeated transforms,
   `FFTW.ESTIMATE` when a plan is used once and first-call latency matters.
+- **Static analysis.** Run ReLint before Runic, then Runic before committing:
+  ```bash
+  JULIA_LOAD_PATH="@relint:@stdlib" julia --startup-file=no scripts/relint.jl src/
+  runic src/
+  ```
+  `scripts/relint.jl` suppresses the three rules that are false-positives for this
+  library (`@inbounds`, `return type annotation`, `in`/`tin`, `unsafe-logging`).
+  Install the `relint` CLI once with:
+  ```bash
+  julia -e 'import Pkg; Pkg.activate("relint"; shared=true); Pkg.add(url="https://github.com/RelationalAI-oss/ReLint.jl")'
+  ```
+  After that you can also run the generic CLI (`relint src/`) to see all raw findings.
 - **Formatting.** Runic is mandatory — run `runic src/` before committing.
 
 ---

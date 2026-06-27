@@ -21,11 +21,10 @@ implemented as a standalone Julia package.
 """
 module Contourlets
 
-using FFTW
-using LinearAlgebra
-
-using LoopVectorization
-using Polyester
+using FFTW: FFTW, plan_rfft, plan_fft, plan_irfft, plan_ifft, rfft, fft
+using LinearAlgebra: mul!, adjoint
+using LoopVectorization: @turbo
+using Polyester: @batch
 
 # ── Types (must come before filters which use them) ──────────────────────────
 include("threading.jl")

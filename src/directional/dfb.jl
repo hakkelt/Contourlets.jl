@@ -82,7 +82,7 @@ function _qpdec(x::AbstractMatrix, type::Symbol)
         p0 = _resamp(@view(y[:, 1:2:end]), 1)
         p1 = _resamp(_roll_rows(@view(y[:, 2:2:end])), 1)
     else
-        throw(ArgumentError("unsupported quincunx type $type"))
+        throw(ArgumentError("unsupported quincunx type $(type)"))
     end
     return p0, p1
 end
@@ -101,7 +101,7 @@ function _qprec(p0::AbstractMatrix{T}, p1::AbstractMatrix{T}, type::Symbol) wher
         y[:, 2:2:end] = _roll_rows(_resamp(p1, 2); back = true)
         return _resamp(y, 3)
     else
-        throw(ArgumentError("unsupported quincunx type $type"))
+        throw(ArgumentError("unsupported quincunx type $(type)"))
     end
 end
 
@@ -175,7 +175,7 @@ function _extend2(x::AbstractMatrix{T}, ru::Int, rd::Int, cl::Int, cr::Int, extm
         end
         return out
     else
-        throw(ArgumentError("unsupported extmod: $extmod"))
+        throw(ArgumentError("unsupported extmod: $(extmod)"))
     end
 end
 

@@ -7,7 +7,8 @@
 # The public entry points conv2d! / conv2d select the backend automatically:
 # FFTW is preferred when the kernel area exceeds a fixed threshold.
 
-using FFTW, LinearAlgebra
+using FFTW: FFTW, plan_rfft, plan_irfft
+using LinearAlgebra: mul!
 
 # ────────────────────────────────────────────────────────────────────────────────
 # Boundary extension helpers (type-parameterised for zero overhead)

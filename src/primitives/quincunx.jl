@@ -37,7 +37,7 @@ julia> size(qx_downsample(x))
 """
 function qx_downsample!(dst::AbstractMatrix{T}, src::AbstractMatrix{T}) where {T}
     n1, n2 = size(src)
-    iseven(n2) || throw(ArgumentError("qx_downsample requires even number of columns, got n2=$n2"))
+    iseven(n2) || throw(ArgumentError("qx_downsample requires even number of columns, got n2=$(n2)"))
     fill!(dst, zero(T))
     d2 = size(dst, 2)
     @inbounds for k in 1:d2, i in 1:n1
@@ -52,7 +52,7 @@ end
 """
 function qx_downsample(src::AbstractMatrix{T}) where {T}
     n1, n2 = size(src)
-    iseven(n2) || throw(ArgumentError("qx_downsample requires even number of columns, got n2=$n2"))
+    iseven(n2) || throw(ArgumentError("qx_downsample requires even number of columns, got n2=$(n2)"))
     dst = zeros(T, n1, n2 ÷ 2)
     return qx_downsample!(dst, src)
 end

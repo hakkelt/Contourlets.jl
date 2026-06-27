@@ -48,7 +48,7 @@ function shear!(
             dst[i, j] = src[mod1(i + j, n1), j]
         end
     else
-        throw(ArgumentError("dir must be :h or :v, got :$dir"))
+        throw(ArgumentError("dir must be :h or :v, got :$(dir)"))
     end
     return dst
 end
@@ -82,7 +82,7 @@ function inv_shear!(
             dst[i, j] = src[mod1(i - j, n1), j]
         end
     else
-        throw(ArgumentError("dir must be :h or :v, got :$dir"))
+        throw(ArgumentError("dir must be :h or :v, got :$(dir)"))
     end
     return dst
 end

@@ -9,7 +9,7 @@ are not repeated here.
 
 1. **Read this file** for repository layout and project-specific invariants.
 2. **Load the matching skill** from `.agents/skills/` for the kind of work you
-   are doing (performance, benchmarking, JET, packaging, docs).
+   are doing (performance, benchmarking, JET, packaging, docs, GPU, threading).
 3. **Honour the invariants** in the table below — every change must keep them.
 
 ## Commit Rules
@@ -31,11 +31,15 @@ reference file it points you to.
 | `julia-jet` | Running JET inference/type analysis on the package. |
 | `julia-package-dev` | Environments, dependencies, extensions, multi-package workspace. |
 | `julia-docs` | Documenter.jl site, docstrings, doctests, citations. |
+| `my-gpu-ext` | Adding/modifying GPU kernels, primitives, or CUDA graph capture in `ext/`. |
+| `my-threading` | Adding threaded loops, modifying `ThreadingPolicy` dispatch, or diagnosing threading performance. |
+| `my-localcoverage` | Measuring coverage percentages, generating HTML reports, enforcing a minimum coverage target. |
 
-These cover the generic patterns (type stability, `@inbounds`, column-major
+The first five cover generic Julia patterns (type stability, `@inbounds`, column-major
 loops, `$`-interpolation in benchmarks, test-only deps in `test/Project.toml`,
 the `[workspace] projects = ["test"]` layout, never editing `Manifest.toml`,
 `JULIA_PKG_SERVER_REGISTRY_PREFERENCE=eager`, etc.). Don't duplicate them here.
+The last three are project-specific and cover invariants that are unique to this package.
 
 ---
 
@@ -198,35 +202,16 @@ output.
   input. All NSP/NSDFB filtering uses periodic (circular) convolution, so the
   NSCT is exactly invariant under circular shifts of the input.
 - **GPU = whole transform on the device** — the `ContourletsGPUExt` extension
-  runs every stage of CT/NSCT on the device. The LP/NSP pyramid functions are
-  *reused unchanged* from the main package: their allocating methods are
-  broadcast-based and dispatch to the GPU primitives (separable convolution,
-  sampling, shearing) when given device arrays, so there are no GPU-specific
-  pyramid overloads. Both directional banks are kernelised too: the decimated
-  DFB via GPU `_resamp`/`_sefilter2` (`dfb_gpu.jl`) plus the type-generic
-  polyphase tree, and the NSDFB via per-pixel `_nsqfb_*` kernels (`nsdfb_gpu.jl`).
-  Each device kernel reproduces the CPU reduction order, so GPU
-  `ct_forward`/`nsct_forward` match the CPU path (to Float32 precision). Results
-  stay on the device: the coefficient containers carry a storage-type parameter
-  (`ContourletCoefficients{Td,A}`, `A<:AbstractMatrix`), so a GPU forward
-  returns device-resident coeffs and `ct_inverse(coeffs, params)`
-  reconstructs on the device. Use `Array(·)` / `Adapt.adapt` to move coeffs across. Complex device
-  arrays work too: the GPU kernels keep filters real (`real(T)`) and accumulate
-  in the data type, mirroring the CPU split. Shared src must stay
-  device-portable — allocate scratch with `_zeros_like`/`similar` (not `zeros`),
-  avoid index-vector gathers (use `circshift`), and size work vectors from the
-  actual array type, not `Matrix{T}`. Tests use GPUEnv.jl on JLArrays (CI) and
-  any real backend present (`:gpu` tag).
-- **Hybrid Threading Architecture** — CPU performance utilizes a dual-path 
-  architecture to achieve maximum performance on both `Real` and `Complex` 
-  data. For real data (`Float32`/`Float64`), we rely strictly on 
-  `LoopVectorization.@turbo` for SIMD acceleration on a single thread (avoiding 
-  costly task spawns). Because `LoopVectorization` does not support complex 
-  numbers, complex data falls back to an un-vectorized inner loop which is
-  parallelized across CPU cores using `Polyester.@batch`. `Polyester`'s 
-  near-zero overhead persistent thread pool avoids the task-spawning latency 
-  that destroys recursive performance, allowing `ComplexF64` transforms to execute 
-  at virtually the same wall-clock speed as SIMD-accelerated `Float64` transforms. 
-  Public API `threading::ThreadingPolicy` kwargs (`Auto`, `Enabled`, `Disabled`)
-  allow users to explicitly control this behavior, with `Auto` enabling multithreading
-  for complex data and disabling it for real data by default.
+  runs every stage of CT/NSCT on the device. Pyramid functions are reused
+  unchanged (broadcast-based dispatch picks up GPU primitives automatically); both
+  directional banks are kernelised (`dfb_gpu.jl`, `nsdfb_gpu.jl`). Coefficients
+  stay device-resident (`ContourletCoefficients{Td,A}`, `A<:AbstractMatrix`); use
+  `Array(·)` / `Adapt.adapt(Array, coeffs)` to bring them back. `ContourletsCUDAExt`
+  adds CUDA graph capture for the workspace paths. Load the `julia-gpu-ext` skill
+  before touching any file under `ext/`.
+- **Hybrid Threading Architecture** — real data (`Float32`/`Float64`) uses
+  `LoopVectorization.@turbo` (SIMD, single thread); complex data uses
+  `Polyester.@batch` (multi-core, near-zero spawn overhead). Public API exposes
+  `threading::ThreadingPolicy` kwargs: `Auto` (default), `Enabled`, `Disabled`.
+  `Auto` enables threading for complex types only. Load the `julia-threading` skill
+  before adding or modifying threaded loops.

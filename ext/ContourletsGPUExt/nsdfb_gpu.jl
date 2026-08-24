@@ -97,7 +97,6 @@ function Contourlets._device_dfb_filter(::Type{M}, f::AbstractVector) where {M <
     backend = KernelAbstractions.get_backend(similar(M, (1, 1)))
     return _to_device(backend, f)
 end
-Contourlets._device_dfb_filter(::Type{<:AbstractGPUMatrix}, ::Nothing) = nothing
 
 function Contourlets._device_lp_cache(::Type{M}, lp_cache) where {M <: AbstractGPUMatrix}
     backend = KernelAbstractions.get_backend(similar(M, (1, 1)))

@@ -173,3 +173,44 @@ end
     @test ws_ena.fft_threaded === true
     @test ws_dis.fft_threaded === false
 end
+
+@testitem "make_workspace return type is concrete (no Union)" tags = [:ct] begin
+    # `make_workspace`'s inferred return type must stay a single concrete type across
+    # ladder and non-ladder filter pairs, never a `Union` of two `ContourletWorkspace{...}`
+    # instantiations — a Union return type is invisible to `@test_call`/`@test_opt` run
+    # against `make_workspace` alone, but poisons any downstream package that builds a type
+    # parameter from `typeof(make_workspace(...))` (e.g. AbstractOperators.jl's
+    # ContourletOperators subpackage does `ContourletOp{...,typeof(workspace),...}`),
+    # producing an unresolvable-`convert` JET error at that call site instead.
+    p = ContourletParams(J = 2, L_array = [1, 2])
+    rt = Base.return_types(make_workspace, (typeof(p), Tuple{Int, Int}))
+    @test length(rt) == 1
+    @test isconcretetype(only(rt))
+end
+
+@testitem "make_workspace with non-ladder (modulation-mode) filter pair" tags = [:ct] begin
+    using Random
+    Random.seed!(44)
+    # Modulation-mode (non-ladder) filter pair: the 4-arg QuincunxFilterPair constructor
+    # used throughout the test suite (e.g. test_filters.jl, test_dfb.jl) for the Haar pair.
+    haar = QuincunxFilterPair([0.5 0.5], [1.0 1.0], (1, 1), (1, 2))
+    @test !Contourlets.is_ladder(haar)
+    p = ContourletParams(J = 1, L_array = [1], dfb_filters = haar)
+
+    ws = make_workspace(p, (16, 16))
+    # dfb_f_cache must stay a concrete empty vector (never `nothing`) on the non-ladder path,
+    # so `make_workspace`'s return type stays stable across filter modes; dfb_decompose/
+    # dfb_reconstruct only read it inside their `is_ladder(qfp)` branch, so it's safe unused here.
+    @test ws.dfb_f_cache isa Vector{Float64}
+    @test isempty(ws.dfb_f_cache)
+
+    x = randn(16, 16)
+    coeffs = similar_coefficients(p, (16, 16))
+    rec = similar(x)
+    ct_forward!(coeffs, x, p; workspace = ws)
+    ct_inverse!(rec, coeffs, p; workspace = ws)
+    @test maximum(abs, rec .- x) < 1.0e-10
+
+    ref = ct_forward(x, p)
+    @test maximum(abs, coeffs.coarse .- ref.coarse) < 1.0e-10
+end

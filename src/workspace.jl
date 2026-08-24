@@ -235,8 +235,12 @@ function make_workspace(
     Td = promote_type(Tp, T)         # data buffer type (may be complex)
     Tf = _filter_eltype(Td)          # real filter precision
     p2 = _convert_params(Tf, params)
-    # Build the ladder filter once and upload to device (no-op on CPU).
-    dfb_f = is_ladder(p2.dfb_filters) ? _ladder_modulate(Tf.(p2.dfb_filters.f_ladder)) : nothing
+    # Build the ladder filter once and upload to device (no-op on CPU). Must stay a
+    # concrete Vector{Tf} (empty for non-ladder pairs) — never Nothing — so ContourletWorkspace's
+    # DF type parameter, and hence typeof(make_workspace(...)), stays inferrable for callers
+    # that build a type parameter from it. Safe because dfb_decompose/dfb_reconstruct only
+    # ever read `filter` inside their `is_ladder(qfp)` branch.
+    dfb_f = is_ladder(p2.dfb_filters) ? _ladder_modulate(Tf.(p2.dfb_filters.f_ladder)) : Tf[]
     dfb_f_cache = _device_dfb_filter(M, dfb_f)
     # CT uses the un-upsampled ladder/LP filters directly, so no per-level filter
     # caches are needed.

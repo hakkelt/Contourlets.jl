@@ -33,6 +33,19 @@ nsct3_nsubbands
 make_nsct3_workspace
 ```
 
+## Surfacelet transform (3-D, decimated)
+
+```@docs
+SurfaceletParams3
+Surfacelet3Coefficients
+Surfacelet3Plan
+make_surfacelet3
+surfacelet3_forward
+surfacelet3_inverse
+surfacelet3_nsubbands
+surfacelet3_redundancy
+```
+
 ## Types
 
 ```@docs

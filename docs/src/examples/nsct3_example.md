@@ -150,3 +150,32 @@ println(
     maximum(abs, cc.subbands[1][1] .- complex.(cr.subbands[1][1], ci.subbands[1][1]))
 )
 ```
+
+
+---
+
+## Decimated: the surfacelet transform
+
+The NSCT3 keeps every subband at full size. The surfacelet transform stores each
+one at its own reduced resolution instead, giving up shift invariance for a
+smaller coefficient set. Reconstruction is still exact.
+
+```@example nsct3
+sp = SurfaceletParams3(J = 2, L_array = [1, 1])
+pl = make_surfacelet3(sp, size(vol), Float64)
+
+sc = surfacelet3_forward(vol, sp; plan = pl)
+sr = surfacelet3_inverse(sc, sp; plan = pl)
+
+println("PR error: ", maximum(abs, sr .- vol))
+println("redundancy: ", round(surfacelet3_redundancy(pl), digits = 2))
+println("coarse subband: ", size(sc.coarse), " from a ", size(vol), " volume")
+println("scale 1 subband: ", size(sc.subbands[1][1]))
+println("scale 2 subband: ", size(sc.subbands[2][1]))
+@assert maximum(abs, sr .- vol) < 1e-11
+```
+
+Note the sizes: coarser scales cover smaller frequency shells and are stored on
+correspondingly smaller grids. See [Theory — 3-D](@ref theory3d) for how far
+this decimation goes and, specifically, where it stops short of the reference
+construction.

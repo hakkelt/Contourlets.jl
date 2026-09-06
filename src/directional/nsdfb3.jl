@@ -107,12 +107,10 @@ make_nsdfb3(n1::Int, n2::Int, n3::Int, ::Type{Td} = Float64; kwargs...) where {T
 # The two transverse axes of hourglass `i`, in increasing order.
 @inline _transverse_axes(i::Int) = i == 1 ? (2, 3) : (i == 2 ? (1, 3) : (1, 2))
 
-# Folded angular frequencies of the DFT grid: ω ∈ (-π, π].  Axis 1 is the rfft
-# axis, whose stored half already lies in [0, π].
-function _folded_frequencies(::Type{T}, n::Int, axis::Int) where {T}
-    if axis == 1
-        return dft_frequencies(T, n; half = true)
-    end
+# Folded angular frequencies of the DFT grid: ω ∈ (-π, π].  With `half = true`
+# only the non-negative half kept by `rfft` is returned, already in [0, π].
+function _folded_frequencies(::Type{T}, n::Int; half::Bool = false) where {T}
+    half && return dft_frequencies(T, n; half = true)
     return T[
         let w = 2 * T(π) * (k - 1) / n
                 w > T(π) ? w - 2 * T(π) : w
@@ -142,8 +140,8 @@ function _wedge_masks_plane(
         fb::HourglassFB3{T}, ref::Int, tr::Int, l::Int, poly::Int, transition::T
     ) where {T}
     n = fb.dims
-    wref = _folded_frequencies(T, n[ref], ref)
-    wtr = _folded_frequencies(T, n[tr], tr)
+    wref = _folded_frequencies(T, n[ref]; half = ref == 1)
+    wtr = _folded_frequencies(T, n[tr]; half = tr == 1)
     nw = 1 << l
     masks = [Matrix{T}(undef, length(wref), length(wtr)) for _ in 1:nw]
     l == 0 && (fill!(masks[1], one(T)); return masks)

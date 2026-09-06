@@ -29,7 +29,7 @@ the "Theory (3-D)" page.
 """
 module Contourlets
 
-using FFTW: FFTW, plan_rfft, plan_fft, plan_irfft, plan_ifft, rfft, fft
+using FFTW: FFTW, plan_rfft, plan_fft, plan_irfft, plan_ifft, rfft, fft, fft!, ifft!
 using LinearAlgebra: mul!, adjoint
 using LoopVectorization: @turbo
 using Polyester: @batch
@@ -72,6 +72,7 @@ include("workspace.jl")
 include("transforms/ct.jl")
 include("transforms/nsct.jl")
 include("transforms/nsct3.jl")
+include("transforms/surfacelet3.jl")
 
 # ── Precompilation ────────────────────────────────────────────────────────────
 include("precompile.jl")
@@ -82,6 +83,7 @@ export
     FilterPair, QuincunxFilterPair,
     ContourletParams, ContourletCoefficients, NSCTCoefficients,
     ContourletParams3, NSCT3Coefficients, NSCT3Workspace,
+    SurfaceletParams3, Surfacelet3Coefficients, Surfacelet3Plan,
     ContourletWorkspace,
 
     # Default filters
@@ -117,6 +119,8 @@ export
     ct_forward, ct_forward!, ct_inverse, ct_inverse!,
     nsct_forward, nsct_forward!, nsct_inverse, nsct_inverse!,
     nsct3_forward, nsct3_inverse, nsct3_inverse!, nsct3_nsubbands, make_nsct3_workspace,
+    surfacelet3_forward, surfacelet3_inverse, surfacelet3_nsubbands,
+    surfacelet3_redundancy, make_surfacelet3,
     similar_coefficients, similar_nsct_coefficients,
 
     # Workspace

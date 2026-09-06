@@ -153,6 +153,76 @@ Because the directional bank depends only on the volume size and never on the
 scale, a workspace plans the hourglass mapping response once and shares it
 across every scale, with only the (matrix-sized) wedge masks differing.
 
+## Surfacelet transform (decimated)
+
+The NSCT3 buys exact shift invariance with redundancy.  The surfacelet transform
+trades the invariance back for a smaller coefficient set, which is what makes it
+usable as a sparsifying transform rather than only as an analysis tool.
+
+The target frequency partitioning is Lu and Do's: pairs of concentric cubes
+radiating from the origin, at different scales and directions.  Scale ``j``
+covers the shell ``\|\omega\|_\infty \in [\pi/2^j, \pi/2^{j-1}]``.
+
+Decimation is done by frequency-domain support extraction.  Every mask here has
+*compact* support in frequency, so the masked spectrum is restricted to the
+smallest symmetric box containing it and inverse-transformed at that reduced
+size — the mechanism the wrapping-based discrete curvelet transform uses.  Two
+consequences:
+
+* The directional masks are **not** the Bernstein mapping kernels used by the
+  nonsubsampled bank.  Those are the right choice there and the wrong one here:
+  a mapping kernel is a polynomial in ``\cos\omega``, so ``f_0(M(\omega))`` is
+  nonzero almost everywhere and its bounding box is the whole grid.  The
+  requirement inverts, so the construction does: masks are built from soft steps
+  that are *exactly* 0 and 1 outside a transition band.
+
+* Perfect reconstruction comes from ``\sum V_i^2 = 1`` (the masks are the square
+  roots of a partition of unity) rather than ``\sum W_i = 1``.  Synthesis is then
+  the analysis adjoint, and the frame is tight in the weighted sense
+  ``\sum_i N_i \|s_i\|^2 = N \|x\|^2``, where ``N_i`` is the subband's element
+  count.
+
+### One subtlety that silently breaks it
+
+On the DFT grid, ``\omega \to -\omega`` is *not* a sign flip of the folded
+frequency: at the Nyquist bin of an even-length axis ``\pi \equiv -\pi`` maps to
+itself.  A sign-sensitive quantity like the wedge ratio ``\omega_2/\omega_1``
+therefore comes out with opposite signs at two bins that are each other's
+negation.  That makes the masked spectrum non-Hermitian, the subband complex,
+and — because subbands are stored real — destroys perfect reconstruction, with
+no error message.  The masks are evaluated at a canonical representative of each
+``\pm`` pair to remove the ambiguity.
+
+### How much it actually saves
+
+Measured redundancy against the nonsubsampled transform at the same parameters:
+
+| `J`, `L`     | surfacelet3 | NSCT3 |
+|--------------|-------------|-------|
+| 1, [1]       |  6.2        |   7   |
+| 2, [1, 1]    |  7.7        |  13   |
+| 2, [2, 2]    | 15.3        |  25   |
+| 3, [2, 2, 3] | 16.0        |  49   |
+
+So this is a *partially* decimated transform — about 3× leaner at useful
+settings, not the redundancy of roughly 4 that Lu and Do report.  The reason is
+worth knowing before trying to tune it away: an axis-aligned box recovers the
+radial decimation in full (a coarser shell shrinks by 2 per axis) but almost
+none of the directional decimation, because the bounding box of a pyramid
+radiating from the origin is nearly as large as the pyramid's enclosing cube.
+Closing that gap needs a box aligned with the wedge — sheared wrapping, or
+equivalently Lu and Do's resampled checkerboard chain — and the shear has to be
+an integer index remap on the sampling grid, which at dyadic wedge boundaries it
+is not unless the decimation is interleaved with the refinement the way the
+reference construction does it.  That is a missing piece, not a tuning problem.
+
+Two further limits worth stating plainly: the reference construction's
+multiscale pyramid resamples by the non-integer factor 3/2 per axis with filter
+parameters given in tables that do not survive text extraction from the paper,
+and the reference implementation (SurfBox) is no longer distributed — so
+coefficient-level agreement with the reference is not something this
+implementation claims or could currently verify.
+
 ## References
 
 1. Y. M. Lu and M. N. Do, "Multidimensional Directional Filter Banks and

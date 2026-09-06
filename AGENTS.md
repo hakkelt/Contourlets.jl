@@ -118,7 +118,8 @@ Contourlets/
 │   └── transforms/
 │       ├── ct.jl              # ct_forward / ct_inverse / ct_forward! / ct_inverse!
 │       ├── nsct.jl            # nsct_forward / nsct_inverse / ! variants
-│       └── nsct3.jl           # nsct3_forward / nsct3_inverse + NSCT3Workspace
+│       ├── nsct3.jl           # nsct3_forward / nsct3_inverse + NSCT3Workspace
+│       └── surfacelet3.jl     # decimated 3-D transform (frequency-domain boxes)
 ├── test/
 │   ├── runtests.jl            # TestItemRunner entry point
 │   └── items/
@@ -132,6 +133,7 @@ Contourlets/
 │       ├── test_hourglass3.jl # Bernstein kernels + hourglass FB
 │       ├── test_nsdfb3.jl     # 3-D directional filter bank
 │       ├── test_nsct3.jl      # 3-D NSCT, tag :nsct3
+│       ├── test_surfacelet3.jl # decimated 3-D transform, tag :surfacelet3
 │       ├── test_gpu.jl        # universal GPU tests (GPUEnv + JLArrays), tag :gpu
 │       └── test_quality.jl    # Aqua checks
 ├── benchmark/
@@ -214,8 +216,8 @@ Conventions that are non-obvious or specific to this package's API contract:
 - All tests are self-contained `@testitem` blocks (TestItemRunner): each block
   must import all dependencies except `Contourlets` and `Test` inside the block.
 - Tag taxonomy: `:filters`, `:primitives`, `:pyramid`, `:directional`, `:ct`,
-  `:nsct` (also implies `:ct`), `:nsct3` (the 3-D transform), `:quality`
-  (Aqua/JET), `:docs`, `:gpu`.
+  `:nsct` (also implies `:ct`), `:nsct3` (the 3-D transform), `:surfacelet3`
+  (its decimated counterpart), `:quality` (Aqua/JET), `:docs`, `:gpu`.
 - Seed every random input (`Random.seed!(42)`); never rely on global RNG state.
 - NSCT shift-invariance is a required property — compare `nsct_forward(x)` with
   `nsct_forward(circshift(x, s))` against `circshift(., s)` (tol `1e-10`).

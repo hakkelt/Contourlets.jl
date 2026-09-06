@@ -277,8 +277,9 @@ output.
   their 2-D counterparts rather than generalisations. The 3-D directional bank
   is built as frequency-domain masks (exact for the periodic, nonsubsampled
   case, and it avoids the FIR truncation the papers need for streaming video);
-  perfect reconstruction is *structural* — the masks are a partition of unity,
-  so synthesis is a plain sum. Consequence worth remembering: **PR alone proves
+  perfect reconstruction is *structural* — the weights are a partition of unity,
+  so synthesis is either a plain sum or the same masks reapplied, depending on
+  `tight` (see below). Consequence worth remembering: **PR alone proves
   nothing about wedge geometry.** A wrong directional partition still
   reconstructs perfectly, which is how a 2-D `nsdfb` regression once slipped
   through. Directional tests must assert the *index* of the subband a plane wave
@@ -325,13 +326,28 @@ output.
   agreement is on *geometry*, not coefficients: 94.6% of frequencies pick the
   same dominant hourglass (every disagreement a near-tie), and across 80 plane
   waves the wedge labellings are related by a bijection with the reference's
-  choice always this package's top-2. Two known deviations are recorded there
-  and in `docs/src/theory3d.md`: the hourglass bank here is a partition of unity
-  (frame-bound ratio 3) where SurfBox normalises pointwise to an exactly tight
-  frame, and `surfacelet3`'s redundancy grows with the direction count (15.4 at
-  24 subbands, 46.4 at 96) where SurfBox stays flat at 3.93, because
-  axis-aligned support boxes recover the radial but not the directional
+  choice always this package's top-2. One known deviation is recorded there and
+  in `docs/src/theory3d.md`: `surfacelet3`'s redundancy grows with the direction
+  count (15.4 at 24 subbands, 46.4 at 96) where SurfBox stays flat at 3.93,
+  because axis-aligned support boxes recover the radial but not the directional
   decimation.
+- **The 3-D directional bank is a Parseval frame by default.** The three
+  hourglass weights are a partition of unity for any `order`/`poly`, and so are
+  the wedge weights, so the products are too. `tight = true` (the default on
+  `make_hourglass3` / `make_nsdfb3` / `ContourletParams3`) takes the masks to be
+  `√W`, which makes `Σ V² = 1` identically — the pointwise normalisation SurfBox
+  uses, scaled to bound 1 instead of `N`. Analysis then preserves energy, which
+  is what thresholding and iterative reconstruction want. The price is
+  synthesis: the masks have to be reapplied, so the directional inverse costs a
+  forward transform per subband plus one inverse instead of a bare sum. Pass
+  `tight = false` to get the old partition-of-unity bank back, with a free
+  inverse and a frame-bound ratio of 3.
+  **The normalisation makes mask evenness load-bearing.** A plain sum hides an
+  asymmetric mask — `Σ W_k X = X` regardless — but reapplying `√W` requires each
+  subband to survive an `irfft`/`rfft` round trip, which requires the mask to be
+  even on the self-conjugate planes of the rfft grid. It was not, and PR failed
+  by 0.27 with no error. `_wedge_ratio` now fixes the sign from the first
+  coordinate that can carry one; `nsdfb3 — masks are even in frequency` pins it.
 - **Hybrid Threading Architecture** — real data (`Float32`/`Float64`) uses
   `LoopVectorization.@turbo` (SIMD, single thread); complex data uses
   `Polyester.@batch` (multi-core, near-zero spawn overhead). Public API exposes

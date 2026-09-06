@@ -29,6 +29,11 @@
 # the failure mode the 2-D `nsdfb` hit when its wedges were approximated by
 # separable 1-D filtering — that yields stripe/block tilings, not wedges.
 #
+# Tightness follows the hourglass bank's `tight` setting, and needs nothing
+# extra: the wedge weights along each ratio are a partition of unity, so the
+# products `W_hourglass · W_a · W_b` are too, and `Σ (√W)² = Σ W = 1` holds over
+# all `3·2^levels` subbands however deep the refinement goes.
+#
 # Perfect reconstruction stays structural: for each ratio the soft steps
 # telescope to 1, so the wedge masks of a hourglass sum to that hourglass's mask,
 # the three hourglass masks sum to 1, and reconstruction is a plain sum.
@@ -51,7 +56,7 @@ end
 
 """
     make_nsdfb3(dims::NTuple{3,Int}, ::Type{T}=Float64;
-                levels::Int=2, order::Int=12, poly::Int=1,
+                levels::Int=2, order::Int=12, poly::Int=1, tight::Bool=true,
                 transition::Real=1.0, threading=Auto(), flags=FFTW.MEASURE)
 
 Build a 3-D NSDFB producing `3 * 2^levels` directional subbands, each the full
@@ -62,21 +67,26 @@ between the two transverse planes of each hourglass (`l_a = ceil(L/2)`,
 `l_b = floor(L/2)`), matching the balanced expansion rule of the paper.
 `levels = 0` leaves the plain three-subband hourglass bank.
 
-`order` and `poly` are forwarded to [`make_hourglass3`](@ref).  `transition`
+`order`, `poly` and `tight` are forwarded to [`make_hourglass3`](@ref); with
+`tight = true` (the default) the whole bank is a Parseval frame, since the wedge
+weights are themselves a partition of unity.  `transition`
 scales the width of the overlap between neighbouring wedges, as a fraction of
 the wedge width: `0` gives hard boundaries, `1` (the default) makes the
 transition as wide as one wedge.
 """
 function make_nsdfb3(
         dims::NTuple{3, Int}, ::Type{T} = Float64;
-        levels::Int = 2, order::Int = 12, poly::Int = 1,
+        levels::Int = 2, order::Int = 12, poly::Int = 1, tight::Bool = true,
         transition::Real = 1.0,
         threading::ThreadingPolicy = Auto(),
         flags::Integer = FFTW.MEASURE
     ) where {T <: AbstractFloat}
     levels >= 0 || throw(ArgumentError("levels must be ≥ 0"))
     0 <= transition || throw(ArgumentError("transition must be ≥ 0"))
-    fb = make_hourglass3(dims, T; order = order, poly = poly, threading = threading, flags = flags)
+    fb = make_hourglass3(
+        dims, T; order = order, poly = poly, tight = tight,
+        threading = threading, flags = flags
+    )
     return nsdfb3_sharing(fb, levels; poly = poly, transition = transition)
 end
 
@@ -157,9 +167,8 @@ function _wedge_masks_plane(
     delta = T(2) / nw
     width = transition * delta
     @inbounds for (q, wt) in enumerate(wtr), (p, wr) in enumerate(wref)
-        # Ratio parameterising direction inside the hourglass; the value at
-        # ω_ref = 0 is arbitrary because the masks sum to 1 for any `s`.
-        s = wr == 0 ? zero(T) : wt / wr
+        # Ratio parameterising direction inside the hourglass.
+        s = _wedge_ratio(wr, wt)
         # The outermost steps are hard (1 and 0) so the telescoping sum is
         # exactly 1 for every `s`, including |s| > 1 outside the hourglass.
         prev = one(T)
@@ -174,6 +183,34 @@ end
 
 # Lay a matrix indexed (reference axis, transverse axis) into a 3-D array whose
 # non-singleton axes are `ref` and `tr`, ready to broadcast against a full mask.
+# Signed slope `ω_tr / ω_ref`, evaluated at a canonical representative of the
+# ± frequency pair.
+#
+# A directional wedge is even — `ω` and `-ω` are the same real oscillation and
+# must land in the same subband — and `ω_tr / ω_ref` is invariant under negating
+# both, so nothing is needed at a generic frequency.  On the DFT grid of an
+# even-length axis, though, `0` and `π` are their own negatives, and there the
+# invariance fails: `(π, ω_tr)` negates to `(π, -ω_tr)`, which flips the sign of
+# the ratio.  Left alone that makes the masks non-even, the masked spectrum
+# non-Hermitian, and the real subband a lossy record of it — invisible while
+# reconstruction is a plain sum of weights, fatal once synthesis has to reapply
+# the masks (`tight = true`).
+#
+# The fix is to fix the sign from the first coordinate that *can* carry one:
+# `ω_ref` when it is neither 0 nor π, `ω_tr` otherwise.  When both are
+# self-negating the ratio is constant anyway.  Each factor canonicalises its own
+# plane, which keeps the masks separable — the property the GPU path depends on.
+@inline function _wedge_ratio(wr::T, wt::T) where {T}
+    # ω_ref = 0 is the hourglass apex; the value is arbitrary because the wedge
+    # weights sum to 1 for any `s`.
+    wr == 0 && return zero(T)
+    # ω_ref at Nyquist: the sign comes from ω_tr instead.
+    wr == T(π) && return abs(wt) / wr
+    # ω_tr at Nyquist: it cannot carry a sign, so ω_ref decides.
+    wt == T(π) && return wt / abs(wr)
+    return wt / wr
+end
+
 function _orient(m::Matrix{T}, ref::Int, tr::Int, shape::NTuple{3, Int}) where {T}
     out = Array{T, 3}(undef, shape)
     @inbounds for idx in CartesianIndices(out)
@@ -225,14 +262,34 @@ end
 """
     nsdfb3_mask(fb::NSDFB3, idx::Int) -> Array{T,3}
 
-Frequency-domain mask of directional subband `idx` on the rfft grid.  For
-inspection and tests; the transform never materialises one.  The masks sum to 1
-over all subbands.
+Frequency-domain analysis mask of directional subband `idx` on the rfft grid.
+For inspection and tests; the transform never materialises one.
+
+The masks sum to 1 over all subbands when the bank is not tight, and their
+squares sum to 1 when it is.  [`nsdfb3_weight`](@ref) returns the underlying
+partition of unity either way.
 """
 function nsdfb3_mask(fb::NSDFB3{T}, idx::Int) where {T}
     i, p, q = nsdfb3_subband_triple(fb, idx)
     out = similar(fb.fb.m1)
     _fill_mask!(out, fb, i, p, q)
+    return out
+end
+
+"""
+    nsdfb3_weight(fb::NSDFB3, idx::Int) -> Array{T,3}
+
+Frequency-domain *weight* of directional subband `idx`, before the `tight`
+normalisation: the hourglass weight times the two wedge factors.  The weights
+sum to 1 over all subbands at every frequency.
+"""
+function nsdfb3_weight(fb::NSDFB3{T}, idx::Int) where {T}
+    i, p, q = nsdfb3_subband_triple(fb, idx)
+    hg = fb.fb
+    wa = fb.wedges[i][1][p]
+    wb = fb.wedges[i][2][q]
+    out = similar(hg.m1)
+    @. out = _stage1_weight(hg.m1, i) * _stage2_weight(hg.m2, i) * wa * wb
     return out
 end
 
@@ -243,7 +300,11 @@ function _fill_mask!(out::AbstractArray{T, 3}, fb::NSDFB3{T}, i::Int, p::Int, q:
     hg = fb.fb
     wa = fb.wedges[i][1][p]
     wb = fb.wedges[i][2][q]
-    @. out = _stage1_weight(hg.m1, i) * _stage2_weight(hg.m2, i) * wa * wb
+    if hg.tight
+        @. out = _tight_sqrt(_stage1_weight(hg.m1, i) * _stage2_weight(hg.m2, i) * wa * wb)
+    else
+        @. out = _stage1_weight(hg.m1, i) * _stage2_weight(hg.m2, i) * wa * wb
+    end
     return out
 end
 
@@ -365,8 +426,11 @@ end
 """
     nsdfb3_reconstruct(subbands, fb::NSDFB3) -> volume
 
-Invert [`nsdfb3_decompose`](@ref).  The masks are a partition of unity, so this
-is a plain sum and perfect reconstruction is exact.
+Invert [`nsdfb3_decompose`](@ref).  Perfect reconstruction is exact either way,
+but the cost depends on the bank: when the hourglass bank is not tight the masks
+are a partition of unity and this is a plain sum, and when it is tight the same
+`√W` masks are reapplied, costing a forward transform per subband and one
+inverse for the lot.
 """
 function nsdfb3_reconstruct(subbands, fb::NSDFB3)
     out = similar(first(subbands))
@@ -378,13 +442,74 @@ end
 
 In-place [`nsdfb3_reconstruct`](@ref).
 """
-function nsdfb3_reconstruct!(volume::AbstractArray, subbands, fb::NSDFB3)
-    size(volume) == fb.fb.dims || throw(DimensionMismatch("volume size does not match the plan"))
+function nsdfb3_reconstruct!(
+        volume::AbstractArray{<:Number, 3}, subbands::Union{AbstractVector, Tuple},
+        fb::NSDFB3
+    )
     length(subbands) == nsdfb3_nsubbands(fb) ||
         throw(DimensionMismatch("expected $(nsdfb3_nsubbands(fb)) subbands"))
-    fill!(volume, zero(eltype(volume)))
-    for b in subbands
-        @. volume += b
+    return nsdfb3_reconstruct!(k -> subbands[k], volume, fb)
+end
+
+"""
+    nsdfb3_reconstruct!(f, volume, fb::NSDFB3) -> volume
+
+Streaming reconstruction: `f(k)` must return directional subband `k`.  Subbands
+are consumed one at a time and in index order, so a caller holding them on disk
+or regenerating them never materialises the full set.
+"""
+function nsdfb3_reconstruct!(f, volume::AbstractArray{<:Number, 3}, fb::NSDFB3)
+    size(volume) == fb.fb.dims || throw(DimensionMismatch("volume size does not match the plan"))
+    hg = fb.fb
+    if !hg.tight
+        fill!(volume, zero(eltype(volume)))
+        for k in 1:nsdfb3_nsubbands(fb)
+            b = f(k)
+            @. volume += b
+        end
+        return volume
     end
+    return _nsdfb3_synthesise!(f, volume, fb)
+end
+
+function _nsdfb3_synthesise!(f, volume::AbstractArray{T, 3}, fb::NSDFB3{T}) where {T <: AbstractFloat}
+    hg = fb.fb
+    acc, _ = _synthesis_scratch!(hg)
+    fill!(acc, zero(eltype(acc)))
+    _walk_subbands(fb) do idx, mask
+        copyto!(hg.rbuf, f(idx))
+        mul!(hg.spec, hg.fwd, hg.rbuf)
+        @. acc += hg.spec * mask
+        nothing
+    end
+    copyto!(hg.work, acc)
+    mul!(hg.rbuf, hg.inv, hg.work)
+    copyto!(volume, hg.rbuf)
+    return volume
+end
+
+function _nsdfb3_synthesise!(
+        f, volume::AbstractArray{Complex{T}, 3}, fb::NSDFB3{T}
+    ) where {T <: AbstractFloat}
+    hg = fb.fb
+    acc, acc2 = _synthesis_scratch!(hg)
+    spec2, rbuf2 = _complex_scratch!(hg)
+    fill!(acc, zero(eltype(acc)))
+    fill!(acc2, zero(eltype(acc2)))
+    _walk_subbands(fb) do idx, mask
+        band = f(idx)
+        @. hg.rbuf = real(band)
+        mul!(hg.spec, hg.fwd, hg.rbuf)
+        @. acc += hg.spec * mask
+        @. hg.rbuf = imag(band)
+        mul!(spec2, hg.fwd, hg.rbuf)
+        @. acc2 += spec2 * mask
+        nothing
+    end
+    copyto!(hg.work, acc)
+    mul!(hg.rbuf, hg.inv, hg.work)
+    copyto!(hg.work, acc2)
+    mul!(rbuf2, hg.inv, hg.work)
+    @. volume = complex(hg.rbuf, rbuf2)
     return volume
 end

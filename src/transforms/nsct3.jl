@@ -52,7 +52,7 @@ function make_nsct3_workspace(
     ) where {Td <: Number}
     T = _filter_eltype(Td)
     fb = make_hourglass3(
-        dims, T; order = params.order, poly = params.poly,
+        dims, T; order = params.order, poly = params.poly, tight = params.tight,
         threading = threading, flags = flags
     )
     banks = [
@@ -234,12 +234,12 @@ function nsct3_inverse!(
 
     copyto!(ws.coarse, coarse)
     for j in params.J:-1:1
-        # Sum the directional subbands back into the scale-j bandpass.
-        fill!(ws.bandpass, zero(Td))
-        for k in 1:nsct3_nsubbands(params, j)
+        # Invert the directional stage back into the scale-j bandpass.  A bare
+        # sum when the bank is not tight; a masked accumulation when it is.
+        nsdfb3_reconstruct!(ws.bandpass, ws.banks[j]) do k
             band = f(j, k)
             size(band) == dims || throw(DimensionMismatch("subband ($(j), $(k)) has the wrong size"))
-            @. ws.bandpass += band
+            band
         end
         _, g_j = _nsp3_atrous_filters(p.lp_filters, j, _filter_eltype(Td))
         nsp3_reconstruct!(

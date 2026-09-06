@@ -39,7 +39,7 @@
     w_ref = ntuple(k -> (v[k][1:17, :, :] .^ 2) ./ 3, 3)
 
     fb = make_hourglass3((32, 32, 32), Float64)
-    w_mine = ntuple(k -> hourglass3_mask(fb, k), 3)
+    w_mine = ntuple(k -> hourglass3_weight(fb, k), 3)
 
     @test all(size(w_mine[k]) == size(w_ref[k]) for k in 1:3)
 
@@ -66,13 +66,21 @@
     mean_abs = sum(k -> sum(abs, w_mine[k] .- w_ref[k]), 1:3) / (3 * length(w_mine[1]))
     @test mean_abs < 0.04
 
-    # This package's hourglass bank is a partition of unity, not a tight frame:
-    # `sum_k W_k == 1` holds exactly, but `sum_k W_k^2` varies over [1/3, 1].
-    # Recorded here so that a future switch to `sqrt(3 W_k)` -- which would make
-    # the bank tight, as SurfBox is -- shows up as a test change.
+    # The weights are a partition of unity; the analysis masks are their square
+    # roots, so this package is tight the same way SurfBox is. The two differ
+    # only in the constant: SurfBox normalises to `sum_k V_k^2 == N`, this
+    # package to 1, so `V_surfbox == sqrt(N) * V_mine` up to the transition-band
+    # differences measured above.
     unity = w_mine[1] .+ w_mine[2] .+ w_mine[3]
     @test all(x -> isapprox(x, 1.0; atol = 1.0e-12), unity)
-    energy = w_mine[1] .^ 2 .+ w_mine[2] .^ 2 .+ w_mine[3] .^ 2
+    masks = ntuple(k -> hourglass3_mask(fb, k), 3)
+    parseval = masks[1] .^ 2 .+ masks[2] .^ 2 .+ masks[3] .^ 2
+    @test all(x -> isapprox(x, 1.0; atol = 1.0e-12), parseval)
+
+    # Without the normalisation the masks are the weights themselves, and the
+    # frame-bound ratio is 3 rather than 1.
+    loose = make_hourglass3((32, 32, 32), Float64; tight = false)
+    energy = sum(hourglass3_mask(loose, k) .^ 2 for k in 1:3)
     @test isapprox(minimum(energy), 1 / 3; atol = 1.0e-3)
     @test isapprox(maximum(energy), 1.0; atol = 1.0e-12)
 end

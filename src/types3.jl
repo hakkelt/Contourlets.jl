@@ -21,6 +21,10 @@ Describes a 3-D NSCT decomposition.
 - `poly` — order of the 1-D halfband split polynomial.
 - `transition` — width of the overlap between neighbouring wedges, as a fraction
   of the wedge width.
+- `tight` — when `true` (the default) the directional masks are `√W`, making the
+  transform a Parseval frame in the directional stage; when `false` they are the
+  weights themselves and the directional inverse is a bare sum.  See
+  [`make_hourglass3`](@ref).
 
 ```jldoctest
 julia> using Contourlets
@@ -36,6 +40,7 @@ struct ContourletParams3{T <: AbstractFloat}
     order::Int
     poly::Int
     transition::T
+    tight::Bool
 end
 
 function ContourletParams3(;
@@ -44,7 +49,8 @@ function ContourletParams3(;
         lp_filters::FilterPair = CDF97,
         order::Int = 12,
         poly::Int = 1,
-        transition::Real = 1.0
+        transition::Real = 1.0,
+        tight::Bool = true
     )
     J >= 1 || throw(ArgumentError("J must be ≥ 1"))
     length(L_array) == J || throw(ArgumentError("length(L_array) must equal J"))
@@ -56,7 +62,7 @@ function ContourletParams3(;
     return ContourletParams3{T}(
         J, collect(Int, L_array),
         FilterPair{T}(T.(lp_filters.h), T.(lp_filters.g)),
-        order, poly, T(transition)
+        order, poly, T(transition), tight
     )
 end
 
@@ -72,7 +78,7 @@ _convert_params3(::Type{Tf}, p::ContourletParams3) where {Tf <: AbstractFloat} =
     ContourletParams3{Tf}(
     p.J, p.L_array,
     FilterPair{Tf}(Tf.(p.lp_filters.h), Tf.(p.lp_filters.g)),
-    p.order, p.poly, Tf(p.transition)
+    p.order, p.poly, Tf(p.transition), p.tight
 )
 
 """

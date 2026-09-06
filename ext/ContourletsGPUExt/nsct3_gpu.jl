@@ -32,9 +32,11 @@ function Adapt.adapt_structure(to, fb::HourglassFB3)
     inv = Contourlets.plan_irfft(spec, size(rbuf, 1))
     T = eltype(m1)
     return HourglassFB3{T, typeof(m1), typeof(spec), typeof(fwd), typeof(inv)}(
-        fb.dims, fb.order, fb.poly, m1, m2, fwd, inv, spec, similar(spec), rbuf,
+        fb.dims, fb.order, fb.poly, fb.tight, m1, m2, fwd, inv, spec, similar(spec), rbuf,
         fb.spec2 === nothing ? nothing : similar(spec),
         fb.rbuf2 === nothing ? nothing : similar(rbuf),
+        fb.acc === nothing ? nothing : similar(spec),
+        fb.acc2 === nothing ? nothing : similar(spec),
     )
 end
 

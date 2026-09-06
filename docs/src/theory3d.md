@@ -89,22 +89,43 @@ with a periodic boundary, so the FFT is already the default backend, and
 evaluating the mapping kernel directly on the DFT grid is *exact* — there is no
 truncation of the 37³ and 61³ FIR filters the paper reports.
 
-**A partition of unity rather than a near-tight frame.**  The 1-D polynomials
-used here satisfy ``f_0(x) + f_1(x) = 1`` identically.  Perfect reconstruction is
-then structural — the masks sum to 1 at every frequency, the synthesis filters
-are all 1, and reconstruction is a plain sum — and it is exact for every choice
-of `order` and `poly`.  The cost is measurable: the analysis masks are the
-weights ``W_k`` themselves, so ``\sum_k W_k = 1`` holds exactly but
-``\sum_k W_k^2`` ranges over ``[1/3, 1]`` — a frame-bound ratio of 3.  SurfBox
-normalises pointwise instead, taking ``V_k = \sqrt{N W_k}`` for analysis, which
-makes ``\sum_k V_k^2 = N`` identically: an exactly tight frame with redundancy
-``N``, verified to machine precision in
-`test/items/test_surfbox_reference.jl`.  For analysis, thresholding and
-reconstruction the difference matters little; for applications that need
-tight-frame noise behaviour — denoising with a single global threshold,
-iterative reconstruction where the adjoint's conditioning matters — it is a real
-limitation, and the fix is the pointwise normalisation above rather than the
-optimised lifting coefficients the papers describe.
+**A partition of unity, normalised into a Parseval frame.**  The 1-D
+polynomials used here satisfy ``f_0(x) + f_1(x) = 1`` identically, so the three
+*weights* ``W_k`` sum to 1 at every frequency, for every choice of `order` and
+`poly`.  What the filters do with that partition is the `tight` setting of
+[`make_hourglass3`](@ref):
+
+  * `tight = false` — the masks are the weights themselves.  The synthesis
+    filters are all 1 and reconstruction is a plain sum, with no transforms at
+    all.  But ``\sum_k W_k^2`` ranges over ``[1/3, 1]``, so the bank is a frame
+    with bound ratio 3: analysis does not preserve energy, and white noise
+    arrives with subband-dependent variance.
+
+  * `tight = true` (the default) — the masks are ``\sqrt{W_k}``, the pointwise
+    normalisation SurfBox uses.  Then ``\sum_k (\sqrt{W_k})^2 = \sum_k W_k = 1``
+    identically: a Parseval frame, ``\sum_k \|s_k\|^2 = \|x\|^2``, with the
+    analysis adjoint as its own inverse.  Synthesis reapplies the masks, so it
+    costs a forward transform per subband plus one inverse rather than a bare
+    sum.
+
+The price is smaller than the extra transforms suggest, because the pyramid
+dominates a 3-D NSCT.  At 128³ `Float32` with `J = 2`, `L = [2, 2]` and 8 FFTW
+threads: the directional inverse costs 0.294 s tight against 0.096 s loose
+(3.1×), but the full round trip only moves from 0.66 s to 0.76 s (1.15×).
+
+Both are exact.  SurfBox normalises to ``\sum_k V_k^2 = N`` rather than 1 — the
+same construction up to the constant ``\sqrt{N}`` — and
+`test/items/test_surfbox_reference.jl` checks both against it.  Whichever
+setting is in use, the deviation from Lu and Do's optimised lifting/ladder
+coefficients costs nothing in frame conditioning; the pointwise normalisation
+reaches tightness on its own.
+
+The normalisation exposes a constraint the plain-sum path hides: each mask must
+be **even** in frequency, or the masked spectrum is not Hermitian and the real
+subband is a lossy record of it.  A plain sum never notices, since the
+individual asymmetries cancel before the inverse transform.  See
+"[A sign trap on the DFT grid](@ref)" below — the same trap, in the same place,
+for the same reason.
 
 `order` (the Bernstein order ``N``) controls how sharply the subbands separate.
 Larger ``N`` converges to the ideal indicator; the deviation from it falls
@@ -215,7 +236,7 @@ consequences:
   ``\sum_i N_i \|s_i\|^2 = N \|x\|^2``, where ``N_i`` is the subband's element
   count.
 
-### One subtlety that silently breaks it
+### [A sign trap on the DFT grid](@id sign-trap)
 
 On the DFT grid, ``\omega \to -\omega`` is *not* a sign flip of the folded
 frequency: at the Nyquist bin of an even-length axis ``\pi \equiv -\pi`` maps to
@@ -225,6 +246,21 @@ negation.  That makes the masked spectrum non-Hermitian, the subband complex,
 and — because subbands are stored real — destroys perfect reconstruction, with
 no error message.  The masks are evaluated at a canonical representative of each
 ``\pm`` pair to remove the ambiguity.
+
+The same trap bit `nsdfb3`, and stayed invisible for longer.  With the masks
+applied once and reconstruction a plain sum, the individual asymmetries cancel
+before any inverse transform: ``\sum_k W_k X = X`` whatever each ``W_k`` does at
+Nyquist, so perfect reconstruction held while the masks were not even.  Turning
+on `tight` makes synthesis reapply the masks, which requires each subband to
+survive an `irfft`/`rfft` round trip, which requires the mask to be even on the
+two self-conjugate planes of the rfft grid.  It was not, and reconstruction
+failed by 0.27.
+
+`_wedge_ratio` fixes the sign from the first coordinate that can carry one:
+``\omega_\mathrm{ref}`` when it is neither 0 nor ``\pi``, and
+``\omega_\mathrm{tr}`` otherwise.  Each factor canonicalises its own plane
+independently, so the masks stay separable — the property the GPU path depends
+on — and `nsdfb3 — masks are even in frequency` pins the result.
 
 ### How much it actually saves
 
@@ -267,6 +303,9 @@ directional stages are now regression-tested against it in
 `test/items/test_surfbox_reference.jl`, with `test/reference/` holding the golden
 data and the MATLAB scripts that regenerate it.  What the comparison establishes:
 
+  * The tight normalisation matches.  SurfBox's masks satisfy
+    ``\sum_k V_k^2 = 3`` to machine precision; this package's satisfy
+    ``\sum_k V_k^2 = 1``, the same construction scaled by ``\sqrt{3}``.
   * The hourglass geometry agrees.  Over a 32³ grid the two constructions pick
     the same dominant hourglass at 94.6% of frequencies, with a mean absolute
     weight difference of 0.037; every disagreement is a near-tie in the

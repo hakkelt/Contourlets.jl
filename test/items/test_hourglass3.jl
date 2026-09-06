@@ -47,15 +47,40 @@ end
     @test_throws ArgumentError Contourlets.halfband_split(0.0, -1)
 end
 
-@testitem "hourglass3 — masks are a partition of unity in [0,1]" tags = [:directional] begin
+@testitem "hourglass3 — weights are a partition of unity in [0,1]" tags = [:directional] begin
     fb = make_hourglass3((12, 14, 10), Float64; order = 6, poly = 1)
-    m = ntuple(i -> hourglass3_mask(fb, i), 3)
-    @test maximum(abs, m[1] .+ m[2] .+ m[3] .- 1) < 1.0e-14
-    for mi in m
-        @test minimum(mi) >= -1.0e-14
-        @test maximum(mi) <= 1 + 1.0e-14
+    w = ntuple(i -> hourglass3_weight(fb, i), 3)
+    @test maximum(abs, w[1] .+ w[2] .+ w[3] .- 1) < 1.0e-14
+    for wi in w
+        @test minimum(wi) >= -1.0e-14
+        @test maximum(wi) <= 1 + 1.0e-14
     end
     @test_throws ArgumentError hourglass3_mask(fb, 4)
+    @test_throws ArgumentError hourglass3_weight(fb, 4)
+end
+
+@testitem "hourglass3 — tight masks are a Parseval frame" tags = [:directional] begin
+    using Random
+    fb = make_hourglass3((12, 14, 10), Float64; order = 6, poly = 1)
+    @test fb.tight
+    m = ntuple(i -> hourglass3_mask(fb, i), 3)
+    # sum of squares, not sum, is what is 1 for the tight normalisation
+    @test maximum(abs, m[1] .^ 2 .+ m[2] .^ 2 .+ m[3] .^ 2 .- 1) < 1.0e-14
+    # ... and it shows up as energy preservation of the analysis operator.
+    x = randn(Xoshiro(71), 12, 14, 10)
+    s = hourglass3_decompose(x, fb)
+    @test abs(sum(sum(abs2, b) for b in s) / sum(abs2, x) - 1) < 1.0e-12
+
+    # The untight bank is the partition of unity, and is not energy preserving.
+    loose = make_hourglass3((12, 14, 10), Float64; order = 6, poly = 1, tight = false)
+    @test !loose.tight
+    ml = ntuple(i -> hourglass3_mask(loose, i), 3)
+    @test maximum(abs, ml[1] .+ ml[2] .+ ml[3] .- 1) < 1.0e-14
+    sl = hourglass3_decompose(x, loose)
+    @test sum(sum(abs2, b) for b in sl) / sum(abs2, x) < 0.9
+    # Both invert exactly.
+    @test maximum(abs, hourglass3_reconstruct(s, fb) .- x) < 1.0e-12
+    @test maximum(abs, hourglass3_reconstruct(sl, loose) .- x) < 1.0e-12
 end
 
 @testitem "hourglass3 — perfect reconstruction" tags = [:directional] begin

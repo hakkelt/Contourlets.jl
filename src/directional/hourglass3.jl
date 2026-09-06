@@ -32,9 +32,25 @@
 # the grid is *exact*: no FIR truncation of a 37³ filter, no convolution.
 #
 # Perfect reconstruction is structural.  The 1-D polynomials satisfy
-# `f₀(x) + f₁(x) = 1` identically, so the three masks sum to
-# `f₀(M₁) + f₁(M₁)·(f₀(M₂) + f₁(M₂)) = f₀(M₁) + f₁(M₁) = 1` at every frequency,
-# and reconstruction is a plain sum of the subbands.
+# `f₀(x) + f₁(x) = 1` identically, so the three *weights* sum to
+# `f₀(M₁) + f₁(M₁)·(f₀(M₂) + f₁(M₂)) = f₀(M₁) + f₁(M₁) = 1` at every frequency.
+#
+# Two ways to turn those weights into filters, selected by `tight`:
+#
+#   * `tight = false` — the masks are the weights `W_i` themselves.  Synthesis
+#     filters are all 1 and reconstruction is a plain sum, with no transforms at
+#     all.  But `Σ W_i² ` ranges over `[1/3, 1]`, so the bank is a frame with
+#     bound ratio 3: analysis does not preserve energy, and white noise arrives
+#     with subband-dependent variance.
+#
+#   * `tight = true` (the default) — the masks are `√W_i`, the pointwise
+#     normalisation SurfBox uses.  Then `Σ (√W_i)² = Σ W_i = 1` identically: a
+#     Parseval frame, `Σ_i ‖s_i‖² = ‖x‖²`, and the analysis adjoint is its own
+#     inverse.  Synthesis applies the same masks, so reconstruction costs a
+#     forward transform per subband plus one inverse instead of a bare sum.
+#
+# (SurfBox normalises to `Σ V_i² = N` rather than 1; the two differ only by the
+# constant `√N`, and bound 1 is the convention the rest of this package uses.)
 
 """
     HourglassFB3{T}
@@ -54,6 +70,7 @@ mutable struct HourglassFB3{
     const dims::NTuple{3, Int}
     const order::Int              # Bernstein order N of the mapping kernels
     const poly::Int               # order m of the 1-D halfband split polynomial
+    const tight::Bool             # masks are √W (Parseval) rather than W
     # `f₀` of the two mapping responses, cached rather than the responses
     # themselves: the split polynomial is otherwise re-evaluated per voxel for
     # every subband, and a multiscale transform asks for dozens of them.
@@ -74,11 +91,16 @@ mutable struct HourglassFB3{
     # every subband's real part, which is what a two-pass scheme would need.
     spec2::Union{Nothing, C3}
     rbuf2::Union{Nothing, A3}
+    # Accumulator spectra for the tight synthesis path, which sums masked
+    # subband spectra before a single inverse transform.  Allocated on first use
+    # so the analysis-only and `tight = false` paths never pay for them.
+    acc::Union{Nothing, C3}
+    acc2::Union{Nothing, C3}
 end
 
 """
     make_hourglass3(dims::NTuple{3,Int}, ::Type{T}=Float64;
-                    order::Int=12, poly::Int=1,
+                    order::Int=12, poly::Int=1, tight::Bool=true,
                     threading=Auto(), flags=FFTW.MEASURE) -> HourglassFB3
 
 Build the 3-D hourglass filter bank for `dims`-sized volumes.
@@ -90,13 +112,21 @@ nothing but a slightly longer design step).  `poly` is the order `m` of the 1-D
 halfband split polynomial; larger `m` flattens the response near the passband
 centres.  Neither affects perfect reconstruction, which is exact for any choice.
 
+`tight` selects how the three weights become filters.  With `tight = true` (the
+default) the masks are `√W_i`, so the bank is a Parseval frame — analysis
+preserves energy, `Σ_i ‖s_i‖² = ‖x‖²` — and synthesis applies the same masks,
+costing one forward transform per subband plus one inverse.  With
+`tight = false` the masks are the weights themselves, reconstruction is a bare
+sum with no transforms, and the frame-bound ratio is 3.  Perfect reconstruction
+is exact either way.
+
 A complex element type is accepted and produces a plan of the corresponding real
 precision; complex volumes are filtered as two real passes, keeping
 `T(x + i·y) == T(x) + i·T(y)` exact.
 """
 function make_hourglass3(
         dims::NTuple{3, Int}, ::Type{T} = Float64;
-        order::Int = 12, poly::Int = 1,
+        order::Int = 12, poly::Int = 1, tight::Bool = true,
         threading::ThreadingPolicy = Auto(),
         flags::Integer = FFTW.MEASURE
     ) where {T <: AbstractFloat}
@@ -123,7 +153,8 @@ function make_hourglass3(
     spec = fwd * rbuf
     inv = plan_irfft(spec, n1; flags = flags)
     return HourglassFB3{T, typeof(m1), typeof(spec), typeof(fwd), typeof(inv)}(
-        dims, order, poly, m1, m2, fwd, inv, spec, similar(spec), rbuf, nothing, nothing
+        dims, order, poly, tight, m1, m2, fwd, inv, spec, similar(spec), rbuf,
+        nothing, nothing, nothing, nothing
     )
 end
 
@@ -150,6 +181,21 @@ function _complex_scratch!(fb::HourglassFB3{T, A3}) where {T, A3}
     return s2, r2
 end
 
+# Ensure the synthesis accumulator spectra exist; returns them.
+function _synthesis_scratch!(fb::HourglassFB3)
+    a = fb.acc
+    if a === nothing
+        a = similar(fb.spec)
+        fb.acc = a
+    end
+    a2 = fb.acc2
+    if a2 === nothing
+        a2 = similar(fb.spec)
+        fb.acc2 = a2
+    end
+    return a, a2
+end
+
 # Load the real and imaginary parts of `volume` into the two spectra.
 function _load_complex_spectra!(fb::HourglassFB3{T}, volume::AbstractArray{Complex{T}, 3}) where {T}
     spec2, _ = _complex_scratch!(fb)
@@ -166,16 +212,37 @@ make_hourglass3(n1::Int, n2::Int, n3::Int, ::Type{Td} = Float64; kwargs...) wher
 """
     hourglass3_mask(fb::HourglassFB3, i::Int) -> Array{T,3}
 
-The frequency-domain mask of hourglass subband `i` (1, 2 or 3) on the rfft grid.
-Materialising it is only useful for inspection and tests — the transform derives
-mask values on the fly.  The three masks sum to 1 at every frequency.
+The frequency-domain analysis mask of hourglass subband `i` (1, 2 or 3) on the
+rfft grid.  Materialising it is only useful for inspection and tests — the
+transform derives mask values on the fly.
+
+The three masks sum to 1 at every frequency when `fb.tight` is false, and their
+*squares* sum to 1 when it is true.  See [`hourglass3_weight`](@ref) for the
+underlying partition of unity in either case.
 """
 function hourglass3_mask(fb::HourglassFB3{T}, i::Int) where {T}
+    out = hourglass3_weight(fb, i)
+    fb.tight && @. out = _tight_sqrt(out)
+    return out
+end
+
+"""
+    hourglass3_weight(fb::HourglassFB3, i::Int) -> Array{T,3}
+
+The frequency-domain *weight* `W_i` of hourglass subband `i` on the rfft grid,
+before the `tight` normalisation.  The three weights are a partition of unity —
+`Σ_i W_i = 1` at every frequency — for any `order`/`poly`.
+"""
+function hourglass3_weight(fb::HourglassFB3{T}, i::Int) where {T}
     1 <= i <= 3 || throw(ArgumentError("hourglass subband index must be 1, 2 or 3"))
     out = similar(fb.m1)
     @. out = _stage1_weight(fb.m1, i) * _stage2_weight(fb.m2, i)
     return out
 end
+
+# The weights are exact partitions of unity in real arithmetic, but rounding can
+# leave one a few ulps below zero, so the tight normalisation clamps.
+@inline _tight_sqrt(x::T) where {T} = sqrt(max(x, zero(T)))
 
 # Stage weights, written as broadcastable scalar functions of the cached f₀
 # values plus a small integer mode.  `f₁ = 1 - f₀` is what makes the bank a
@@ -271,17 +338,32 @@ end
 # work .= spec .* mask_i, with the mask derived from the two mapping responses.
 function _apply_hourglass_mask!(fb::HourglassFB3, spec::AbstractArray, i::Int)
     work, m1, m2 = fb.work, fb.m1, fb.m2
-    @. work = spec * (_stage1_weight(m1, i) * _stage2_weight(m2, i))
+    if fb.tight
+        @. work = spec * _tight_sqrt(_stage1_weight(m1, i) * _stage2_weight(m2, i))
+    else
+        @. work = spec * (_stage1_weight(m1, i) * _stage2_weight(m2, i))
+    end
     return work
+end
+
+# acc .+= spec .* mask_i — the synthesis counterpart, used only when tight.
+function _accumulate_hourglass_mask!(acc, fb::HourglassFB3, spec::AbstractArray, i::Int)
+    m1, m2 = fb.m1, fb.m2
+    @. acc += spec * _tight_sqrt(_stage1_weight(m1, i) * _stage2_weight(m2, i))
+    return acc
 end
 
 """
     hourglass3_reconstruct(subbands, fb::HourglassFB3) -> volume
 
-Invert [`hourglass3_decompose`](@ref).  The three analysis masks form a partition
-of unity, so the synthesis filters are all 1 and reconstruction is a plain sum —
-perfect reconstruction holds exactly, for any `order`/`poly`, and is not an
-approximation that degrades with filter sharpness.
+Invert [`hourglass3_decompose`](@ref).  Perfect reconstruction holds exactly for
+any `order`/`poly` — it is structural, not an approximation that degrades with
+filter sharpness.
+
+When `fb.tight` is false the synthesis filters are all 1 and this is a plain
+sum, with no transforms.  When it is true the same `√W` masks are applied on the
+way back, so each subband costs a forward transform and the sum is completed by
+one inverse.
 """
 function hourglass3_reconstruct(subbands::NTuple{3, <:AbstractArray{Td, 3}}, fb::HourglassFB3) where {Td}
     out = similar(subbands[1])
@@ -298,7 +380,52 @@ function hourglass3_reconstruct!(
         fb::HourglassFB3
     ) where {Td}
     size(volume) == fb.dims || throw(DimensionMismatch("volume size does not match the plan"))
-    s1, s2, s3 = subbands
-    @. volume = s1 + s2 + s3
+    if !fb.tight
+        s1, s2, s3 = subbands
+        @. volume = s1 + s2 + s3
+        return volume
+    end
+    return _hourglass3_synthesise!(volume, subbands, fb)
+end
+
+function _hourglass3_synthesise!(
+        volume::AbstractArray{T, 3}, subbands, fb::HourglassFB3{T}
+    ) where {T <: AbstractFloat}
+    acc, _ = _synthesis_scratch!(fb)
+    fill!(acc, zero(eltype(acc)))
+    for i in 1:3
+        copyto!(fb.rbuf, subbands[i])
+        mul!(fb.spec, fb.fwd, fb.rbuf)
+        _accumulate_hourglass_mask!(acc, fb, fb.spec, i)
+    end
+    copyto!(fb.work, acc)
+    mul!(fb.rbuf, fb.inv, fb.work)
+    copyto!(volume, fb.rbuf)
+    return volume
+end
+
+function _hourglass3_synthesise!(
+        volume::AbstractArray{Complex{T}, 3}, subbands, fb::HourglassFB3{T}
+    ) where {T <: AbstractFloat}
+    # Real and imaginary parts take the identical real kernel, as everywhere
+    # else in the 3-D stack, so `T(x + i·y) == T(x) + i·T(y)` stays exact.
+    acc, acc2 = _synthesis_scratch!(fb)
+    spec2, rbuf2 = _complex_scratch!(fb)
+    fill!(acc, zero(eltype(acc)))
+    fill!(acc2, zero(eltype(acc2)))
+    for i in 1:3
+        band = subbands[i]
+        @. fb.rbuf = real(band)
+        mul!(fb.spec, fb.fwd, fb.rbuf)
+        _accumulate_hourglass_mask!(acc, fb, fb.spec, i)
+        @. fb.rbuf = imag(band)
+        mul!(spec2, fb.fwd, fb.rbuf)
+        _accumulate_hourglass_mask!(acc2, fb, spec2, i)
+    end
+    copyto!(fb.work, acc)
+    mul!(fb.rbuf, fb.inv, fb.work)
+    copyto!(fb.work, acc2)
+    mul!(rbuf2, fb.inv, fb.work)
+    @. volume = complex(fb.rbuf, rbuf2)
     return volume
 end

@@ -117,6 +117,7 @@ nsdfb_reconstruct
 HourglassFB3
 make_hourglass3
 hourglass3_mask
+hourglass3_weight
 hourglass3_decompose
 hourglass3_decompose!
 hourglass3_reconstruct
@@ -128,6 +129,7 @@ nsdfb3_nsubbands
 nsdfb3_subband_index
 nsdfb3_subband_triple
 nsdfb3_mask
+nsdfb3_weight
 nsdfb3_decompose
 nsdfb3_decompose!
 nsdfb3_reconstruct

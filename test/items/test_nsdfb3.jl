@@ -19,23 +19,58 @@
     @test_throws ArgumentError make_nsdfb3((8, 8, 8), Float64; levels = -1)
 end
 
-@testitem "nsdfb3 — masks are a partition of unity" tags = [:directional] begin
+@testitem "nsdfb3 — weights are a partition of unity" tags = [:directional] begin
     for L in 0:3
         fb = make_nsdfb3((10, 12, 8), Float64; levels = L, order = 6)
-        total = sum(nsdfb3_mask(fb, i) for i in 1:nsdfb3_nsubbands(fb))
+        total = sum(nsdfb3_weight(fb, i) for i in 1:nsdfb3_nsubbands(fb))
         @test maximum(abs, total .- 1) < 1.0e-13
+        # Tight by default, so it is the squares of the masks that sum to 1.
+        squares = sum(nsdfb3_mask(fb, i) .^ 2 for i in 1:nsdfb3_nsubbands(fb))
+        @test maximum(abs, squares .- 1) < 1.0e-13
     end
 end
 
-@testitem "nsdfb3 — wedges of one hourglass sum to that hourglass mask" tags = [:directional] begin
+@testitem "nsdfb3 — tight masks are a Parseval frame" tags = [:directional] begin
+    using Random
+    x = randn(Xoshiro(81), 16, 16, 16)
+    for L in 0:3
+        fb = make_nsdfb3(size(x), Float64; levels = L, order = 6)
+        s = nsdfb3_decompose(x, fb)
+        @test abs(sum(sum(abs2, b) for b in s) / sum(abs2, x) - 1) < 1.0e-12
+        @test maximum(abs, nsdfb3_reconstruct(s, fb) .- x) < 1.0e-12
+    end
+    loose = make_nsdfb3(size(x), Float64; levels = 2, order = 6, tight = false)
+    sl = nsdfb3_decompose(x, loose)
+    @test sum(sum(abs2, b) for b in sl) / sum(abs2, x) < 0.9
+    @test maximum(abs, nsdfb3_reconstruct(sl, loose) .- x) < 1.0e-12
+end
+
+@testitem "nsdfb3 — masks are even in frequency" tags = [:directional] begin
+    # A wedge must give the same value to ω and -ω, or the masked spectrum is
+    # not Hermitian and the real subband loses information. On the DFT grid the
+    # trap is that an even-length axis fixes its Nyquist bin under ω -> -ω.
+    n = 12
+    fb = make_nsdfb3((n, n, n), Float64; levels = 2, order = 6)
+    neg(i) = mod(1 - i, n) + 1
+    for idx in 1:nsdfb3_nsubbands(fb)
+        m = nsdfb3_mask(fb, idx)
+        # On the two self-conjugate planes of the rfft grid the mask has to be
+        # even in the remaining two axes on its own.
+        for i in (1, n ÷ 2 + 1), j in 1:n, k in 1:n
+            @test m[i, j, k] ≈ m[i, neg(j), neg(k)] atol = 1.0e-13
+        end
+    end
+end
+
+@testitem "nsdfb3 — wedges of one hourglass sum to that hourglass weight" tags = [:directional] begin
     fb = make_nsdfb3((12, 12, 12), Float64; levels = 3, order = 6)
     na, nb = 1 << fb.levels[1], 1 << fb.levels[2]
     for i in 1:3
         acc = sum(
-            nsdfb3_mask(fb, nsdfb3_subband_index(fb, i, p, q))
+            nsdfb3_weight(fb, nsdfb3_subband_index(fb, i, p, q))
                 for p in 1:na, q in 1:nb
         )
-        @test maximum(abs, acc .- hourglass3_mask(fb.fb, i)) < 1.0e-13
+        @test maximum(abs, acc .- hourglass3_weight(fb.fb, i)) < 1.0e-13
     end
 end
 

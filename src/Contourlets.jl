@@ -108,10 +108,10 @@ export
     qfb_decompose, qfb_decompose!, qfb_reconstruct, qfb_reconstruct!,
     dfb_decompose, dfb_decompose!, dfb_reconstruct, dfb_reconstruct!, dfb_subband_sizes,
     nsdfb_decompose, nsdfb_reconstruct,
-    HourglassFB3, make_hourglass3, hourglass3_mask,
+    HourglassFB3, make_hourglass3, hourglass3_mask, hourglass3_weight,
     hourglass3_decompose, hourglass3_decompose!,
     hourglass3_reconstruct, hourglass3_reconstruct!,
-    NSDFB3, make_nsdfb3, nsdfb3_sharing, nsdfb3_nsubbands, nsdfb3_subband_index, nsdfb3_subband_triple, nsdfb3_mask,
+    NSDFB3, make_nsdfb3, nsdfb3_sharing, nsdfb3_nsubbands, nsdfb3_subband_index, nsdfb3_subband_triple, nsdfb3_mask, nsdfb3_weight,
     nsdfb3_decompose, nsdfb3_decompose!,
     nsdfb3_reconstruct, nsdfb3_reconstruct!,
 

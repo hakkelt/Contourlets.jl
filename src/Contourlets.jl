@@ -34,6 +34,7 @@ include("types.jl")
 include("filters/cdf97.jl")
 include("filters/q2345.jl")
 include("filters/filter_utils.jl")
+include("filters/bernstein.jl")
 
 # ── DSP primitives ────────────────────────────────────────────────────────────
 include("primitives/conv2d.jl")
@@ -52,6 +53,7 @@ include("pyramid/nonsubsampled_pyramid3.jl")
 include("directional/quincunx_fb.jl")
 include("directional/dfb.jl")
 include("directional/nsdfb.jl")
+include("directional/hourglass3.jl")
 
 # ── Workspace ─────────────────────────────────────────────────────────────────
 include("workspace.jl")
@@ -92,6 +94,9 @@ export
     qfb_decompose, qfb_decompose!, qfb_reconstruct, qfb_reconstruct!,
     dfb_decompose, dfb_decompose!, dfb_reconstruct, dfb_reconstruct!, dfb_subband_sizes,
     nsdfb_decompose, nsdfb_reconstruct,
+    HourglassFB3, make_hourglass3, hourglass3_mask,
+    hourglass3_decompose, hourglass3_decompose!,
+    hourglass3_reconstruct, hourglass3_reconstruct!,
 
     # Top-level transforms
     ct_forward, ct_forward!, ct_inverse, ct_inverse!,

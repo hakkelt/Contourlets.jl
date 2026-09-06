@@ -39,22 +39,28 @@ Preallocated FFTW plans and buffers for [`conv3d_sep_fft!`](@ref) on volumes of
 one fixed size and real element type `T`.  Build it with
 [`make_conv3d_fft_plan`](@ref) and reuse it across scales and iterations.
 """
-mutable struct Conv3DFFTPlan{T <: AbstractFloat, Pf, Pi}
+mutable struct Conv3DFFTPlan{
+        T <: AbstractFloat, A3 <: AbstractArray{T, 3},
+        C3 <: AbstractArray{Complex{T}, 3}, Pf, Pi,
+    }
     const dims::NTuple{3, Int}
     const fwd::Pf
     const inv::Pi
-    const freq::Array{Complex{T}, 3}   # rfft-sized spectrum of the volume
-    const ker::Array{T, 3}             # real scratch holding a copy of the input
-    const w1::Vector{Complex{T}}       # rfft of the axis-1 circular kernel
-    const w2::Vector{Complex{T}}       # fft  of the axis-2 circular kernel
-    const w3::Vector{Complex{T}}       # fft  of the axis-3 circular kernel
-    const kbuf1::Vector{T}
+    const freq::C3                     # rfft-sized spectrum of the volume
+    const ker::A3                      # real scratch holding a copy of the input
+    # Per-axis transfer functions, kept as 3-D arrays with singleton axes so the
+    # frequency-domain multiply is a plain broadcast — no scalar indexing, so
+    # the plan works on GPU arrays too.
+    const w1::C3                       # rfft of the axis-1 circular kernel
+    const w2::C3                       # fft  of the axis-2 circular kernel
+    const w3::C3                       # fft  of the axis-3 circular kernel
+    const kbuf1::Vector{T}             # host-side kernel scratch (length n, cheap)
     const kbuf2::Vector{T}
     const kbuf3::Vector{T}
     # Extra real buffer holding the filtered real part while the imaginary part
     # is transformed.  Allocated on first complex use so a real-only workload
     # never pays for it (64 MB at 256³ Float32).
-    aux::Union{Nothing, Array{T, 3}}
+    aux::Union{Nothing, A3}
 end
 
 """
@@ -82,11 +88,11 @@ function make_conv3d_fft_plan(
     fwd = plan_rfft(buf; flags = flags)
     spec = fwd * buf
     inv = plan_irfft(spec, n1; flags = flags)
-    return Conv3DFFTPlan{T, typeof(fwd), typeof(inv)}(
-        dims, fwd, inv, spec, buf,
-        Vector{Complex{T}}(undef, n1 ÷ 2 + 1),
-        Vector{Complex{T}}(undef, n2),
-        Vector{Complex{T}}(undef, n3),
+    w1 = Array{Complex{T}, 3}(undef, n1 ÷ 2 + 1, 1, 1)
+    w2 = Array{Complex{T}, 3}(undef, 1, n2, 1)
+    w3 = Array{Complex{T}, 3}(undef, 1, 1, n3)
+    return Conv3DFFTPlan{T, typeof(buf), typeof(spec), typeof(fwd), typeof(inv)}(
+        dims, fwd, inv, spec, buf, w1, w2, w3,
         Vector{T}(undef, n1), Vector{T}(undef, n2), Vector{T}(undef, n3),
         nothing,
     )
@@ -98,7 +104,7 @@ function make_conv3d_fft_plan(
         dims::NTuple{3, Int}, ::Type{Complex{T}}; kwargs...
     ) where {T <: AbstractFloat}
     plan = make_conv3d_fft_plan(dims, T; kwargs...)
-    plan.aux = Array{T, 3}(undef, dims)
+    plan.aux = similar(plan.ker)
     return plan
 end
 
@@ -163,27 +169,21 @@ function conv3d_sep_fft!(
 
     aux = plan.aux
     if aux === nothing
-        aux = Array{T, 3}(undef, plan.dims)
+        aux = similar(plan.ker)
         plan.aux = aux
     end
 
     # Real part first; park the result in `aux` while the imaginary part goes
     # through the same kernel.  Identical arithmetic on both halves is what makes
     # the real/complex agreement exact rather than merely close.
-    @inbounds @simd for i in eachindex(plan.ker, src)
-        plan.ker[i] = real(src[i])
-    end
+    @. plan.ker = real(src)
     _apply_freq_filter!(plan)
     copyto!(aux, plan.ker)
 
-    @inbounds @simd for i in eachindex(plan.ker, src)
-        plan.ker[i] = imag(src[i])
-    end
+    @. plan.ker = imag(src)
     _apply_freq_filter!(plan)
 
-    @inbounds @simd for i in eachindex(dst, plan.ker)
-        dst[i] = Complex{T}(aux[i], plan.ker[i])
-    end
+    @. dst = complex(aux, plan.ker)
     return dst
 end
 
@@ -202,6 +202,8 @@ function _build_kernel_spectra!(
     _circular_kernel!(plan.kbuf1, h1, n1)
     _circular_kernel!(plan.kbuf2, h2, n2)
     _circular_kernel!(plan.kbuf3, h3, n3)
+    # The 1-D transforms are length-n and stay on the host; only the results are
+    # copied into the (possibly device-resident) transfer-function arrays.
     copyto!(plan.w1, rfft(plan.kbuf1))
     copyto!(plan.w2, fft(plan.kbuf2))
     copyto!(plan.w3, fft(plan.kbuf3))
@@ -210,21 +212,11 @@ end
 
 # Filter the real volume sitting in `plan.ker` in place, using the kernel spectra
 # built by `_build_kernel_spectra!`.
-function _apply_freq_filter!(plan::Conv3DFFTPlan{T}) where {T}
-    _, n2, n3 = plan.dims
+function _apply_freq_filter!(plan::Conv3DFFTPlan)
     mul!(plan.freq, plan.fwd, plan.ker)
-    F = plan.freq
     w1, w2, w3 = plan.w1, plan.w2, plan.w3
-    @inbounds for k in 1:n3
-        wk = w3[k]
-        for j in 1:n2
-            wjk = w2[j] * wk
-            @simd for i in axes(F, 1)
-                F[i, j, k] *= w1[i] * wjk
-            end
-        end
-    end
-    mul!(plan.ker, plan.inv, F)
+    @. plan.freq *= w1 * w2 * w3
+    mul!(plan.ker, plan.inv, plan.freq)
     return plan
 end
 

@@ -302,6 +302,19 @@ output.
   `Array(·)` / `Adapt.adapt(Array, coeffs)` to bring them back. `ContourletsCUDAExt`
   adds CUDA graph capture for the workspace paths. Load the `julia-gpu-ext` skill
   before touching any file under `ext/`.
+- **3-D on GPU needs no kernels.** The 3-D transforms are FFT plus a pointwise
+  mask, and every mask is stored as *broadcastable factors* — the mapping
+  responses and wedge planes are 3-D arrays with singleton axes where they do
+  not depend on a frequency — so mask application, the complex real/imaginary
+  split, and the pyramid's frequency multiply are all plain broadcasts. Keep it
+  that way: introducing scalar indexing into `_fill_mask!`,
+  `_apply_hourglass_mask!` or `_apply_freq_filter!` silently breaks the device
+  path. `ext/ContourletsGPUExt/nsct3_gpu.jl` therefore contains only
+  `Adapt.adapt_structure` methods, which move the data and replan the FFTs
+  (plans cannot be adapted). A workspace adapt moves the shared hourglass
+  response **once**, not once per scale. JLArrays is excluded from the 3-D GPU
+  tests: it has no FFT implementation, so `plan_rfft` falls back to a
+  scalar-indexing generic. CUDA and OpenCL are verified.
 - **Hybrid Threading Architecture** — real data (`Float32`/`Float64`) uses
   `LoopVectorization.@turbo` (SIMD, single thread); complex data uses
   `Polyester.@batch` (multi-core, near-zero spawn overhead). Public API exposes

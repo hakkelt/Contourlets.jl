@@ -39,12 +39,14 @@
 3-D nonsubsampled directional filter bank: [`HourglassFB3`](@ref) followed by a
 wedge refinement of each hourglass.  Build with [`make_nsdfb3`](@ref).
 """
-struct NSDFB3{T <: AbstractFloat, FB <: HourglassFB3{T}}
+struct NSDFB3{T <: AbstractFloat, A3 <: AbstractArray{T, 3}, FB <: HourglassFB3{T}}
     fb::FB
     levels::NTuple{2, Int}          # (l_a, l_b) refinement levels per hourglass
-    # Wedge masks, `[hourglass][which plane][wedge]`, each a matrix over
-    # (reference axis, transverse axis) of the folded DFT grid.
-    wedges::NTuple{3, NTuple{2, Vector{Matrix{T}}}}
+    # Wedge masks, `[hourglass][which plane][wedge]`.  Each depends on only two
+    # frequency axes, and is stored as a 3-D array with a singleton on the third
+    # so a subband mask is a plain broadcast — no scalar indexing, so the bank
+    # also runs on GPU arrays.  The storage is still matrix-sized.
+    wedges::NTuple{3, NTuple{2, Vector{A3}}}
 end
 
 """
@@ -94,7 +96,7 @@ function nsdfb3_sharing(
     transition >= 0 || throw(ArgumentError("transition must be ≥ 0"))
     la, lb = cld(levels, 2), fld(levels, 2)
     wedges = ntuple(i -> _wedge_masks(fb, i, (la, lb), poly, T(transition)), 3)
-    return NSDFB3{T, typeof(fb)}(fb, (la, lb), wedges)
+    return NSDFB3{T, typeof(wedges[1][1][1]), typeof(fb)}(fb, (la, lb), wedges)
 end
 
 function make_nsdfb3(dims::NTuple{3, Int}, ::Type{Complex{T}}; kwargs...) where {T <: AbstractFloat}
@@ -143,8 +145,14 @@ function _wedge_masks_plane(
     wref = _folded_frequencies(T, n[ref]; half = ref == 1)
     wtr = _folded_frequencies(T, n[tr]; half = tr == 1)
     nw = 1 << l
-    masks = [Matrix{T}(undef, length(wref), length(wtr)) for _ in 1:nw]
-    l == 0 && (fill!(masks[1], one(T)); return masks)
+    # Oriented 3-D shape: full length on the reference and transverse axes,
+    # singleton on the remaining one.
+    shape = ntuple(d -> d == ref ? length(wref) : (d == tr ? length(wtr) : 1), 3)
+    flat = [Matrix{T}(undef, length(wref), length(wtr)) for _ in 1:nw]
+    if l == 0
+        fill!(flat[1], one(T))
+        return [_orient(flat[1], ref, tr, shape)]
+    end
 
     delta = T(2) / nw
     width = transition * delta
@@ -157,11 +165,22 @@ function _wedge_masks_plane(
         prev = one(T)
         for k in 1:nw
             cur = k == nw ? zero(T) : _soft_step(s, -one(T) + k * delta, width, poly)
-            masks[k][p, q] = prev - cur
+            flat[k][p, q] = prev - cur
             prev = cur
         end
     end
-    return masks
+    return [_orient(m, ref, tr, shape) for m in flat]
+end
+
+# Lay a matrix indexed (reference axis, transverse axis) into a 3-D array whose
+# non-singleton axes are `ref` and `tr`, ready to broadcast against a full mask.
+function _orient(m::Matrix{T}, ref::Int, tr::Int, shape::NTuple{3, Int}) where {T}
+    out = Array{T, 3}(undef, shape)
+    @inbounds for idx in CartesianIndices(out)
+        t = Tuple(idx)
+        out[idx] = m[t[ref], t[tr]]
+    end
+    return out
 end
 
 """
@@ -224,16 +243,7 @@ function _fill_mask!(out::AbstractArray{T, 3}, fb::NSDFB3{T}, i::Int, p::Int, q:
     hg = fb.fb
     wa = fb.wedges[i][1][p]
     wb = fb.wedges[i][2][q]
-    a, b = _transverse_axes(i)
-    @inbounds for k in axes(out, 3), j in axes(out, 2)
-        w2 = _stage2_weight(hg.m2[j, k], i)
-        for pp in axes(out, 1)
-            ii = (pp, j, k)
-            va = wa[ii[i], ii[a]]
-            vb = wb[ii[i], ii[b]]
-            out[pp, j, k] = _stage1_weight(hg.m1[pp, j, k], i) * w2 * va * vb
-        end
-    end
+    @. out = _stage1_weight(hg.m1, i) * _stage2_weight(hg.m2, i) * wa * wb
     return out
 end
 
@@ -247,7 +257,7 @@ Memory warning: at 256³ `Float32` a single subband is 64 MB, so `levels = 3`
 subbands one at a time instead.
 """
 function nsdfb3_decompose(volume::AbstractArray{Td, 3}, fb::NSDFB3) where {Td}
-    out = [Array{Td, 3}(undef, fb.fb.dims) for _ in 1:nsdfb3_nsubbands(fb)]
+    out = [similar(volume) for _ in 1:nsdfb3_nsubbands(fb)]
     nsdfb3_decompose!(out, volume, fb)
     return out
 end
@@ -314,13 +324,11 @@ function nsdfb3_decompose(
     # complex scratch volume, not one real volume per subband.
     _load_complex_spectra!(hg, volume)
     spec2, rbuf2 = _complex_scratch!(hg)
-    tmp = Array{Complex{T}, 3}(undef, hg.dims)
+    tmp = similar(volume)
     _walk_subbands(fb) do idx, mask
         _mask_and_invert!(hg, hg.spec, mask, hg.rbuf)
         _mask_and_invert!(hg, spec2, mask, rbuf2)
-        @inbounds @simd for t in eachindex(tmp, hg.rbuf)
-            tmp[t] = Complex{T}(hg.rbuf[t], rbuf2[t])
-        end
+        @. tmp = complex(hg.rbuf, rbuf2)
         f(idx, tmp)
     end
     return nothing
@@ -338,9 +346,9 @@ function _stream_subbands(g, fb::NSDFB3)
 end
 
 # Iterate the subband masks in index order, reusing one mask buffer.
-function _walk_subbands(g, fb::NSDFB3{T}) where {T}
+function _walk_subbands(g, fb::NSDFB3)
     na, nb = 1 << fb.levels[1], 1 << fb.levels[2]
-    mask = Array{T, 3}(undef, size(fb.fb.m1))
+    mask = similar(fb.fb.m1)
     for i in 1:3, p in 1:na, q in 1:nb
         _fill_mask!(mask, fb, i, p, q)
         g(nsdfb3_subband_index(fb, i, p, q), mask)
@@ -349,9 +357,7 @@ function _walk_subbands(g, fb::NSDFB3{T}) where {T}
 end
 
 function _mask_and_invert!(hg::HourglassFB3, spec, mask, dst)
-    @inbounds for t in eachindex(hg.work, spec, mask)
-        hg.work[t] = spec[t] * mask[t]
-    end
+    @. hg.work = spec * mask
     mul!(dst, hg.inv, hg.work)
     return dst
 end

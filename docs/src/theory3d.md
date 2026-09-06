@@ -153,6 +153,31 @@ Because the directional bank depends only on the volume size and never on the
 scale, a workspace plans the hourglass mapping response once and shares it
 across every scale, with only the (matrix-sized) wedge masks differing.
 
+## Running on a GPU
+
+The 3-D stack needs no device kernels.  Both transforms are FFT plus a pointwise
+mask, and every mask is stored as broadcastable factors — the mapping responses
+and wedge planes are 3-D arrays with singleton axes where they do not depend on
+a frequency — so applying a mask, splitting a complex volume into real and
+imaginary halves, and the pyramid's frequency-domain multiply are all plain
+broadcasts.  Moving a plan to the device is therefore just moving its arrays and
+replanning the transforms:
+
+```julia
+using CUDA, Contourlets
+using CUDA: CuArray
+import Adapt
+
+params = ContourletParams3(J = 2, L_array = [2, 2])
+ws = Adapt.adapt(CuArray, make_nsct3_workspace(params, (128, 128, 128), Float32))
+c  = nsct3_forward(CuArray(vol), params; workspace = ws)
+```
+
+A workspace adapt moves the shared hourglass response once, not once per scale.
+Verified against the CPU path on CUDA and OpenCL.  The decimated surfacelet
+transform is CPU-only for now: its support-box extraction is an index gather,
+not a broadcast.
+
 ## Surfacelet transform (decimated)
 
 The NSCT3 buys exact shift invariance with redundancy.  The surfacelet transform

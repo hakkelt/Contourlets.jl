@@ -19,15 +19,18 @@ Build with [`make_nsct3_workspace`](@ref) and pass it to `nsct3_forward` /
 `nsct3_inverse` to keep repeated calls out of the allocator — the pattern
 iterative reconstruction algorithms need.
 """
-struct NSCT3Workspace{Td <: Number, T <: AbstractFloat, FB, P}
+struct NSCT3Workspace{
+        Td <: Number, T <: AbstractFloat, B <: NSDFB3{T}, P,
+        A3 <: AbstractArray{Td, 3},
+    }
     dims::NTuple{3, Int}
-    banks::Vector{NSDFB3{T, FB}}     # one per scale, sharing one hourglass bank
+    banks::Vector{B}                 # one per scale, sharing one hourglass bank
     conv::P                          # Conv3DFFTPlan for the pyramid stage
-    input::Array{Td, 3}              # running input of the pyramid cascade
-    coarse::Array{Td, 3}
-    bandpass::Array{Td, 3}
-    tmp::Array{Td, 3}
-    tmp2::Array{Td, 3}
+    input::A3                        # running input of the pyramid cascade
+    coarse::A3
+    bandpass::A3
+    tmp::A3
+    tmp2::A3
 end
 
 Base.eltype(::NSCT3Workspace{Td}) where {Td} = Td
@@ -58,7 +61,7 @@ function make_nsct3_workspace(
     ]
     conv = make_conv3d_fft_plan(dims, Td; threading = threading, flags = flags)
     bufs = ntuple(_ -> Array{Td, 3}(undef, dims), 5)
-    return NSCT3Workspace{Td, T, typeof(fb), typeof(conv)}(
+    return NSCT3Workspace{Td, T, eltype(banks), typeof(conv), typeof(bufs[1])}(
         dims, banks, conv, bufs[1], bufs[2], bufs[3], bufs[4], bufs[5]
     )
 end
@@ -109,8 +112,8 @@ function nsct3_forward(
         volume::AbstractArray{<:Number, 3}, params::ContourletParams3;
         workspace::Union{NSCT3Workspace, Nothing} = nothing
     )
-    Td = _data_eltype(volume)
-    subbands = [Vector{Array{Td, 3}}(undef, nsct3_nsubbands(params, j)) for j in 1:params.J]
+    A = typeof(similar(volume))
+    subbands = [Vector{A}(undef, nsct3_nsubbands(params, j)) for j in 1:params.J]
     coarse = nsct3_forward(volume, params; workspace = workspace) do j, k, band
         subbands[j][k] = copy(band)
     end

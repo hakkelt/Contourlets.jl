@@ -47,26 +47,33 @@ Holds the two mapping-kernel frequency responses (`m1` on the 3-D rfft grid,
 derived pointwise on the fly — a third of the memory, and the polynomial
 evaluation is negligible next to the transforms.
 """
-mutable struct HourglassFB3{T <: AbstractFloat, Pf, Pi}
+mutable struct HourglassFB3{
+        T <: AbstractFloat, A3 <: AbstractArray{T, 3},
+        C3 <: AbstractArray{Complex{T}, 3}, Pf, Pi,
+    }
     const dims::NTuple{3, Int}
     const order::Int              # Bernstein order N of the mapping kernels
     const poly::Int               # order m of the 1-D halfband split polynomial
     # `f₀` of the two mapping responses, cached rather than the responses
     # themselves: the split polynomial is otherwise re-evaluated per voxel for
     # every subband, and a multiscale transform asks for dozens of them.
-    const m1::Array{T, 3}         # f₀(M₁) on the rfft grid
-    const m2::Matrix{T}           # f₀(M₂) on the (ω₂, ω₃) grid
+    #
+    # Both are 3-D arrays with singleton axes where they do not depend on a
+    # frequency, so every mask is a plain broadcast — no scalar indexing, which
+    # is what lets the whole bank run on a GPU array.
+    const m1::A3                  # f₀(M₁) on the rfft grid, (n₁÷2+1, n₂, n₃)
+    const m2::A3                  # f₀(M₂) on the (ω₂, ω₃) grid, (1, n₂, n₃)
     const fwd::Pf
     const inv::Pi
-    const spec::Array{Complex{T}, 3}   # spectrum of the input, preserved across subbands
-    const work::Array{Complex{T}, 3}   # scratch consumed by the inverse plan
-    const rbuf::Array{T, 3}
+    const spec::C3                # spectrum of the input, preserved across subbands
+    const work::C3                # scratch consumed by the inverse plan
+    const rbuf::A3
     # Second spectrum and output buffer, for the imaginary half of a complex
     # volume.  Allocated on first complex use so real-only workloads never pay
     # for them.  Two spectra cost about two real volumes — far less than holding
     # every subband's real part, which is what a two-pass scheme would need.
-    spec2::Union{Nothing, Array{Complex{T}, 3}}
-    rbuf2::Union{Nothing, Array{T, 3}}
+    spec2::Union{Nothing, C3}
+    rbuf2::Union{Nothing, A3}
 end
 
 """
@@ -106,15 +113,16 @@ function make_hourglass3(
     map!(m -> halfband_split(m, poly), m1, m1)
 
     # Stage 2 — split P₂ from P₃ with a 2-D kernel on the (ω₂, ω₃) plane.
-    m2 = mapping_response(mapping_coefficients(order, 2, (1,)), (b2, b3))
-    map!(m -> halfband_split(m, poly), m2, m2)
+    m2f = mapping_response(mapping_coefficients(order, 2, (1,)), (b2, b3))
+    map!(m -> halfband_split(m, poly), m2f, m2f)
+    m2 = reshape(m2f, 1, n2, n3)
 
     FFTW.set_num_threads(_fftw_threads(threading))
     rbuf = zeros(T, n1, n2, n3)
     fwd = plan_rfft(rbuf; flags = flags)
     spec = fwd * rbuf
     inv = plan_irfft(spec, n1; flags = flags)
-    return HourglassFB3{T, typeof(fwd), typeof(inv)}(
+    return HourglassFB3{T, typeof(m1), typeof(spec), typeof(fwd), typeof(inv)}(
         dims, order, poly, m1, m2, fwd, inv, spec, similar(spec), rbuf, nothing, nothing
     )
 end
@@ -128,7 +136,7 @@ function make_hourglass3(
 end
 
 # Ensure the imaginary-half buffers exist; returns them.
-function _complex_scratch!(fb::HourglassFB3{T}) where {T}
+function _complex_scratch!(fb::HourglassFB3{T, A3}) where {T, A3}
     s2 = fb.spec2
     if s2 === nothing
         s2 = similar(fb.spec)
@@ -136,7 +144,7 @@ function _complex_scratch!(fb::HourglassFB3{T}) where {T}
     end
     r2 = fb.rbuf2
     if r2 === nothing
-        r2 = Array{T, 3}(undef, fb.dims)
+        r2 = similar(fb.rbuf)
         fb.rbuf2 = r2
     end
     return s2, r2
@@ -145,13 +153,9 @@ end
 # Load the real and imaginary parts of `volume` into the two spectra.
 function _load_complex_spectra!(fb::HourglassFB3{T}, volume::AbstractArray{Complex{T}, 3}) where {T}
     spec2, _ = _complex_scratch!(fb)
-    @inbounds @simd for i in eachindex(fb.rbuf, volume)
-        fb.rbuf[i] = real(volume[i])
-    end
+    @. fb.rbuf = real(volume)
     mul!(fb.spec, fb.fwd, fb.rbuf)
-    @inbounds @simd for i in eachindex(fb.rbuf, volume)
-        fb.rbuf[i] = imag(volume[i])
-    end
+    @. fb.rbuf = imag(volume)
     mul!(spec2, fb.fwd, fb.rbuf)
     return fb
 end
@@ -169,21 +173,19 @@ mask values on the fly.  The three masks sum to 1 at every frequency.
 function hourglass3_mask(fb::HourglassFB3{T}, i::Int) where {T}
     1 <= i <= 3 || throw(ArgumentError("hourglass subband index must be 1, 2 or 3"))
     out = similar(fb.m1)
-    @inbounds for k in axes(out, 3), j in axes(out, 2)
-        w2 = _stage2_weight(fb.m2[j, k], i)
-        @simd for p in axes(out, 1)
-            out[p, j, k] = _stage1_weight(fb.m1[p, j, k], i) * w2
-        end
-    end
+    @. out = _stage1_weight(fb.m1, i) * _stage2_weight(fb.m2, i)
     return out
 end
 
-# Stage-1 weight for subband `i`, from the cached f₀(M₁): f₀ for i == 1, f₁
-# otherwise.  `f₁ = 1 - f₀` is what makes the bank a partition of unity.
+# Stage weights, written as broadcastable scalar functions of the cached f₀
+# values plus a small integer mode.  `f₁ = 1 - f₀` is what makes the bank a
+# partition of unity.
+#
+# Stage 1: f₀(M₁) for subband 1, f₁(M₁) otherwise.
 @inline _stage1_weight(f0::T, i::Int) where {T} = i == 1 ? f0 : one(T) - f0
 
-# Stage-2 weight for subband `i`: 1 for i == 1 (stage 2 does not touch P₁),
-# f₀(M₂) for i == 2 and f₁(M₂) for i == 3.
+# Stage 2: 1 for subband 1 (stage 2 does not touch P₁), f₀(M₂) for 2, f₁(M₂)
+# for 3.
 @inline function _stage2_weight(f0::T, i::Int) where {T}
     i == 1 && return one(T)
     return i == 2 ? f0 : one(T) - f0
@@ -213,14 +215,14 @@ true
 ```
 """
 function hourglass3_decompose(volume::AbstractArray{T, 3}, fb::HourglassFB3{T}) where {T <: AbstractFloat}
-    out = ntuple(_ -> Array{T, 3}(undef, fb.dims), 3)
+    out = ntuple(_ -> similar(volume), 3)
     return hourglass3_decompose!(out, volume, fb)
 end
 
 function hourglass3_decompose(
         volume::AbstractArray{Complex{T}, 3}, fb::HourglassFB3{T}
     ) where {T <: AbstractFloat}
-    out = ntuple(_ -> Array{Complex{T}, 3}(undef, fb.dims), 3)
+    out = ntuple(_ -> similar(volume), 3)
     return hourglass3_decompose!(out, volume, fb)
 end
 
@@ -261,22 +263,15 @@ function hourglass3_decompose!(
         mul!(fb.rbuf, fb.inv, fb.work)
         _apply_hourglass_mask!(fb, spec2, i)
         mul!(rbuf2, fb.inv, fb.work)
-        @inbounds @simd for p in eachindex(dst[i], fb.rbuf)
-            dst[i][p] = Complex{T}(fb.rbuf[p], rbuf2[p])
-        end
+        @. dst[i] = complex(fb.rbuf, rbuf2)
     end
     return dst
 end
 
 # work .= spec .* mask_i, with the mask derived from the two mapping responses.
-function _apply_hourglass_mask!(fb::HourglassFB3{T}, spec::AbstractArray, i::Int) where {T}
+function _apply_hourglass_mask!(fb::HourglassFB3, spec::AbstractArray, i::Int)
     work, m1, m2 = fb.work, fb.m1, fb.m2
-    @inbounds for k in axes(work, 3), j in axes(work, 2)
-        w2 = _stage2_weight(m2[j, k], i)
-        @simd for p in axes(work, 1)
-            work[p, j, k] = spec[p, j, k] * (_stage1_weight(m1[p, j, k], i) * w2)
-        end
-    end
+    @. work = spec * (_stage1_weight(m1, i) * _stage2_weight(m2, i))
     return work
 end
 

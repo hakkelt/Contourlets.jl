@@ -221,14 +221,13 @@ function _fill_mask!(out::AbstractArray{T, 3}, fb::NSDFB3{T}, i::Int, p::Int, q:
     wa = fb.wedges[i][1][p]
     wb = fb.wedges[i][2][q]
     a, b = _transverse_axes(i)
-    poly = hg.poly
     @inbounds for k in axes(out, 3), j in axes(out, 2)
-        w2 = _stage2_weight(hg.m2[j, k], poly, i)
+        w2 = _stage2_weight(hg.m2[j, k], i)
         for pp in axes(out, 1)
             ii = (pp, j, k)
             va = wa[ii[i], ii[a]]
             vb = wb[ii[i], ii[b]]
-            out[pp, j, k] = _stage1_weight(hg.m1[pp, j, k], poly, i) * w2 * va * vb
+            out[pp, j, k] = _stage1_weight(hg.m1[pp, j, k], i) * w2 * va * vb
         end
     end
     return out

@@ -51,8 +51,11 @@ mutable struct HourglassFB3{T <: AbstractFloat, Pf, Pi}
     const dims::NTuple{3, Int}
     const order::Int              # Bernstein order N of the mapping kernels
     const poly::Int               # order m of the 1-D halfband split polynomial
-    const m1::Array{T, 3}         # 3-D mapping response, rfft grid
-    const m2::Matrix{T}           # 2-D mapping response on (ω₂, ω₃)
+    # `f₀` of the two mapping responses, cached rather than the responses
+    # themselves: the split polynomial is otherwise re-evaluated per voxel for
+    # every subband, and a multiscale transform asks for dozens of them.
+    const m1::Array{T, 3}         # f₀(M₁) on the rfft grid
+    const m2::Matrix{T}           # f₀(M₂) on the (ω₂, ω₃) grid
     const fwd::Pf
     const inv::Pi
     const spec::Array{Complex{T}, 3}   # spectrum of the input, preserved across subbands
@@ -100,9 +103,11 @@ function make_hourglass3(
     b2 = bernstein_table(order, dft_frequencies(T, n2))
     b3 = bernstein_table(order, dft_frequencies(T, n3))
     m1 = mapping_response(mapping_coefficients(order, 3, (1,)), (b1, b2, b3))
+    map!(m -> halfband_split(m, poly), m1, m1)
 
     # Stage 2 — split P₂ from P₃ with a 2-D kernel on the (ω₂, ω₃) plane.
     m2 = mapping_response(mapping_coefficients(order, 2, (1,)), (b2, b3))
+    map!(m -> halfband_split(m, poly), m2, m2)
 
     FFTW.set_num_threads(_fftw_threads(threading))
     rbuf = zeros(T, n1, n2, n3)
@@ -165,25 +170,22 @@ function hourglass3_mask(fb::HourglassFB3{T}, i::Int) where {T}
     1 <= i <= 3 || throw(ArgumentError("hourglass subband index must be 1, 2 or 3"))
     out = similar(fb.m1)
     @inbounds for k in axes(out, 3), j in axes(out, 2)
-        w2 = _stage2_weight(fb.m2[j, k], fb.poly, i)
+        w2 = _stage2_weight(fb.m2[j, k], i)
         @simd for p in axes(out, 1)
-            out[p, j, k] = _stage1_weight(fb.m1[p, j, k], fb.poly, i) * w2
+            out[p, j, k] = _stage1_weight(fb.m1[p, j, k], i) * w2
         end
     end
     return out
 end
 
-# Stage-1 weight for subband `i`: f₀(M₁) for i == 1, f₁(M₁) otherwise.
-@inline function _stage1_weight(m::T, poly::Int, i::Int) where {T}
-    f0 = halfband_split(m, poly)
-    return i == 1 ? f0 : one(T) - f0
-end
+# Stage-1 weight for subband `i`, from the cached f₀(M₁): f₀ for i == 1, f₁
+# otherwise.  `f₁ = 1 - f₀` is what makes the bank a partition of unity.
+@inline _stage1_weight(f0::T, i::Int) where {T} = i == 1 ? f0 : one(T) - f0
 
 # Stage-2 weight for subband `i`: 1 for i == 1 (stage 2 does not touch P₁),
 # f₀(M₂) for i == 2 and f₁(M₂) for i == 3.
-@inline function _stage2_weight(m::T, poly::Int, i::Int) where {T}
+@inline function _stage2_weight(f0::T, i::Int) where {T}
     i == 1 && return one(T)
-    f0 = halfband_split(m, poly)
     return i == 2 ? f0 : one(T) - f0
 end
 
@@ -269,11 +271,10 @@ end
 # work .= spec .* mask_i, with the mask derived from the two mapping responses.
 function _apply_hourglass_mask!(fb::HourglassFB3{T}, spec::AbstractArray, i::Int) where {T}
     work, m1, m2 = fb.work, fb.m1, fb.m2
-    poly = fb.poly
     @inbounds for k in axes(work, 3), j in axes(work, 2)
-        w2 = _stage2_weight(m2[j, k], poly, i)
+        w2 = _stage2_weight(m2[j, k], i)
         @simd for p in axes(work, 1)
-            work[p, j, k] = spec[p, j, k] * (_stage1_weight(m1[p, j, k], poly, i) * w2)
+            work[p, j, k] = spec[p, j, k] * (_stage1_weight(m1[p, j, k], i) * w2)
         end
     end
     return work

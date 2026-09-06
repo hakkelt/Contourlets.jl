@@ -38,6 +38,24 @@ for _ in 1:100
 end
 ```
 
+### 3-D volumes
+
+```julia
+vol     = randn(Float32, 128, 128, 128)
+params3 = ContourletParams3(J=2, L_array=[2, 2])   # 12 directional subbands per scale
+ws3     = make_nsct3_workspace(params3, size(vol), Float32)
+
+c3   = nsct3_forward(vol, params3; workspace=ws3)
+rec3 = nsct3_inverse(c3, params3; workspace=ws3)
+@assert maximum(abs, rec3 .- vol) < 1f-4
+
+# Streaming: the form to use at working sizes, where the full coefficient set
+# does not fit — 256³ Float32 with J=3, L=[2,2,3] is 3.1 GB.
+coarse = nsct3_forward(vol, params3; workspace=ws3) do j, k, band
+    # `band` is valid only until this callback returns
+end
+```
+
 ## Package Overview
 
 | Component | Description |
@@ -49,8 +67,12 @@ end
 | [`parabolic_levels`](@ref) | Compute optimal direction counts per scale |
 | [`CDF97`](@ref) | Default CDF 9/7 biorthogonal LP filter pair |
 | [`Q2345`](@ref) | Default "23-45" (Phoong et al. 1995) ladder DFB filter pair |
+| [`ContourletParams3`](@ref) | 3-D counterpart: scales, per-scale `L`, Bernstein order |
+| [`nsct3_forward`](@ref) / [`nsct3_inverse`](@ref) | 3-D NSCT, with streaming forms |
+| [`make_nsct3_workspace`](@ref) | Preallocate 3-D plans and buffers |
+| [`make_nsdfb3`](@ref) | 3-D directional filter bank on its own (`3·2^L` subbands) |
 
-See the [Theory](@ref theory) page for the mathematical background, and the [API Reference](@ref) for the complete public interface.
+See the [Theory](@ref theory) page and [Theory — 3-D](@ref theory3d) for the mathematical background, and the [API Reference](@ref) for the complete public interface.
 
 ## Performance & Threading
 

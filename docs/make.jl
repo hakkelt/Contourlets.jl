@@ -12,11 +12,13 @@ makedocs(;
     pages = [
         "Home" => "index.md",
         "Theory" => "theory.md",
+        "Theory (3-D)" => "theory3d.md",
         "Examples" => [
             "Showcase" => "examples/showcase.md",
             "Contourlet Transform" => "examples/ct_example.md",
             "Nonsubsampled Contourlet Transform" => "examples/nsct_example.md",
             "Approximation & Denoising" => "examples/nla_denoising.md",
+            "3-D NSCT" => "examples/nsct3_example.md",
         ],
         "Comparison with MATLAB" => "comparison.md",
         "API Reference" => "api.md",

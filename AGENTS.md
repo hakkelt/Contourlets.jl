@@ -30,6 +30,21 @@ end
 `nsct_forward`/`nsct_inverse` (and `!` variants) follow the same pattern via
 `make_nsct_workspace`. See "In-place companions" below for the naming contract.
 
+The 3-D transform is a parallel API (`ContourletParams3`, `nsct3_forward`,
+`make_nsct3_workspace`), not a dimensional generalisation — see "3-D stack"
+below. It adds a **streaming** form, because the materialised coefficient set
+does not fit at working sizes:
+
+```julia
+vol    = randn(Float32, 256, 256, 256)
+params = ContourletParams3(J=3, L_array=[2, 2, 3])   # 48 directional subbands
+ws     = make_nsct3_workspace(params, size(vol), Float32)
+
+coarse = nsct3_forward(vol, params; workspace=ws) do j, k, band
+    # `band` is valid only until this returns
+end
+```
+
 ## Quick Start
 
 1. **Read this file** for repository layout and project-specific invariants.
@@ -75,27 +90,35 @@ Contourlets/
 ├── src/                       # Package source (Julia)
 │   ├── Contourlets.jl         # Main module — all exports here
 │   ├── types.jl               # Core types: FilterPair, ContourletParams, …
+│   ├── types3.jl              # 3-D types: ContourletParams3, NSCT3Coefficients
 │   ├── workspace.jl           # ContourletWorkspace + make_workspace
 │   ├── precompile.jl          # PrecompileTools workload
 │   ├── filters/
 │   │   ├── cdf97.jl           # CDF 9/7 LP filter constants
 │   │   ├── q2345.jl           # "23-45" Phoong (pkva) ladder DFB filter constants
+│   │   ├── bernstein.jl       # Bernstein mapping kernels for the 3-D hourglass FB
 │   │   └── filter_utils.jl    # upsample_filter, check_pr_condition
 │   ├── primitives/
 │   │   ├── conv2d.jl          # 2-D separable convolution (direct + FFTW)
+│   │   ├── conv3d.jl          # 3-D separable convolution (direct)
+│   │   ├── conv3d_fft.jl      # 3-D periodic convolution via FFT (auto-selected)
 │   │   ├── sampling.jl        # rect up/downsampling
 │   │   ├── quincunx.jl        # quincunx lattice up/downsampling
 │   │   └── shearing.jl        # shear! / inv_shear!
 │   ├── pyramid/
-│   │   ├── laplacian_pyramid.jl      # lp_decompose / lp_reconstruct
-│   │   └── nonsubsampled_pyramid.jl  # nsp_decompose / nsp_reconstruct
+│   │   ├── laplacian_pyramid.jl       # lp_decompose / lp_reconstruct
+│   │   ├── nonsubsampled_pyramid.jl   # nsp_decompose / nsp_reconstruct
+│   │   └── nonsubsampled_pyramid3.jl  # nsp3_decompose / nsp3_reconstruct
 │   ├── directional/
 │   │   ├── quincunx_fb.jl     # 2-channel quincunx filter bank
 │   │   ├── dfb.jl             # L-level DFB binary tree
-│   │   └── nsdfb.jl           # Non-subsampled DFB
+│   │   ├── nsdfb.jl           # Non-subsampled DFB
+│   │   ├── hourglass3.jl      # 3-D nonsubsampled hourglass FB (3 subbands)
+│   │   └── nsdfb3.jl          # 3-D NSDFB: hourglass + wedges (3·2^L subbands)
 │   └── transforms/
 │       ├── ct.jl              # ct_forward / ct_inverse / ct_forward! / ct_inverse!
-│       └── nsct.jl            # nsct_forward / nsct_inverse / ! variants
+│       ├── nsct.jl            # nsct_forward / nsct_inverse / ! variants
+│       └── nsct3.jl           # nsct3_forward / nsct3_inverse + NSCT3Workspace
 ├── test/
 │   ├── runtests.jl            # TestItemRunner entry point
 │   └── items/
@@ -105,6 +128,10 @@ Contourlets/
 │       ├── test_dfb.jl
 │       ├── test_transforms.jl
 │       ├── test_workspace.jl
+│       ├── test_3d.jl         # conv3d + NSP3, tags :primitives / :pyramid
+│       ├── test_hourglass3.jl # Bernstein kernels + hourglass FB
+│       ├── test_nsdfb3.jl     # 3-D directional filter bank
+│       ├── test_nsct3.jl      # 3-D NSCT, tag :nsct3
 │       ├── test_gpu.jl        # universal GPU tests (GPUEnv + JLArrays), tag :gpu
 │       └── test_quality.jl    # Aqua checks
 ├── benchmark/
@@ -114,10 +141,12 @@ Contourlets/
 │   └── src/
 │       ├── index.md
 │       ├── theory.md
+│       ├── theory3d.md        # 3-D constructions and where they leave the papers
 │       ├── api.md
 │       └── examples/
 │           ├── ct_example.md
-│           └── nsct_example.md
+│           ├── nsct_example.md
+│           └── nsct3_example.md
 ├── .agents/skills/            # Vendor-neutral Julia skills (see table above)
 └── .github/workflows/         # CI.yml, documentation.yml, CompatHelper.yml, TagBot.yml
 ```
@@ -185,7 +214,8 @@ Conventions that are non-obvious or specific to this package's API contract:
 - All tests are self-contained `@testitem` blocks (TestItemRunner): each block
   must import all dependencies except `Contourlets` and `Test` inside the block.
 - Tag taxonomy: `:filters`, `:primitives`, `:pyramid`, `:directional`, `:ct`,
-  `:nsct` (also implies `:ct`), `:quality` (Aqua/JET), `:gpu`.
+  `:nsct` (also implies `:ct`), `:nsct3` (the 3-D transform), `:quality`
+  (Aqua/JET), `:docs`, `:gpu`.
 - Seed every random input (`Random.seed!(42)`); never rely on global RNG state.
 - NSCT shift-invariance is a required property — compare `nsct_forward(x)` with
   `nsct_forward(circshift(x, s))` against `circshift(., s)` (tol `1e-10`).
@@ -234,6 +264,34 @@ output.
 - **No downsampling in NSCT** — all subbands have the same spatial size as the
   input. All NSP/NSDFB filtering uses periodic (circular) convolution, so the
   NSCT is exactly invariant under circular shifts of the input.
+- **3-D stack: parallel types, frequency-domain directional stage.** The 2-D
+  types are pinned to `AbstractMatrix` through the workspace and the GPU
+  extension, and nothing in the directional stage carries over — the quincunx
+  lattice, the shear index remap and the Q2345 ladder are all planar, and Lu &
+  Do prove hourglass partitioning cannot be critically sampled above 2-D. So
+  `ContourletParams3` / `NSCT3Coefficients` / `NSCT3Workspace` are parallel to
+  their 2-D counterparts rather than generalisations. The 3-D directional bank
+  is built as frequency-domain masks (exact for the periodic, nonsubsampled
+  case, and it avoids the FIR truncation the papers need for streaming video);
+  perfect reconstruction is *structural* — the masks are a partition of unity,
+  so synthesis is a plain sum. Consequence worth remembering: **PR alone proves
+  nothing about wedge geometry.** A wrong directional partition still
+  reconstructs perfectly, which is how a 2-D `nsdfb` regression once slipped
+  through. Directional tests must assert the *index* of the subband a plane wave
+  lands in.
+- **3-D periodic filtering goes through the FFT by default.** Periodic separable
+  filtering is circular convolution, so an FFT evaluation is exact, not an
+  approximation, and its cost is independent of tap count — which matters
+  because à trous filters grow as `2^(j-1)` per axis. `conv3d_sep!`
+  auto-selects it (`_conv3d_use_fft`); complex volumes always take it, since the
+  direct kernel has no interior fast path for them. At 64³ Float32 with 33 taps:
+  182 ms direct vs 1.8 ms via FFT.
+- **Complex is two real passes, everywhere in 3-D.** `plan_rfft` is real-only,
+  so a complex volume is filtered as its real part then its imaginary part
+  through the identical kernel. Two real transforms cost about one complex
+  transform, and it keeps `T(x + i·y) == T(x) + i·T(y)` true *bit-for-bit* —
+  which the test suite asserts with `== 0.0`, and which is a free correctness
+  check for code built on top.
 - **GPU = whole transform on the device** — the `ContourletsGPUExt` extension
   runs every stage of CT/NSCT on the device. Pyramid functions are reused
   unchanged (broadcast-based dispatch picks up GPU primitives automatically); both

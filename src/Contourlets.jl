@@ -10,14 +10,22 @@ implemented as a standalone Julia package.
 |----------|-------------|
 | `ct_forward` / `ct_inverse` | Discrete CT (nearly critically sampled) |
 | `nsct_forward` / `nsct_inverse` | NSCT (fully shift-invariant) |
+| `nsct3_forward` / `nsct3_inverse` | 3-D NSCT on volumes, with a streaming form |
 | `ct_forward!` / `ct_inverse!` | In-place CT using a preallocated workspace |
 | `nsct_forward!` / `nsct_inverse!` | In-place NSCT |
 | `make_workspace` | Allocate a reusable `ContourletWorkspace` |
 | `parabolic_levels` | Compute optimal per-scale DFB depth array |
+| `make_nsct3_workspace` | Allocate a reusable `NSCT3Workspace` for volumes |
 
 ### Default filters
 - `CDF97` — CDF 9/7 biorthogonal filter pair for the Laplacian Pyramid stage.
 - `Q2345` — Quincunx biorthogonal filter pair for the DFB stage.
+
+### 3-D
+The 3-D transform is a parallel API rather than a generalisation of the 2-D one:
+the directional stage shares nothing with the quincunx filter bank, and is built
+instead from Bernstein mapping kernels (`make_hourglass3`, `make_nsdfb3`).  See
+the "Theory (3-D)" page.
 """
 module Contourlets
 
@@ -101,7 +109,7 @@ export
     HourglassFB3, make_hourglass3, hourglass3_mask,
     hourglass3_decompose, hourglass3_decompose!,
     hourglass3_reconstruct, hourglass3_reconstruct!,
-    NSDFB3, make_nsdfb3, nsdfb3_sharing, nsdfb3_nsubbands, nsdfb3_subband_index, nsdfb3_mask,
+    NSDFB3, make_nsdfb3, nsdfb3_sharing, nsdfb3_nsubbands, nsdfb3_subband_index, nsdfb3_subband_triple, nsdfb3_mask,
     nsdfb3_decompose, nsdfb3_decompose!,
     nsdfb3_reconstruct, nsdfb3_reconstruct!,
 

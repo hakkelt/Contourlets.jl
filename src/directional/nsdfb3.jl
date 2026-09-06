@@ -188,8 +188,14 @@ function nsdfb3_subband_index(fb::NSDFB3, hourglass::Int, p::Int, q::Int)
     return ((hourglass - 1) * na + (p - 1)) * nb + q
 end
 
-# Inverse of `nsdfb3_subband_index`.
-function _subband_triple(fb::NSDFB3, idx::Int)
+"""
+    nsdfb3_subband_triple(fb::NSDFB3, idx::Int) -> (hourglass, p, q)
+
+Inverse of [`nsdfb3_subband_index`](@ref): which hourglass and which wedge of
+each transverse plane subband `idx` refines.  Use it to interpret a subband
+index as a direction.
+"""
+function nsdfb3_subband_triple(fb::NSDFB3, idx::Int)
     na, nb = 1 << fb.levels[1], 1 << fb.levels[2]
     1 <= idx <= 3 * na * nb || throw(ArgumentError("subband index out of range"))
     z = idx - 1
@@ -207,7 +213,7 @@ inspection and tests; the transform never materialises one.  The masks sum to 1
 over all subbands.
 """
 function nsdfb3_mask(fb::NSDFB3{T}, idx::Int) where {T}
-    i, p, q = _subband_triple(fb, idx)
+    i, p, q = nsdfb3_subband_triple(fb, idx)
     out = similar(fb.fb.m1)
     _fill_mask!(out, fb, i, p, q)
     return out

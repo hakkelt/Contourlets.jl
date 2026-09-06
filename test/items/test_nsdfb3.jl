@@ -8,14 +8,14 @@
         for i in 1:3, p in 1:na, q in 1:nb
             idx = nsdfb3_subband_index(fb, i, p, q)
             push!(seen, idx)
-            @test Contourlets._subband_triple(fb, idx) == (i, p, q)
+            @test nsdfb3_subband_triple(fb, idx) == (i, p, q)
         end
         @test sort(seen) == collect(1:nsdfb3_nsubbands(fb))
     end
     fb = make_nsdfb3((8, 8, 8), Float64; levels = 2, order = 4)
     @test_throws ArgumentError nsdfb3_subband_index(fb, 4, 1, 1)
     @test_throws ArgumentError nsdfb3_subband_index(fb, 1, 99, 1)
-    @test_throws ArgumentError Contourlets._subband_triple(fb, 0)
+    @test_throws ArgumentError nsdfb3_subband_triple(fb, 0)
     @test_throws ArgumentError make_nsdfb3((8, 8, 8), Float64; levels = -1)
 end
 

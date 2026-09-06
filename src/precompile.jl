@@ -4,6 +4,12 @@ using PrecompileTools: @setup_workload, @compile_workload
     img = zeros(Float64, 32, 32)
     img[16, 16] = 1.0
     params = ContourletParams(J = 2, L_array = [1, 2])
+    # 3-D workload: small volume, low Bernstein order, and FFTW.ESTIMATE — a
+    # MEASURE plan would time transforms during precompilation, and the wisdom it
+    # produced would be for a size nobody asked for.
+    vol = zeros(Float64, 8, 8, 8)
+    vol[4, 4, 4] = 1.0
+    params3 = ContourletParams3(J = 1, L_array = [1], order = 4)
     @compile_workload begin
         # Allocating CT / NSCT round trips.
         c = ct_forward(img, params)
@@ -22,5 +28,15 @@ using PrecompileTools: @setup_workload, @compile_workload
         ncoeffs = similar_nsct_coefficients(params, size(img))
         nsct_forward!(ncoeffs, img, params; workspace = nsws)
         nsct_inverse!(rec, ncoeffs, params; workspace = nsws)
+
+        # 3-D: the allocating round trip, the workspace path and the streaming
+        # form, which is the entry point at working sizes.
+        ws3 = make_nsct3_workspace(params3, size(vol), Float64; flags = FFTW.ESTIMATE)
+        c3 = nsct3_forward(vol, params3; workspace = ws3)
+        rec3 = similar(vol)
+        nsct3_inverse!(rec3, c3, params3; workspace = ws3)
+        nsct3_forward(vol, params3; workspace = ws3) do j, k, band
+            sum(band)
+        end
     end
 end

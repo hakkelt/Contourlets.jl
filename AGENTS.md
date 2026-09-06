@@ -134,8 +134,10 @@ Contourlets/
 │       ├── test_nsdfb3.jl     # 3-D directional filter bank
 │       ├── test_nsct3.jl      # 3-D NSCT, tag :nsct3
 │       ├── test_surfacelet3.jl # decimated 3-D transform, tag :surfacelet3
+│       ├── test_surfbox_reference.jl # golden data from SurfBox, tag :directional
 │       ├── test_gpu.jl        # universal GPU tests (GPUEnv + JLArrays), tag :gpu
 │       └── test_quality.jl    # Aqua checks
+│   └── reference/             # SurfBox golden data + MATLAB generator scripts
 ├── benchmark/
 │   └── benchmarks.jl          # BenchmarkTools SUITE
 ├── docs/
@@ -315,6 +317,21 @@ output.
   response **once**, not once per scale. JLArrays is excluded from the 3-D GPU
   tests: it has no FFT implementation, so `plan_rfft` falls back to a
   scalar-indexing generic. CUDA and OpenCL are verified.
+- **The 3-D directional stages are validated against SurfBox.** SurfBox (Lu and
+  Do's reference implementation, MATLAB File Exchange 14485) is available and
+  runs under `module load matlab`. `test/reference/` holds golden data extracted
+  from it plus the MATLAB scripts that regenerate it, and
+  `test/items/test_surfbox_reference.jl` checks this package against it. The
+  agreement is on *geometry*, not coefficients: 94.6% of frequencies pick the
+  same dominant hourglass (every disagreement a near-tie), and across 80 plane
+  waves the wedge labellings are related by a bijection with the reference's
+  choice always this package's top-2. Two known deviations are recorded there
+  and in `docs/src/theory3d.md`: the hourglass bank here is a partition of unity
+  (frame-bound ratio 3) where SurfBox normalises pointwise to an exactly tight
+  frame, and `surfacelet3`'s redundancy grows with the direction count (15.4 at
+  24 subbands, 46.4 at 96) where SurfBox stays flat at 3.93, because
+  axis-aligned support boxes recover the radial but not the directional
+  decimation.
 - **Hybrid Threading Architecture** — real data (`Float32`/`Float64`) uses
   `LoopVectorization.@turbo` (SIMD, single thread); complex data uses
   `Polyester.@batch` (multi-core, near-zero spawn overhead). Public API exposes

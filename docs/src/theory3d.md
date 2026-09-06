@@ -93,10 +93,18 @@ truncation of the 37³ and 61³ FIR filters the paper reports.
 used here satisfy ``f_0(x) + f_1(x) = 1`` identically.  Perfect reconstruction is
 then structural — the masks sum to 1 at every frequency, the synthesis filters
 are all 1, and reconstruction is a plain sum — and it is exact for every choice
-of `order` and `poly`.  The cost is a frame-bound ratio near 2 instead of Lu and
-Do's optimised lifting/ladder coefficients, which reach a near-tight frame.  For
-analysis, thresholding and reconstruction this matters little; for applications
-that need tight-frame noise behaviour it is a real limitation.
+of `order` and `poly`.  The cost is measurable: the analysis masks are the
+weights ``W_k`` themselves, so ``\sum_k W_k = 1`` holds exactly but
+``\sum_k W_k^2`` ranges over ``[1/3, 1]`` — a frame-bound ratio of 3.  SurfBox
+normalises pointwise instead, taking ``V_k = \sqrt{N W_k}`` for analysis, which
+makes ``\sum_k V_k^2 = N`` identically: an exactly tight frame with redundancy
+``N``, verified to machine precision in
+`test/items/test_surfbox_reference.jl`.  For analysis, thresholding and
+reconstruction the difference matters little; for applications that need
+tight-frame noise behaviour — denoising with a single global threshold,
+iterative reconstruction where the adjoint's conditioning matters — it is a real
+limitation, and the fix is the pointwise normalisation above rather than the
+optimised lifting coefficients the papers describe.
 
 `order` (the Bernstein order ``N``) controls how sharply the subbands separate.
 Larger ``N`` converges to the ideal indicator; the deviation from it falls
@@ -241,12 +249,43 @@ an integer index remap on the sampling grid, which at dyadic wedge boundaries it
 is not unless the decimation is interleaved with the refinement the way the
 reference construction does it.  That is a missing piece, not a tuning problem.
 
-Two further limits worth stating plainly: the reference construction's
-multiscale pyramid resamples by the non-integer factor 3/2 per axis with filter
-parameters given in tables that do not survive text extraction from the paper,
-and the reference implementation (SurfBox) is no longer distributed — so
-coefficient-level agreement with the reference is not something this
-implementation claims or could currently verify.
+That analysis is confirmed by the reference implementation.  Running SurfBox's
+`Surfdec` on a 96³ volume at `Pyr_mode = 1.5` gives a redundancy of 3.9259 for
+24 directional subbands and *the same* 3.9259 for 96 — flat in the direction
+count, as sheared boxes predict.  This package's `surfacelet3` gives 15.4 and
+46.4 at the matching settings, growing roughly linearly.  So the gap is not a
+constant factor; it widens exactly where a directional transform earns its keep.
+
+One further limit worth stating plainly: the reference multiscale pyramid
+resamples by the non-integer factor 3/2 per axis, which this package's cube-shell
+octave partition does not do.
+
+### What has been checked against SurfBox
+
+SurfBox is available again (MATLAB File Exchange submission 14485), so the
+directional stages are now regression-tested against it in
+`test/items/test_surfbox_reference.jl`, with `test/reference/` holding the golden
+data and the MATLAB scripts that regenerate it.  What the comparison establishes:
+
+  * The hourglass geometry agrees.  Over a 32³ grid the two constructions pick
+    the same dominant hourglass at 94.6% of frequencies, with a mean absolute
+    weight difference of 0.037; every disagreement is a near-tie in the
+    reference (median gap 0.005 between the top two weights, against 0.887
+    averaged over all frequencies), so the two differ only in how they round the
+    transition bands.
+  * The wedge partition agrees.  Across 80 plane waves at 12 directional
+    subbands, the confusion matrix between SurfBox's subband labels and this
+    package's is a bijection, 84% of directions match exactly under it, and for
+    *every* one of the 80 the reference's subband is this package's first or
+    second choice by energy.  This is the check that matters, because perfect
+    reconstruction alone would pass for any structurally-PR bank, including one
+    with the wrong tiling.
+
+What it does not establish is coefficient-level agreement: SurfBox's hourglass
+raises the magnitude response of a Kaiser-windowed diamond kernel to a power,
+this package composes Bernstein mapping polynomials, and its NDFB is a decimated
+resampled-checkerboard chain against directly-placed frequency boundaries here.
+Same ideal partition, different discrete realisation.
 
 ## References
 

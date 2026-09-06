@@ -47,17 +47,23 @@ Holds the two mapping-kernel frequency responses (`m1` on the 3-D rfft grid,
 derived pointwise on the fly — a third of the memory, and the polynomial
 evaluation is negligible next to the transforms.
 """
-struct HourglassFB3{T <: AbstractFloat, Pf, Pi}
-    dims::NTuple{3, Int}
-    order::Int                    # Bernstein order N of the mapping kernels
-    poly::Int                     # order m of the 1-D halfband split polynomial
-    m1::Array{T, 3}               # 3-D mapping response, rfft grid
-    m2::Matrix{T}                 # 2-D mapping response on (ω₂, ω₃)
-    fwd::Pf
-    inv::Pi
-    spec::Array{Complex{T}, 3}    # spectrum of the input, preserved across subbands
-    work::Array{Complex{T}, 3}    # scratch consumed by the inverse plan
-    rbuf::Array{T, 3}
+mutable struct HourglassFB3{T <: AbstractFloat, Pf, Pi}
+    const dims::NTuple{3, Int}
+    const order::Int              # Bernstein order N of the mapping kernels
+    const poly::Int               # order m of the 1-D halfband split polynomial
+    const m1::Array{T, 3}         # 3-D mapping response, rfft grid
+    const m2::Matrix{T}           # 2-D mapping response on (ω₂, ω₃)
+    const fwd::Pf
+    const inv::Pi
+    const spec::Array{Complex{T}, 3}   # spectrum of the input, preserved across subbands
+    const work::Array{Complex{T}, 3}   # scratch consumed by the inverse plan
+    const rbuf::Array{T, 3}
+    # Second spectrum and output buffer, for the imaginary half of a complex
+    # volume.  Allocated on first complex use so real-only workloads never pay
+    # for them.  Two spectra cost about two real volumes — far less than holding
+    # every subband's real part, which is what a two-pass scheme would need.
+    spec2::Union{Nothing, Array{Complex{T}, 3}}
+    rbuf2::Union{Nothing, Array{T, 3}}
 end
 
 """
@@ -104,14 +110,45 @@ function make_hourglass3(
     spec = fwd * rbuf
     inv = plan_irfft(spec, n1; flags = flags)
     return HourglassFB3{T, typeof(fwd), typeof(inv)}(
-        dims, order, poly, m1, m2, fwd, inv, spec, similar(spec), rbuf
+        dims, order, poly, m1, m2, fwd, inv, spec, similar(spec), rbuf, nothing, nothing
     )
 end
 
 function make_hourglass3(
         dims::NTuple{3, Int}, ::Type{Complex{T}}; kwargs...
     ) where {T <: AbstractFloat}
-    return make_hourglass3(dims, T; kwargs...)
+    fb = make_hourglass3(dims, T; kwargs...)
+    _complex_scratch!(fb)
+    return fb
+end
+
+# Ensure the imaginary-half buffers exist; returns them.
+function _complex_scratch!(fb::HourglassFB3{T}) where {T}
+    s2 = fb.spec2
+    if s2 === nothing
+        s2 = similar(fb.spec)
+        fb.spec2 = s2
+    end
+    r2 = fb.rbuf2
+    if r2 === nothing
+        r2 = Array{T, 3}(undef, fb.dims)
+        fb.rbuf2 = r2
+    end
+    return s2, r2
+end
+
+# Load the real and imaginary parts of `volume` into the two spectra.
+function _load_complex_spectra!(fb::HourglassFB3{T}, volume::AbstractArray{Complex{T}, 3}) where {T}
+    spec2, _ = _complex_scratch!(fb)
+    @inbounds @simd for i in eachindex(fb.rbuf, volume)
+        fb.rbuf[i] = real(volume[i])
+    end
+    mul!(fb.spec, fb.fwd, fb.rbuf)
+    @inbounds @simd for i in eachindex(fb.rbuf, volume)
+        fb.rbuf[i] = imag(volume[i])
+    end
+    mul!(spec2, fb.fwd, fb.rbuf)
+    return fb
 end
 
 make_hourglass3(n1::Int, n2::Int, n3::Int, ::Type{Td} = Float64; kwargs...) where {Td} =
@@ -199,7 +236,7 @@ function hourglass3_decompose!(
     copyto!(fb.rbuf, volume)
     mul!(fb.spec, fb.fwd, fb.rbuf)
     for i in 1:3
-        _apply_hourglass_mask!(fb, i)
+        _apply_hourglass_mask!(fb, fb.spec, i)
         mul!(fb.rbuf, fb.inv, fb.work)
         copyto!(dst[i], fb.rbuf)
     end
@@ -211,36 +248,27 @@ function hourglass3_decompose!(
         fb::HourglassFB3{T}
     ) where {T <: AbstractFloat}
     size(volume) == fb.dims || throw(DimensionMismatch("volume size does not match the plan"))
-    # Real part, then imaginary part, through the identical real kernel — the
-    # same construction `conv3d_fft.jl` uses, and for the same reason.
-    @inbounds @simd for i in eachindex(fb.rbuf, volume)
-        fb.rbuf[i] = real(volume[i])
-    end
-    mul!(fb.spec, fb.fwd, fb.rbuf)
+    # Real and imaginary parts go through the identical real kernel — the same
+    # construction `conv3d_fft.jl` uses, and for the same reason: it keeps
+    # `T(x + i·y) == T(x) + i·T(y)` exact.  Both spectra are held at once so each
+    # subband is finished before moving to the next.
+    _load_complex_spectra!(fb, volume)
+    spec2, rbuf2 = _complex_scratch!(fb)
     for i in 1:3
-        _apply_hourglass_mask!(fb, i)
+        _apply_hourglass_mask!(fb, fb.spec, i)
         mul!(fb.rbuf, fb.inv, fb.work)
+        _apply_hourglass_mask!(fb, spec2, i)
+        mul!(rbuf2, fb.inv, fb.work)
         @inbounds @simd for p in eachindex(dst[i], fb.rbuf)
-            dst[i][p] = Complex{T}(fb.rbuf[p], zero(T))
-        end
-    end
-    @inbounds @simd for i in eachindex(fb.rbuf, volume)
-        fb.rbuf[i] = imag(volume[i])
-    end
-    mul!(fb.spec, fb.fwd, fb.rbuf)
-    for i in 1:3
-        _apply_hourglass_mask!(fb, i)
-        mul!(fb.rbuf, fb.inv, fb.work)
-        @inbounds @simd for p in eachindex(dst[i], fb.rbuf)
-            dst[i][p] += Complex{T}(zero(T), fb.rbuf[p])
+            dst[i][p] = Complex{T}(fb.rbuf[p], rbuf2[p])
         end
     end
     return dst
 end
 
 # work .= spec .* mask_i, with the mask derived from the two mapping responses.
-function _apply_hourglass_mask!(fb::HourglassFB3{T}, i::Int) where {T}
-    spec, work, m1, m2 = fb.spec, fb.work, fb.m1, fb.m2
+function _apply_hourglass_mask!(fb::HourglassFB3{T}, spec::AbstractArray, i::Int) where {T}
+    work, m1, m2 = fb.work, fb.m1, fb.m2
     poly = fb.poly
     @inbounds for k in axes(work, 3), j in axes(work, 2)
         w2 = _stage2_weight(m2[j, k], poly, i)

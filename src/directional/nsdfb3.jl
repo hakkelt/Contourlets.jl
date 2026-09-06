@@ -75,8 +75,24 @@ function make_nsdfb3(
     levels >= 0 || throw(ArgumentError("levels must be ≥ 0"))
     0 <= transition || throw(ArgumentError("transition must be ≥ 0"))
     fb = make_hourglass3(dims, T; order = order, poly = poly, threading = threading, flags = flags)
-    la = cld(levels, 2)
-    lb = fld(levels, 2)
+    return nsdfb3_sharing(fb, levels; poly = poly, transition = transition)
+end
+
+"""
+    nsdfb3_sharing(fb::HourglassFB3, levels::Int; poly=fb.poly, transition=1.0) -> NSDFB3
+
+Build a directional bank on top of an *existing* hourglass bank instead of
+planning a new one.  The hourglass stage depends only on the volume size, so a
+multiscale transform can plan it once and vary only the wedge refinement per
+scale — the wedge masks are matrices, so an extra scale costs kilobytes.
+"""
+function nsdfb3_sharing(
+        fb::HourglassFB3{T}, levels::Int;
+        poly::Int = fb.poly, transition::Real = 1.0
+    ) where {T <: AbstractFloat}
+    levels >= 0 || throw(ArgumentError("levels must be ≥ 0"))
+    transition >= 0 || throw(ArgumentError("transition must be ≥ 0"))
+    la, lb = cld(levels, 2), fld(levels, 2)
     wedges = ntuple(i -> _wedge_masks(fb, i, (la, lb), poly, T(transition)), 3)
     return NSDFB3{T, typeof(fb)}(fb, (la, lb), wedges)
 end
@@ -290,24 +306,17 @@ function nsdfb3_decompose(
     ) where {T <: AbstractFloat}
     hg = fb.fb
     size(volume) == hg.dims || throw(DimensionMismatch("volume size does not match the plan"))
-    # Real and imaginary parts need to be recombined per subband, so unlike the
-    # real path this one keeps a complex scratch volume alive.
+    # Both spectra are held at once and each subband is finished before moving
+    # on, so streaming stays streaming for complex volumes: two spectra and one
+    # complex scratch volume, not one real volume per subband.
+    _load_complex_spectra!(hg, volume)
+    spec2, rbuf2 = _complex_scratch!(hg)
     tmp = Array{Complex{T}, 3}(undef, hg.dims)
-    @inbounds @simd for i in eachindex(hg.rbuf, volume)
-        hg.rbuf[i] = real(volume[i])
-    end
-    mul!(hg.spec, hg.fwd, hg.rbuf)
-    parts = Vector{Array{T, 3}}(undef, nsdfb3_nsubbands(fb))
-    _stream_subbands(fb) do idx, band
-        parts[idx] = copy(band)
-    end
-    @inbounds @simd for i in eachindex(hg.rbuf, volume)
-        hg.rbuf[i] = imag(volume[i])
-    end
-    mul!(hg.spec, hg.fwd, hg.rbuf)
-    _stream_subbands(fb) do idx, band
-        @inbounds @simd for i in eachindex(tmp, band)
-            tmp[i] = Complex{T}(parts[idx][i], band[i])
+    _walk_subbands(fb) do idx, mask
+        _mask_and_invert!(hg, hg.spec, mask, hg.rbuf)
+        _mask_and_invert!(hg, spec2, mask, rbuf2)
+        @inbounds @simd for t in eachindex(tmp, hg.rbuf)
+            tmp[t] = Complex{T}(hg.rbuf[t], rbuf2[t])
         end
         f(idx, tmp)
     end
@@ -316,19 +325,32 @@ end
 
 # Walk every (hourglass, p, q) triple, applying its mask to the spectrum already
 # sitting in `hg.spec` and handing the inverse transform to `g`.
-function _stream_subbands(g, fb::NSDFB3{T}) where {T}
+function _stream_subbands(g, fb::NSDFB3)
     hg = fb.fb
-    na, nb = 1 << fb.levels[1], 1 << fb.levels[2]
-    mask = Array{T, 3}(undef, size(hg.m1))
-    for i in 1:3, p in 1:na, q in 1:nb
-        _fill_mask!(mask, fb, i, p, q)
-        @inbounds for t in eachindex(hg.work, hg.spec, mask)
-            hg.work[t] = hg.spec[t] * mask[t]
-        end
-        mul!(hg.rbuf, hg.inv, hg.work)
-        g(nsdfb3_subband_index(fb, i, p, q), hg.rbuf)
+    _walk_subbands(fb) do idx, mask
+        _mask_and_invert!(hg, hg.spec, mask, hg.rbuf)
+        g(idx, hg.rbuf)
     end
     return nothing
+end
+
+# Iterate the subband masks in index order, reusing one mask buffer.
+function _walk_subbands(g, fb::NSDFB3{T}) where {T}
+    na, nb = 1 << fb.levels[1], 1 << fb.levels[2]
+    mask = Array{T, 3}(undef, size(fb.fb.m1))
+    for i in 1:3, p in 1:na, q in 1:nb
+        _fill_mask!(mask, fb, i, p, q)
+        g(nsdfb3_subband_index(fb, i, p, q), mask)
+    end
+    return nothing
+end
+
+function _mask_and_invert!(hg::HourglassFB3, spec, mask, dst)
+    @inbounds for t in eachindex(hg.work, spec, mask)
+        hg.work[t] = spec[t] * mask[t]
+    end
+    mul!(dst, hg.inv, hg.work)
+    return dst
 end
 
 """

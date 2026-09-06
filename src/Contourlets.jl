@@ -29,6 +29,7 @@ using Polyester: @batch
 # ── Types (must come before filters which use them) ──────────────────────────
 include("threading.jl")
 include("types.jl")
+include("types3.jl")
 
 # ── Filter coefficients and utilities ────────────────────────────────────────
 include("filters/cdf97.jl")
@@ -62,6 +63,7 @@ include("workspace.jl")
 # ── Top-level transforms ──────────────────────────────────────────────────────
 include("transforms/ct.jl")
 include("transforms/nsct.jl")
+include("transforms/nsct3.jl")
 
 # ── Precompilation ────────────────────────────────────────────────────────────
 include("precompile.jl")
@@ -71,6 +73,7 @@ export
     # Types
     FilterPair, QuincunxFilterPair,
     ContourletParams, ContourletCoefficients, NSCTCoefficients,
+    ContourletParams3, NSCT3Coefficients, NSCT3Workspace,
     ContourletWorkspace,
 
     # Default filters
@@ -98,13 +101,14 @@ export
     HourglassFB3, make_hourglass3, hourglass3_mask,
     hourglass3_decompose, hourglass3_decompose!,
     hourglass3_reconstruct, hourglass3_reconstruct!,
-    NSDFB3, make_nsdfb3, nsdfb3_nsubbands, nsdfb3_subband_index, nsdfb3_mask,
+    NSDFB3, make_nsdfb3, nsdfb3_sharing, nsdfb3_nsubbands, nsdfb3_subband_index, nsdfb3_mask,
     nsdfb3_decompose, nsdfb3_decompose!,
     nsdfb3_reconstruct, nsdfb3_reconstruct!,
 
     # Top-level transforms
     ct_forward, ct_forward!, ct_inverse, ct_inverse!,
     nsct_forward, nsct_forward!, nsct_inverse, nsct_inverse!,
+    nsct3_forward, nsct3_inverse, nsct3_inverse!, nsct3_nsubbands, make_nsct3_workspace,
     similar_coefficients, similar_nsct_coefficients,
 
     # Workspace

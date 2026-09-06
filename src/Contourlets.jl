@@ -54,6 +54,7 @@ include("directional/quincunx_fb.jl")
 include("directional/dfb.jl")
 include("directional/nsdfb.jl")
 include("directional/hourglass3.jl")
+include("directional/nsdfb3.jl")
 
 # ── Workspace ─────────────────────────────────────────────────────────────────
 include("workspace.jl")
@@ -97,6 +98,9 @@ export
     HourglassFB3, make_hourglass3, hourglass3_mask,
     hourglass3_decompose, hourglass3_decompose!,
     hourglass3_reconstruct, hourglass3_reconstruct!,
+    NSDFB3, make_nsdfb3, nsdfb3_nsubbands, nsdfb3_subband_index, nsdfb3_mask,
+    nsdfb3_decompose, nsdfb3_decompose!,
+    nsdfb3_reconstruct, nsdfb3_reconstruct!,
 
     # Top-level transforms
     ct_forward, ct_forward!, ct_inverse, ct_inverse!,

@@ -167,8 +167,8 @@ first, then `p`, then `q`.
 function nsdfb3_subband_index(fb::NSDFB3, hourglass::Int, p::Int, q::Int)
     na, nb = 1 << fb.levels[1], 1 << fb.levels[2]
     1 <= hourglass <= 3 || throw(ArgumentError("hourglass index must be 1, 2 or 3"))
-    1 <= p <= na || throw(ArgumentError("wedge index p out of range 1:$na"))
-    1 <= q <= nb || throw(ArgumentError("wedge index q out of range 1:$nb"))
+    1 <= p <= na || throw(ArgumentError("wedge index p out of range 1:$(na)"))
+    1 <= q <= nb || throw(ArgumentError("wedge index q out of range 1:$(nb)"))
     return ((hourglass - 1) * na + (p - 1)) * nb + q
 end
 
@@ -244,7 +244,6 @@ function nsdfb3_decompose!(dst, volume::AbstractArray{Td, 3}, fb::NSDFB3) where 
         throw(DimensionMismatch("dst must hold $(nsdfb3_nsubbands(fb)) subbands"))
     nsdfb3_decompose(volume, fb) do idx, band
         copyto!(dst[idx], band)
-        return nothing
     end
     return dst
 end
@@ -301,7 +300,6 @@ function nsdfb3_decompose(
     parts = Vector{Array{T, 3}}(undef, nsdfb3_nsubbands(fb))
     _stream_subbands(fb) do idx, band
         parts[idx] = copy(band)
-        return nothing
     end
     @inbounds @simd for i in eachindex(hg.rbuf, volume)
         hg.rbuf[i] = imag(volume[i])
@@ -312,7 +310,6 @@ function nsdfb3_decompose(
             tmp[i] = Complex{T}(parts[idx][i], band[i])
         end
         f(idx, tmp)
-        return nothing
     end
     return nothing
 end

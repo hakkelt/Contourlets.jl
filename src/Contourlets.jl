@@ -37,6 +37,8 @@ include("filters/filter_utils.jl")
 
 # ── DSP primitives ────────────────────────────────────────────────────────────
 include("primitives/conv2d.jl")
+include("primitives/conv3d_fft.jl")
+include("primitives/conv3d.jl")
 include("primitives/sampling.jl")
 include("primitives/quincunx.jl")
 include("primitives/shearing.jl")
@@ -44,6 +46,7 @@ include("primitives/shearing.jl")
 # ── Pyramid stages ────────────────────────────────────────────────────────────
 include("pyramid/laplacian_pyramid.jl")
 include("pyramid/nonsubsampled_pyramid.jl")
+include("pyramid/nonsubsampled_pyramid3.jl")
 
 # ── Directional filter bank ───────────────────────────────────────────────────
 include("directional/quincunx_fb.jl")
@@ -76,6 +79,8 @@ export
 
     # Primitives
     conv2d!, conv2d, conv2d_sep!, conv2d_sep,
+    conv3d_sep!, conv3d_sep, conv3d_sep_fft!, conv3d_sep_fft,
+    Conv3DFFTPlan, make_conv3d_fft_plan,
     rect_downsample!, rect_downsample, rect_upsample!, rect_upsample,
     qx_downsample!, qx_downsample, qx_upsample!, qx_upsample,
     shear!, shear, inv_shear!, inv_shear,
@@ -83,6 +88,7 @@ export
     # Building blocks
     lp_decompose, lp_decompose!, lp_reconstruct, lp_reconstruct!,
     nsp_decompose, nsp_decompose!, nsp_reconstruct, nsp_reconstruct!,
+    nsp3_decompose, nsp3_decompose!, nsp3_reconstruct, nsp3_reconstruct!,
     qfb_decompose, qfb_decompose!, qfb_reconstruct, qfb_reconstruct!,
     dfb_decompose, dfb_decompose!, dfb_reconstruct, dfb_reconstruct!, dfb_subband_sizes,
     nsdfb_decompose, nsdfb_reconstruct,

@@ -10,12 +10,12 @@ implemented as a standalone Julia package.
 |----------|-------------|
 | `ct_forward` / `ct_inverse` | Discrete CT (nearly critically sampled) |
 | `nsct_forward` / `nsct_inverse` | NSCT (fully shift-invariant) |
-| `nsct3_forward` / `nsct3_inverse` | 3-D NSCT on volumes, with a streaming form |
+| `nsct3d_forward` / `nsct3d_inverse` | 3-D NSCT on volumes, with a streaming form |
 | `ct_forward!` / `ct_inverse!` | In-place CT using a preallocated workspace |
 | `nsct_forward!` / `nsct_inverse!` | In-place NSCT |
 | `make_workspace` | Allocate a reusable `ContourletWorkspace` |
 | `parabolic_levels` | Compute optimal per-scale DFB depth array |
-| `make_nsct3_workspace` | Allocate a reusable `NSCT3Workspace` for volumes |
+| `make_nsct3d_workspace` | Allocate a reusable `NSCT3DWorkspace` for volumes |
 
 ### Default filters
 - `CDF97` — CDF 9/7 biorthogonal filter pair for the Laplacian Pyramid stage.
@@ -24,7 +24,7 @@ implemented as a standalone Julia package.
 ### 3-D
 The 3-D transform is a parallel API rather than a generalisation of the 2-D one:
 the directional stage shares nothing with the quincunx filter bank, and is built
-instead from Bernstein mapping kernels (`make_hourglass3`, `make_nsdfb3`).  See
+instead from Bernstein mapping kernels (`make_hourglass3d`, `make_nsdfb3d`).  See
 the "Theory (3-D)" page.
 """
 module Contourlets
@@ -37,7 +37,7 @@ using Polyester: @batch
 # ── Types (must come before filters which use them) ──────────────────────────
 include("threading.jl")
 include("types.jl")
-include("types3.jl")
+include("types3d.jl")
 
 # ── Filter coefficients and utilities ────────────────────────────────────────
 include("filters/cdf97.jl")
@@ -56,14 +56,14 @@ include("primitives/shearing.jl")
 # ── Pyramid stages ────────────────────────────────────────────────────────────
 include("pyramid/laplacian_pyramid.jl")
 include("pyramid/nonsubsampled_pyramid.jl")
-include("pyramid/nonsubsampled_pyramid3.jl")
+include("pyramid/nonsubsampled_pyramid3d.jl")
 
 # ── Directional filter bank ───────────────────────────────────────────────────
 include("directional/quincunx_fb.jl")
 include("directional/dfb.jl")
 include("directional/nsdfb.jl")
-include("directional/hourglass3.jl")
-include("directional/nsdfb3.jl")
+include("directional/hourglass3d.jl")
+include("directional/nsdfb3d.jl")
 
 # ── Workspace ─────────────────────────────────────────────────────────────────
 include("workspace.jl")
@@ -71,8 +71,8 @@ include("workspace.jl")
 # ── Top-level transforms ──────────────────────────────────────────────────────
 include("transforms/ct.jl")
 include("transforms/nsct.jl")
-include("transforms/nsct3.jl")
-include("transforms/surfacelet3.jl")
+include("transforms/nsct3d.jl")
+include("transforms/surfacelet3d.jl")
 
 # ── Precompilation ────────────────────────────────────────────────────────────
 include("precompile.jl")
@@ -82,8 +82,8 @@ export
     # Types
     FilterPair, QuincunxFilterPair,
     ContourletParams, ContourletCoefficients, NSCTCoefficients,
-    ContourletParams3, NSCT3Coefficients, NSCT3Workspace,
-    SurfaceletParams3, Surfacelet3Coefficients, Surfacelet3Plan,
+    ContourletParams3D, NSCT3DCoefficients, NSCT3DWorkspace,
+    SurfaceletParams3D, Surfacelet3DCoefficients, Surfacelet3DPlan,
     ContourletWorkspace,
 
     # Default filters
@@ -104,23 +104,23 @@ export
     # Building blocks
     lp_decompose, lp_decompose!, lp_reconstruct, lp_reconstruct!,
     nsp_decompose, nsp_decompose!, nsp_reconstruct, nsp_reconstruct!,
-    nsp3_decompose, nsp3_decompose!, nsp3_reconstruct, nsp3_reconstruct!,
+    nsp3d_decompose, nsp3d_decompose!, nsp3d_reconstruct, nsp3d_reconstruct!,
     qfb_decompose, qfb_decompose!, qfb_reconstruct, qfb_reconstruct!,
     dfb_decompose, dfb_decompose!, dfb_reconstruct, dfb_reconstruct!, dfb_subband_sizes,
     nsdfb_decompose, nsdfb_reconstruct,
-    HourglassFB3, make_hourglass3, hourglass3_mask, hourglass3_weight,
-    hourglass3_decompose, hourglass3_decompose!,
-    hourglass3_reconstruct, hourglass3_reconstruct!,
-    NSDFB3, make_nsdfb3, nsdfb3_sharing, nsdfb3_nsubbands, nsdfb3_subband_index, nsdfb3_subband_triple, nsdfb3_mask, nsdfb3_weight,
-    nsdfb3_decompose, nsdfb3_decompose!,
-    nsdfb3_reconstruct, nsdfb3_reconstruct!,
+    HourglassFB3D, make_hourglass3d, hourglass3d_mask, hourglass3d_weight,
+    hourglass3d_decompose, hourglass3d_decompose!,
+    hourglass3d_reconstruct, hourglass3d_reconstruct!,
+    NSDFB3D, make_nsdfb3d, nsdfb3d_sharing, nsdfb3d_nsubbands, nsdfb3d_subband_index, nsdfb3d_subband_triple, nsdfb3d_mask, nsdfb3d_weight,
+    nsdfb3d_decompose, nsdfb3d_decompose!,
+    nsdfb3d_reconstruct, nsdfb3d_reconstruct!,
 
     # Top-level transforms
     ct_forward, ct_forward!, ct_inverse, ct_inverse!,
     nsct_forward, nsct_forward!, nsct_inverse, nsct_inverse!,
-    nsct3_forward, nsct3_inverse, nsct3_inverse!, nsct3_nsubbands, make_nsct3_workspace,
-    surfacelet3_forward, surfacelet3_inverse, surfacelet3_nsubbands,
-    surfacelet3_redundancy, make_surfacelet3,
+    nsct3d_forward, nsct3d_inverse, nsct3d_inverse!, nsct3d_nsubbands, make_nsct3d_workspace,
+    surfacelet3d_forward, surfacelet3d_inverse, surfacelet3d_nsubbands,
+    surfacelet3d_redundancy, make_surfacelet3d,
     similar_coefficients, similar_nsct_coefficients,
 
     # Workspace

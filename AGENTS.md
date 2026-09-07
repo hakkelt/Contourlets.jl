@@ -30,17 +30,17 @@ end
 `nsct_forward`/`nsct_inverse` (and `!` variants) follow the same pattern via
 `make_nsct_workspace`. See "In-place companions" below for the naming contract.
 
-The 3-D transform is a parallel API (`ContourletParams3`, `nsct3_forward`,
-`make_nsct3_workspace`), not a dimensional generalisation — see "3-D stack"
+The 3-D transform is a parallel API (`ContourletParams3D`, `nsct3d_forward`,
+`make_nsct3d_workspace`), not a dimensional generalisation — see "3-D stack"
 below. It adds a **streaming** form, because the materialised coefficient set
 does not fit at working sizes:
 
 ```julia
 vol    = randn(Float32, 256, 256, 256)
-params = ContourletParams3(J=3, L_array=[2, 2, 3])   # 48 directional subbands
-ws     = make_nsct3_workspace(params, size(vol), Float32)
+params = ContourletParams3D(J=3, L_array=[2, 2, 3])   # 48 directional subbands
+ws     = make_nsct3d_workspace(params, size(vol), Float32)
 
-coarse = nsct3_forward(vol, params; workspace=ws) do j, k, band
+coarse = nsct3d_forward(vol, params; workspace=ws) do j, k, band
     # `band` is valid only until this returns
 end
 ```
@@ -90,7 +90,7 @@ Contourlets/
 ├── src/                       # Package source (Julia)
 │   ├── Contourlets.jl         # Main module — all exports here
 │   ├── types.jl               # Core types: FilterPair, ContourletParams, …
-│   ├── types3.jl              # 3-D types: ContourletParams3, NSCT3Coefficients
+│   ├── types3d.jl             # 3-D types: ContourletParams3D, NSCT3DCoefficients
 │   ├── workspace.jl           # ContourletWorkspace + make_workspace
 │   ├── precompile.jl          # PrecompileTools workload
 │   ├── filters/
@@ -108,18 +108,18 @@ Contourlets/
 │   ├── pyramid/
 │   │   ├── laplacian_pyramid.jl       # lp_decompose / lp_reconstruct
 │   │   ├── nonsubsampled_pyramid.jl   # nsp_decompose / nsp_reconstruct
-│   │   └── nonsubsampled_pyramid3.jl  # nsp3_decompose / nsp3_reconstruct
+│   │   └── nonsubsampled_pyramid3d.jl # nsp3d_decompose / nsp3d_reconstruct
 │   ├── directional/
 │   │   ├── quincunx_fb.jl     # 2-channel quincunx filter bank
 │   │   ├── dfb.jl             # L-level DFB binary tree
 │   │   ├── nsdfb.jl           # Non-subsampled DFB
-│   │   ├── hourglass3.jl      # 3-D nonsubsampled hourglass FB (3 subbands)
-│   │   └── nsdfb3.jl          # 3-D NSDFB: hourglass + wedges (3·2^L subbands)
+│   │   ├── hourglass3d.jl     # 3-D nonsubsampled hourglass FB (3 subbands)
+│   │   └── nsdfb3d.jl         # 3-D NSDFB: hourglass + wedges (3·2^L subbands)
 │   └── transforms/
 │       ├── ct.jl              # ct_forward / ct_inverse / ct_forward! / ct_inverse!
 │       ├── nsct.jl            # nsct_forward / nsct_inverse / ! variants
-│       ├── nsct3.jl           # nsct3_forward / nsct3_inverse + NSCT3Workspace
-│       └── surfacelet3.jl     # decimated 3-D transform (frequency-domain boxes)
+│       ├── nsct3d.jl          # nsct3d_forward / nsct3d_inverse + NSCT3DWorkspace
+│       └── surfacelet3d.jl    # decimated 3-D transform (frequency-domain boxes)
 ├── test/
 │   ├── runtests.jl            # TestItemRunner entry point
 │   └── items/
@@ -129,11 +129,11 @@ Contourlets/
 │       ├── test_dfb.jl
 │       ├── test_transforms.jl
 │       ├── test_workspace.jl
-│       ├── test_3d.jl         # conv3d + NSP3, tags :primitives / :pyramid
-│       ├── test_hourglass3.jl # Bernstein kernels + hourglass FB
-│       ├── test_nsdfb3.jl     # 3-D directional filter bank
-│       ├── test_nsct3.jl      # 3-D NSCT, tag :nsct3
-│       ├── test_surfacelet3.jl # decimated 3-D transform, tag :surfacelet3
+│       ├── test_3d.jl         # conv3d + NSP3D, tags :primitives / :pyramid
+│       ├── test_hourglass3d.jl # Bernstein kernels + hourglass FB
+│       ├── test_nsdfb3d.jl    # 3-D directional filter bank
+│       ├── test_nsct3d.jl     # 3-D NSCT, tag :nsct3d
+│       ├── test_surfacelet3d.jl # decimated 3-D transform, tag :surfacelet3d
 │       ├── test_surfbox_reference.jl # golden data from SurfBox, tag :directional
 │       ├── test_gpu.jl        # universal GPU tests (GPUEnv + JLArrays), tag :gpu
 │       └── test_quality.jl    # Aqua checks
@@ -150,7 +150,7 @@ Contourlets/
 │       └── examples/
 │           ├── ct_example.md
 │           ├── nsct_example.md
-│           └── nsct3_example.md
+│           └── nsct3d_example.md
 ├── .agents/skills/            # Vendor-neutral Julia skills (see table above)
 └── .github/workflows/         # CI.yml, documentation.yml, CompatHelper.yml, TagBot.yml
 ```
@@ -218,7 +218,7 @@ Conventions that are non-obvious or specific to this package's API contract:
 - All tests are self-contained `@testitem` blocks (TestItemRunner): each block
   must import all dependencies except `Contourlets` and `Test` inside the block.
 - Tag taxonomy: `:filters`, `:primitives`, `:pyramid`, `:directional`, `:ct`,
-  `:nsct` (also implies `:ct`), `:nsct3` (the 3-D transform), `:surfacelet3`
+  `:nsct` (also implies `:ct`), `:nsct3d` (the 3-D transform), `:surfacelet3d`
   (its decimated counterpart), `:quality` (Aqua/JET), `:docs`, `:gpu`.
 - Seed every random input (`Random.seed!(42)`); never rely on global RNG state.
 - NSCT shift-invariance is a required property — compare `nsct_forward(x)` with
@@ -273,7 +273,7 @@ output.
   extension, and nothing in the directional stage carries over — the quincunx
   lattice, the shear index remap and the Q2345 ladder are all planar, and Lu &
   Do prove hourglass partitioning cannot be critically sampled above 2-D. So
-  `ContourletParams3` / `NSCT3Coefficients` / `NSCT3Workspace` are parallel to
+  `ContourletParams3D` / `NSCT3DCoefficients` / `NSCT3DWorkspace` are parallel to
   their 2-D counterparts rather than generalisations. The 3-D directional bank
   is built as frequency-domain masks (exact for the periodic, nonsubsampled
   case, and it avoids the FIR truncation the papers need for streaming video);
@@ -312,7 +312,7 @@ output.
   split, and the pyramid's frequency multiply are all plain broadcasts. Keep it
   that way: introducing scalar indexing into `_fill_mask!`,
   `_apply_hourglass_mask!` or `_apply_freq_filter!` silently breaks the device
-  path. `ext/ContourletsGPUExt/nsct3_gpu.jl` therefore contains only
+  path. `ext/ContourletsGPUExt/nsct3d_gpu.jl` therefore contains only
   `Adapt.adapt_structure` methods, which move the data and replan the FFTs
   (plans cannot be adapted). A workspace adapt moves the shared hourglass
   response **once**, not once per scale. JLArrays is excluded from the 3-D GPU
@@ -327,14 +327,14 @@ output.
   same dominant hourglass (every disagreement a near-tie), and across 80 plane
   waves the wedge labellings are related by a bijection with the reference's
   choice always this package's top-2. One known deviation is recorded there and
-  in `docs/src/theory3d.md`: `surfacelet3`'s redundancy grows with the direction
+  in `docs/src/theory3d.md`: `surfacelet3d`'s redundancy grows with the direction
   count (15.4 at 24 subbands, 46.4 at 96) where SurfBox stays flat at 3.93,
   because axis-aligned support boxes recover the radial but not the directional
   decimation.
 - **The 3-D directional bank is a Parseval frame by default.** The three
   hourglass weights are a partition of unity for any `order`/`poly`, and so are
   the wedge weights, so the products are too. `tight = true` (the default on
-  `make_hourglass3` / `make_nsdfb3` / `ContourletParams3`) takes the masks to be
+  `make_hourglass3d` / `make_nsdfb3d` / `ContourletParams3D`) takes the masks to be
   `√W`, which makes `Σ V² = 1` identically — the pointwise normalisation SurfBox
   uses, scaled to bound 1 instead of `N`. Analysis then preserves energy, which
   is what thresholding and iterative reconstruction want. The price is
@@ -347,7 +347,7 @@ output.
   subband to survive an `irfft`/`rfft` round trip, which requires the mask to be
   even on the self-conjugate planes of the rfft grid. It was not, and PR failed
   by 0.27 with no error. `_wedge_ratio` now fixes the sign from the first
-  coordinate that can carry one; `nsdfb3 — masks are even in frequency` pins it.
+  coordinate that can carry one; `nsdfb3d — masks are even in frequency` pins it.
 - **Hybrid Threading Architecture** — real data (`Float32`/`Float64`) uses
   `LoopVectorization.@turbo` (SIMD, single thread); complex data uses
   `Polyester.@batch` (multi-core, near-zero spawn overhead). Public API exposes

@@ -47,8 +47,8 @@ SUITE["LP"] = BenchmarkGroup()
 SUITE["DFB"] = BenchmarkGroup()
 SUITE["NSDFB"] = BenchmarkGroup()
 SUITE["primitives"] = BenchmarkGroup()
-SUITE["NSCT3"] = BenchmarkGroup()
-SUITE["NSDFB3"] = BenchmarkGroup()
+SUITE["NSCT3D"] = BenchmarkGroup()
+SUITE["NSDFB3D"] = BenchmarkGroup()
 SUITE["primitives3"] = BenchmarkGroup()
 
 # ╔════════════════════════════════════════════════════════════════════════════╗
@@ -266,7 +266,7 @@ end
 # ╚════════════════════════════════════════════════════════════════════════════╝
 #
 # Volume sizes are 32³ and 64³, not the 256³ working point: this suite runs once
-# per compared revision in CI, and a 256³ NSCT3 forward pass alone is seconds.
+# per compared revision in CI, and a 256³ NSCT3D forward pass alone is seconds.
 # Plans are built with FFTW.ESTIMATE so planning does not dominate the setup.
 #
 # Float32 only — the 3-D path treats a complex volume as two real passes through
@@ -276,34 +276,34 @@ for n in (32, 64)
     sz_str = "$(n)^3"
     vol = randn(RNG, Float32, n, n, n)
 
-    # ── NSCT3 ────────────────────────────────────────────────────────────────
-    SUITE["NSCT3"][sz_str] = BenchmarkGroup()
-    p3 = ContourletParams3(J = 2, L_array = [1, 2], order = 12)
-    ws3 = make_nsct3_workspace(p3, (n, n, n), Float32; flags = FFTW.ESTIMATE)
-    SUITE["NSCT3"][sz_str]["forward"] = @benchmarkable nsct3_forward($vol, $p3)
-    SUITE["NSCT3"][sz_str]["forward (workspace)"] =
-        @benchmarkable nsct3_forward($vol, $p3; workspace = $ws3)
+    # ── NSCT3D ────────────────────────────────────────────────────────────────
+    SUITE["NSCT3D"][sz_str] = BenchmarkGroup()
+    p3d = ContourletParams3D(J = 2, L_array = [1, 2], order = 12)
+    ws3d = make_nsct3d_workspace(p3d, (n, n, n), Float32; flags = FFTW.ESTIMATE)
+    SUITE["NSCT3D"][sz_str]["forward"] = @benchmarkable nsct3d_forward($vol, $p3d)
+    SUITE["NSCT3D"][sz_str]["forward (workspace)"] =
+        @benchmarkable nsct3d_forward($vol, $p3d; workspace = $ws3d)
     # The streaming form is the one that matters at working sizes: it holds one
     # subband instead of `1 + Σ 3·2^L` volumes.
-    SUITE["NSCT3"][sz_str]["forward (streaming)"] =
-        @benchmarkable nsct3_forward((j, k, b) -> nothing, $vol, $p3; workspace = $ws3)
-    coeffs3 = nsct3_forward(vol, p3; workspace = ws3)
-    out3 = similar(vol)
-    SUITE["NSCT3"][sz_str]["inverse"] = @benchmarkable nsct3_inverse($coeffs3, $p3)
-    SUITE["NSCT3"][sz_str]["inverse!"] =
-        @benchmarkable nsct3_inverse!($out3, $coeffs3, $p3; workspace = $ws3)
+    SUITE["NSCT3D"][sz_str]["forward (streaming)"] =
+        @benchmarkable nsct3d_forward((j, k, b) -> nothing, $vol, $p3d; workspace = $ws3d)
+    coeffs3d = nsct3d_forward(vol, p3d; workspace = ws3d)
+    out3d = similar(vol)
+    SUITE["NSCT3D"][sz_str]["inverse"] = @benchmarkable nsct3d_inverse($coeffs3d, $p3d)
+    SUITE["NSCT3D"][sz_str]["inverse!"] =
+        @benchmarkable nsct3d_inverse!($out3d, $coeffs3d, $p3d; workspace = $ws3d)
 
-    # ── NSDFB3 ───────────────────────────────────────────────────────────────
-    SUITE["NSDFB3"][sz_str] = BenchmarkGroup()
+    # ── NSDFB3D ───────────────────────────────────────────────────────────────
+    SUITE["NSDFB3D"][sz_str] = BenchmarkGroup()
     for L in (1, 3)
-        fb3 = make_nsdfb3((n, n, n), Float32; levels = L, order = 12, flags = FFTW.ESTIMATE)
-        SUITE["NSDFB3"][sz_str]["L=$(L) forward (streaming)"] =
-            @benchmarkable nsdfb3_decompose((k, b) -> nothing, $vol, $fb3)
+        fb3d = make_nsdfb3d((n, n, n), Float32; levels = L, order = 12, flags = FFTW.ESTIMATE)
+        SUITE["NSDFB3D"][sz_str]["L=$(L) forward (streaming)"] =
+            @benchmarkable nsdfb3d_decompose((k, b) -> nothing, $vol, $fb3d)
     end
-    hg3 = make_hourglass3((n, n, n), Float32; order = 12, flags = FFTW.ESTIMATE)
-    dst3 = ntuple(_ -> similar(vol), 3)
-    SUITE["NSDFB3"][sz_str]["hourglass forward"] =
-        @benchmarkable hourglass3_decompose!($dst3, $vol, $hg3)
+    hg3d = make_hourglass3d((n, n, n), Float32; order = 12, flags = FFTW.ESTIMATE)
+    dst3d = ntuple(_ -> similar(vol), 3)
+    SUITE["NSDFB3D"][sz_str]["hourglass forward"] =
+        @benchmarkable hourglass3d_decompose!($dst3d, $vol, $hg3d)
 
     # ── 3-D primitives ───────────────────────────────────────────────────────
     SUITE["primitives3"][sz_str] = BenchmarkGroup()
@@ -322,10 +322,10 @@ for n in (32, 64)
     SUITE["primitives3"][sz_str]["conv3d_sep fft (33 taps)"] =
         @benchmarkable conv3d_sep_fft!($dst, $vol, $h_long, $h_long, $h_long, $fftplan)
 
-    coarse3 = similar(vol)
-    bp3 = similar(vol)
+    coarse3d = similar(vol)
+    bp3d = similar(vol)
     tmp23 = similar(vol)
-    SUITE["primitives3"][sz_str]["nsp3_decompose!"] = @benchmarkable nsp3_decompose!(
-        $coarse3, $bp3, $vol, CDF97, 3; tmp = $tmp, tmp2 = $tmp23, plan = $fftplan
+    SUITE["primitives3"][sz_str]["nsp3d_decompose!"] = @benchmarkable nsp3d_decompose!(
+        $coarse3d, $bp3d, $vol, CDF97, 3; tmp = $tmp, tmp2 = $tmp23, plan = $fftplan
     )
 end

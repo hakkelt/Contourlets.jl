@@ -41,17 +41,17 @@ end
 ### 3-D volumes
 
 ```julia
-vol     = randn(Float32, 128, 128, 128)
-params3 = ContourletParams3(J=2, L_array=[2, 2])   # 12 directional subbands per scale
-ws3     = make_nsct3_workspace(params3, size(vol), Float32)
+vol      = randn(Float32, 128, 128, 128)
+params3d = ContourletParams3D(J=2, L_array=[2, 2])   # 12 directional subbands per scale
+ws3d     = make_nsct3d_workspace(params3d, size(vol), Float32)
 
-c3   = nsct3_forward(vol, params3; workspace=ws3)
-rec3 = nsct3_inverse(c3, params3; workspace=ws3)
-@assert maximum(abs, rec3 .- vol) < 1f-4
+c3d   = nsct3d_forward(vol, params3d; workspace=ws3d)
+rec3d = nsct3d_inverse(c3d, params3d; workspace=ws3d)
+@assert maximum(abs, rec3d .- vol) < 1f-4
 
 # Streaming: the form to use at working sizes, where the full coefficient set
 # does not fit — 256³ Float32 with J=3, L=[2,2,3] is 3.1 GB.
-coarse = nsct3_forward(vol, params3; workspace=ws3) do j, k, band
+coarse = nsct3d_forward(vol, params3d; workspace=ws3d) do j, k, band
     # `band` is valid only until this callback returns
 end
 ```
@@ -67,10 +67,10 @@ end
 | [`parabolic_levels`](@ref) | Compute optimal direction counts per scale |
 | [`CDF97`](@ref) | Default CDF 9/7 biorthogonal LP filter pair |
 | [`Q2345`](@ref) | Default "23-45" (Phoong et al. 1995) ladder DFB filter pair |
-| [`ContourletParams3`](@ref) | 3-D counterpart: scales, per-scale `L`, Bernstein order |
-| [`nsct3_forward`](@ref) / [`nsct3_inverse`](@ref) | 3-D NSCT, with streaming forms |
-| [`make_nsct3_workspace`](@ref) | Preallocate 3-D plans and buffers |
-| [`make_nsdfb3`](@ref) | 3-D directional filter bank on its own (`3·2^L` subbands) |
+| [`ContourletParams3D`](@ref) | 3-D counterpart: scales, per-scale `L`, Bernstein order |
+| [`nsct3d_forward`](@ref) / [`nsct3d_inverse`](@ref) | 3-D NSCT, with streaming forms |
+| [`make_nsct3d_workspace`](@ref) | Preallocate 3-D plans and buffers |
+| [`make_nsdfb3d`](@ref) | 3-D directional filter bank on its own (`3·2^L` subbands) |
 
 See the [Theory](@ref theory) page and [Theory — 3-D](@ref theory3d) for the mathematical background, and the [API Reference](@ref) for the complete public interface.
 

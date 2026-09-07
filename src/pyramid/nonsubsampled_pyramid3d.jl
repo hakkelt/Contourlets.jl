@@ -1,4 +1,4 @@
-# 3-D Nonsubsampled Pyramid (NSP3) — à trous upsampled filters, no downsampling.
+# 3-D Nonsubsampled Pyramid (NSP3D) — à trous upsampled filters, no downsampling.
 #
 # Direct extension of the 2-D `nsp_decompose!` / `nsp_reconstruct!` pair: the same
 # à trous filter construction, the same periodic boundary extension, one extra
@@ -18,7 +18,7 @@
 # across levels and iterations.
 
 """
-    nsp3_decompose(volume, fp::FilterPair, level::Int) -> (coarse, bandpass)
+    nsp3d_decompose(volume, fp::FilterPair, level::Int) -> (coarse, bandpass)
 
 One level of the 3-D Nonsubsampled Pyramid at pyramid level `level` (1 = finest).
 Both outputs have the same size as `volume`.
@@ -29,19 +29,19 @@ julia> using Contourlets, Random
 
 julia> x = randn(Xoshiro(1), 16, 16, 16);
 
-julia> c, bp = nsp3_decompose(x, CDF97, 1);
+julia> c, bp = nsp3d_decompose(x, CDF97, 1);
 
 julia> size(c) == size(bp) == size(x)
 true
 ```
 """
-function nsp3_decompose(volume::AbstractArray{<:Number, 3}, fp::FilterPair, level::Int)
+function nsp3d_decompose(volume::AbstractArray{<:Number, 3}, fp::FilterPair, level::Int)
     level >= 1 || throw(ArgumentError("level must be ≥ 1"))
     Td = _data_eltype(volume)   # data type (preserves complex)
     Tf = _filter_eltype(Td)     # real filter precision
     vol = Td === eltype(volume) ? volume : Td.(volume)
-    h_j, g_j = _nsp3_atrous_filters(fp, level, Tf)
-    plan = _nsp3_plan(vol, max(length(h_j), length(g_j)))
+    h_j, g_j = _nsp3d_atrous_filters(fp, level, Tf)
+    plan = _nsp3d_plan(vol, max(length(h_j), length(g_j)))
     coarse = conv3d_sep(vol, h_j, h_j, h_j; boundary = :periodic, plan = plan)
     pred = conv3d_sep(coarse, g_j, g_j, g_j; boundary = :periodic, plan = plan)
     bp = vol .- pred
@@ -49,14 +49,14 @@ function nsp3_decompose(volume::AbstractArray{<:Number, 3}, fp::FilterPair, leve
 end
 
 """
-    nsp3_decompose!(coarse, bandpass, volume, fp::FilterPair, level;
+    nsp3d_decompose!(coarse, bandpass, volume, fp::FilterPair, level;
                     tmp=similar(volume), tmp2=similar(volume)) -> (coarse, bandpass)
 
-In-place NSP3 decomposition.  `tmp` and `tmp2` must be distinct buffers of the
+In-place NSP3D decomposition.  `tmp` and `tmp2` must be distinct buffers of the
 same size as `volume`; when both are supplied — together with cached `h_j`/`g_j`
 à trous filters — the call is allocation-free.
 """
-function nsp3_decompose!(
+function nsp3d_decompose!(
         coarse::AbstractArray{<:Number, 3}, bandpass::AbstractArray{<:Number, 3},
         volume::AbstractArray{<:Number, 3}, fp::FilterPair, level::Int;
         tmp::AbstractArray = similar(volume),
@@ -69,11 +69,11 @@ function nsp3_decompose!(
     # build them here.  The cached `g_j` already carries the synthesis rescale.
     if h_j === nothing || g_j === nothing
         Tf = _filter_eltype(eltype(coarse))
-        h_built, g_built = _nsp3_atrous_filters(fp, level, Tf)
+        h_built, g_built = _nsp3d_atrous_filters(fp, level, Tf)
         h_j = h_j === nothing ? h_built : h_j
         g_j = g_j === nothing ? g_built : g_j
     end
-    p = plan === nothing ? _nsp3_plan(volume, max(length(h_j), length(g_j))) : plan
+    p = plan === nothing ? _nsp3d_plan(volume, max(length(h_j), length(g_j))) : plan
     conv3d_sep!(coarse, volume, h_j, h_j, h_j; boundary = :periodic, tmp = tmp2, plan = p)
     conv3d_sep!(tmp, coarse, g_j, g_j, g_j; boundary = :periodic, tmp = tmp2, plan = p)
     @. bandpass = volume - tmp
@@ -81,9 +81,9 @@ function nsp3_decompose!(
 end
 
 """
-    nsp3_reconstruct(coarse, bandpass, fp::FilterPair, level) -> volume
+    nsp3d_reconstruct(coarse, bandpass, fp::FilterPair, level) -> volume
 
-Reconstruct one NSP3 level.
+Reconstruct one NSP3D level.
 
 # Examples
 ```jldoctest
@@ -91,15 +91,15 @@ julia> using Contourlets, Random
 
 julia> x = randn(Xoshiro(1), 16, 16, 16);
 
-julia> c, bp = nsp3_decompose(x, CDF97, 1);
+julia> c, bp = nsp3d_decompose(x, CDF97, 1);
 
-julia> rec = nsp3_reconstruct(c, bp, CDF97, 1);
+julia> rec = nsp3d_reconstruct(c, bp, CDF97, 1);
 
 julia> maximum(abs, rec .- x) < 1e-12
 true
 ```
 """
-function nsp3_reconstruct(
+function nsp3d_reconstruct(
         coarse::AbstractArray{<:Number, 3}, bandpass::AbstractArray{<:Number, 3},
         fp::FilterPair, level::Int
     )
@@ -107,19 +107,19 @@ function nsp3_reconstruct(
     Tf = _filter_eltype(Td)
     coarse_T = Td === eltype(coarse) ? coarse : Td.(coarse)
     bandpass_T = Td === eltype(bandpass) ? bandpass : Td.(bandpass)
-    _, g_j = _nsp3_atrous_filters(fp, level, Tf)
-    pred = conv3d_sep(coarse_T, g_j, g_j, g_j; boundary = :periodic, plan = _nsp3_plan(coarse_T, length(g_j)))
+    _, g_j = _nsp3d_atrous_filters(fp, level, Tf)
+    pred = conv3d_sep(coarse_T, g_j, g_j, g_j; boundary = :periodic, plan = _nsp3d_plan(coarse_T, length(g_j)))
     return bandpass_T .+ pred
 end
 
 """
-    nsp3_reconstruct!(volume, coarse, bandpass, fp::FilterPair, level;
+    nsp3d_reconstruct!(volume, coarse, bandpass, fp::FilterPair, level;
                       tmp=similar(volume), tmp2=similar(volume)) -> volume
 
-In-place NSP3 reconstruction.  See [`nsp3_decompose!`](@ref) for the buffer
+In-place NSP3D reconstruction.  See [`nsp3d_decompose!`](@ref) for the buffer
 requirements.
 """
-function nsp3_reconstruct!(
+function nsp3d_reconstruct!(
         volume::AbstractArray{<:Number, 3}, coarse::AbstractArray{<:Number, 3},
         bandpass::AbstractArray{<:Number, 3}, fp::FilterPair, level::Int;
         tmp::AbstractArray = similar(volume),
@@ -129,9 +129,9 @@ function nsp3_reconstruct!(
     )
     if g_j === nothing
         Tf = _filter_eltype(eltype(volume))
-        _, g_j = _nsp3_atrous_filters(fp, level, Tf)
+        _, g_j = _nsp3d_atrous_filters(fp, level, Tf)
     end
-    p = plan === nothing ? _nsp3_plan(coarse, length(g_j)) : plan
+    p = plan === nothing ? _nsp3d_plan(coarse, length(g_j)) : plan
     conv3d_sep!(tmp, coarse, g_j, g_j, g_j; boundary = :periodic, tmp = tmp2, plan = p)
     @. volume = bandpass + tmp
     return volume
@@ -139,7 +139,7 @@ end
 
 # à trous analysis/synthesis filter pair for pyramid `level`, in real precision Tf.
 # The returned `g_j` already carries the per-axis synthesis rescale.
-function _nsp3_atrous_filters(fp::FilterPair, level::Int, ::Type{Tf}) where {Tf}
+function _nsp3d_atrous_filters(fp::FilterPair, level::Int, ::Type{Tf}) where {Tf}
     factor = 2^(level - 1)
     h_up = upsample_filter(fp.h, factor)
     h_j = Tf === eltype(h_up) ? h_up : Tf.(h_up)
@@ -151,7 +151,7 @@ end
 # Build one FFT plan shared by the analysis and synthesis convolutions of a level,
 # or `nothing` when the auto rule says the direct kernel is cheaper.  Returning
 # `nothing` leaves `conv3d_sep!` on its own (direct) path.
-function _nsp3_plan(vol::AbstractArray{Td, 3}, taps::Int) where {Td}
+function _nsp3d_plan(vol::AbstractArray{Td, 3}, taps::Int) where {Td}
     _conv3d_use_fft(Td, :periodic, size(vol), taps) || return nothing
     return make_conv3d_fft_plan(size(vol), Td)
 end

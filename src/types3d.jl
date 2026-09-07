@@ -8,7 +8,7 @@
 # order instead.
 
 """
-    ContourletParams3
+    ContourletParams3D
 
 Describes a 3-D NSCT decomposition.
 
@@ -24,16 +24,16 @@ Describes a 3-D NSCT decomposition.
 - `tight` — when `true` (the default) the directional masks are `√W`, making the
   transform a Parseval frame in the directional stage; when `false` they are the
   weights themselves and the directional inverse is a bare sum.  See
-  [`make_hourglass3`](@ref).
+  [`make_hourglass3d`](@ref).
 
 ```jldoctest
 julia> using Contourlets
 
-julia> ContourletParams3(J = 2, L_array = [1, 2])
-ContourletParams3(J=2, L_array=[1, 2], order=12, …)
+julia> ContourletParams3D(J = 2, L_array = [1, 2])
+ContourletParams3D(J=2, L_array=[1, 2], order=12, …)
 ```
 """
-struct ContourletParams3{T <: AbstractFloat}
+struct ContourletParams3D{T <: AbstractFloat}
     J::Int
     L_array::Vector{Int}
     lp_filters::FilterPair{T}
@@ -43,7 +43,7 @@ struct ContourletParams3{T <: AbstractFloat}
     tight::Bool
 end
 
-function ContourletParams3(;
+function ContourletParams3D(;
         J::Int,
         L_array::AbstractVector{<:Integer},
         lp_filters::FilterPair = CDF97,
@@ -59,47 +59,47 @@ function ContourletParams3(;
     poly >= 0 || throw(ArgumentError("poly must be ≥ 0"))
     transition >= 0 || throw(ArgumentError("transition must be ≥ 0"))
     T = eltype(lp_filters)
-    return ContourletParams3{T}(
+    return ContourletParams3D{T}(
         J, collect(Int, L_array),
         FilterPair{T}(T.(lp_filters.h), T.(lp_filters.g)),
         order, poly, T(transition), tight
     )
 end
 
-Base.eltype(::ContourletParams3{T}) where {T} = T
+Base.eltype(::ContourletParams3D{T}) where {T} = T
 
-function Base.show(io::IO, p::ContourletParams3)
-    return print(io, "ContourletParams3(J=$(p.J), L_array=$(p.L_array), order=$(p.order), …)")
+function Base.show(io::IO, p::ContourletParams3D)
+    return print(io, "ContourletParams3D(J=$(p.J), L_array=$(p.L_array), order=$(p.order), …)")
 end
 
 # Convert to real filter precision `Tf` (no-op when already Tf).
-_convert_params3(::Type{Tf}, p::ContourletParams3{Tf}) where {Tf} = p
-_convert_params3(::Type{Tf}, p::ContourletParams3) where {Tf <: AbstractFloat} =
-    ContourletParams3{Tf}(
+_convert_params3d(::Type{Tf}, p::ContourletParams3D{Tf}) where {Tf} = p
+_convert_params3d(::Type{Tf}, p::ContourletParams3D) where {Tf <: AbstractFloat} =
+    ContourletParams3D{Tf}(
     p.J, p.L_array,
     FilterPair{Tf}(Tf.(p.lp_filters.h), Tf.(p.lp_filters.g)),
     p.order, p.poly, Tf(p.transition), p.tight
 )
 
 """
-    nsct3_nsubbands(params::ContourletParams3, j::Int) -> Int
+    nsct3d_nsubbands(params::ContourletParams3D, j::Int) -> Int
 
 Number of directional subbands at scale `j`, `3 * 2^L_array[j]`.
 """
-nsct3_nsubbands(p::ContourletParams3, j::Int) = 3 * (1 << p.L_array[j])
+nsct3d_nsubbands(p::ContourletParams3D, j::Int) = 3 * (1 << p.L_array[j])
 
 """
-    NSCT3Coefficients{Td, A}
+    NSCT3DCoefficients{Td, A}
 
-Output of [`nsct3_forward`](@ref).  `coarse` is the low-pass residual after `J`
+Output of [`nsct3d_forward`](@ref).  `coarse` is the low-pass residual after `J`
 pyramid levels and `subbands[j][k]` the `k`-th directional subband at scale `j`.
 Every array has the spatial size of the input — the transform is nonsubsampled.
 
 Size warning: the total coefficient volume is `1 + Σ_j 3·2^L_j` copies of the
 input.  At 256³ `Float32` with `J = 3` and `L = [2, 2, 3]` that is 3.1 GB; use
-the streaming form of [`nsct3_forward`](@ref) when that does not fit.
+the streaming form of [`nsct3d_forward`](@ref) when that does not fit.
 """
-struct NSCT3Coefficients{Td <: Number, A <: AbstractArray{Td, 3}}
+struct NSCT3DCoefficients{Td <: Number, A <: AbstractArray{Td, 3}}
     coarse::A
     subbands::Vector{Vector{A}}
 end
@@ -107,9 +107,9 @@ end
 # The parameters are inferred from the field types by Julia's implicit outer
 # constructor; an explicit one here would collide with it.
 
-Base.eltype(::NSCT3Coefficients{Td}) where {Td} = Td
+Base.eltype(::NSCT3DCoefficients{Td}) where {Td} = Td
 
-function Base.show(io::IO, c::NSCT3Coefficients)
+function Base.show(io::IO, c::NSCT3DCoefficients)
     ns = sum(length, c.subbands; init = 0)
-    return print(io, "NSCT3Coefficients(size=$(size(c.coarse)), J=$(length(c.subbands)), subbands=$(ns))")
+    return print(io, "NSCT3DCoefficients(size=$(size(c.coarse)), J=$(length(c.subbands)), subbands=$(ns))")
 end

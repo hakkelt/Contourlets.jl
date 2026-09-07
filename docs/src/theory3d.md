@@ -16,7 +16,7 @@ critically sampled filter bank above two dimensions.  So the 3-D directional
 stage is a different construction, with a redundancy of ``N`` in ``N``
 dimensions that is unavoidable rather than a design choice.
 
-## Nonsubsampled pyramid (NSP3)
+## Nonsubsampled pyramid (NSP3D)
 
 The multiscale stage is the direct extension of the 2-D à trous pyramid.  At
 level ``j`` the filters are upsampled by ``2^{j-1}`` along each axis and nothing
@@ -93,7 +93,7 @@ truncation of the 37³ and 61³ FIR filters the paper reports.
 polynomials used here satisfy ``f_0(x) + f_1(x) = 1`` identically, so the three
 *weights* ``W_k`` sum to 1 at every frequency, for every choice of `order` and
 `poly`.  What the filters do with that partition is the `tight` setting of
-[`make_hourglass3`](@ref):
+[`make_hourglass3d`](@ref):
 
   * `tight = false` — the masks are the weights themselves.  The synthesis
     filters are all 1 and reconstruction is a plain sum, with no transforms at
@@ -132,7 +132,7 @@ Larger ``N`` converges to the ideal indicator; the deviation from it falls
 monotonically, from about 0.095 mean absolute error at ``N = 4`` to 0.024 at
 ``N = 20``.
 
-## Directional filter bank (NSDFB3)
+## Directional filter bank (NSDFB3D)
 
 Each hourglass is then refined into wedges.  Inside ``P_i`` the two transverse
 ratios
@@ -168,14 +168,14 @@ not merely that some subband is large.
 Composing the two stages gives the transform:
 
 ```
-volume ─ NSP3 ─┬─ coarse ─→ next scale
-               └─ bandpass ─ NSDFB3 ─→ 3·2^L directional subbands
+volume ─ NSP3D ─┬─ coarse ─→ next scale
+               └─ bandpass ─ NSDFB3D ─→ 3·2^L directional subbands
 ```
 
 Every coefficient array keeps the size of the input, so the transform is exactly
 shift-invariant — and correspondingly redundant: ``1 + \sum_j 3 \cdot 2^{L_j}``
 copies of the input.  For ``J = 3`` and ``L = [2, 2, 3]`` that is 49 volumes,
-3.1 GB at 256³ `Float32`.  The streaming form of [`nsct3_forward`](@ref) exists
+3.1 GB at 256³ `Float32`.  The streaming form of [`nsct3d_forward`](@ref) exists
 for this reason: it holds one subband at a time.
 
 Because the directional bank depends only on the volume size and never on the
@@ -197,9 +197,9 @@ using CUDA, Contourlets
 using CUDA: CuArray
 import Adapt
 
-params = ContourletParams3(J = 2, L_array = [2, 2])
-ws = Adapt.adapt(CuArray, make_nsct3_workspace(params, (128, 128, 128), Float32))
-c  = nsct3_forward(CuArray(vol), params; workspace = ws)
+params = ContourletParams3D(J = 2, L_array = [2, 2])
+ws = Adapt.adapt(CuArray, make_nsct3d_workspace(params, (128, 128, 128), Float32))
+c  = nsct3d_forward(CuArray(vol), params; workspace = ws)
 ```
 
 A workspace adapt moves the shared hourglass response once, not once per scale.
@@ -209,7 +209,7 @@ not a broadcast.
 
 ## Surfacelet transform (decimated)
 
-The NSCT3 buys exact shift invariance with redundancy.  The surfacelet transform
+The NSCT3D buys exact shift invariance with redundancy.  The surfacelet transform
 trades the invariance back for a smaller coefficient set, which is what makes it
 usable as a sparsifying transform rather than only as an analysis tool.
 
@@ -247,7 +247,7 @@ and — because subbands are stored real — destroys perfect reconstruction, wi
 no error message.  The masks are evaluated at a canonical representative of each
 ``\pm`` pair to remove the ambiguity.
 
-The same trap bit `nsdfb3`, and stayed invisible for longer.  With the masks
+The same trap bit `nsdfb3d`, and stayed invisible for longer.  With the masks
 applied once and reconstruction a plain sum, the individual asymmetries cancel
 before any inverse transform: ``\sum_k W_k X = X`` whatever each ``W_k`` does at
 Nyquist, so perfect reconstruction held while the masks were not even.  Turning
@@ -260,13 +260,13 @@ failed by 0.27.
 ``\omega_\mathrm{ref}`` when it is neither 0 nor ``\pi``, and
 ``\omega_\mathrm{tr}`` otherwise.  Each factor canonicalises its own plane
 independently, so the masks stay separable — the property the GPU path depends
-on — and `nsdfb3 — masks are even in frequency` pins the result.
+on — and `nsdfb3d — masks are even in frequency` pins the result.
 
 ### How much it actually saves
 
 Measured redundancy against the nonsubsampled transform at the same parameters:
 
-| `J`, `L`     | surfacelet3 | NSCT3 |
+| `J`, `L`     | surfacelet3d | NSCT3D |
 |--------------|-------------|-------|
 | 1, [1]       |  6.2        |   7   |
 | 2, [1, 1]    |  7.7        |  13   |
@@ -288,7 +288,7 @@ reference construction does it.  That is a missing piece, not a tuning problem.
 That analysis is confirmed by the reference implementation.  Running SurfBox's
 `Surfdec` on a 96³ volume at `Pyr_mode = 1.5` gives a redundancy of 3.9259 for
 24 directional subbands and *the same* 3.9259 for 96 — flat in the direction
-count, as sheared boxes predict.  This package's `surfacelet3` gives 15.4 and
+count, as sheared boxes predict.  This package's `surfacelet3d` gives 15.4 and
 46.4 at the matching settings, growing roughly linearly.  So the gap is not a
 constant factor; it widens exactly where a directional transform earns its keep.
 

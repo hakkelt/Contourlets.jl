@@ -27,19 +27,19 @@
 #     spectrum is restricted to the smallest symmetric box containing it and
 #     inverse-transformed at that reduced size.  This is the same mechanism the
 #     wrapping-based discrete curvelet transform uses.  The resulting redundancy
-#     is measured, not assumed — see `surfacelet3_redundancy`.
+#     is measured, not assumed — see `surfacelet3d_redundancy`.
 #
 # How far that gets, honestly.  Measured against the nonsubsampled transform at
 # the same parameters:
 #
-#   | J, L          | surfacelet3 | NSCT3 |
+#   | J, L          | surfacelet3d | NSCT3D |
 #   |---------------|-------------|-------|
 #   | 1, [1]        |  6.2        |   7   |
 #   | 2, [1, 1]     |  7.7        |  13   |
 #   | 2, [2, 2]     | 15.3        |  25   |
 #   | 3, [2, 2, 3]  | 16.0        |  49   |
 #
-# So this is a partially decimated transform: about 3× leaner than the NSCT3 at
+# So this is a partially decimated transform: about 3× leaner than the NSCT3D at
 # useful settings, not the redundancy of about 4 that Lu & Do report.  The reason
 # is specific and worth knowing before trying to tune the parameters for it: an
 # *axis-aligned* box recovers the radial decimation in full (a coarser shell
@@ -53,7 +53,7 @@
 # construction does it.  That is the missing piece, not a tuning problem.
 #
 #   * Consequently the directional masks are *not* the Bernstein mapping kernels
-#     of `hourglass3.jl`.  Those are the right choice there and the wrong one
+#     of `hourglass3d.jl`.  Those are the right choice there and the wrong one
 #     here: a mapping kernel is a polynomial in `cos ω`, so `f₀(M(ω))` is nonzero
 #     almost everywhere and its support box is the whole grid — nothing to
 #     decimate.  The requirement inverts, so the construction does too: masks
@@ -68,7 +68,7 @@
 # `Σ_i N_i ‖s_i‖² = N ‖x‖²` where `N_i` is the subband's element count.
 
 """
-    SurfaceletParams3
+    SurfaceletParams3D
 
 Describes a 3-D surfacelet decomposition.
 
@@ -90,11 +90,11 @@ boxes; that trade-off is exactly the redundancy dial.
 ```jldoctest
 julia> using Contourlets
 
-julia> SurfaceletParams3(J = 2, L_array = [1, 2])
-SurfaceletParams3(J=2, L_array=[1, 2], …)
+julia> SurfaceletParams3D(J = 2, L_array = [1, 2])
+SurfaceletParams3D(J=2, L_array=[1, 2], …)
 ```
 """
-struct SurfaceletParams3{T <: AbstractFloat}
+struct SurfaceletParams3D{T <: AbstractFloat}
     J::Int
     L_array::Vector{Int}
     poly::Int
@@ -103,7 +103,7 @@ struct SurfaceletParams3{T <: AbstractFloat}
     angular_transition::T
 end
 
-function SurfaceletParams3(;
+function SurfaceletParams3D(;
         J::Int,
         L_array::AbstractVector{<:Integer},
         poly::Int = 1,
@@ -119,24 +119,24 @@ function SurfaceletParams3(;
     transition >= 0 || throw(ArgumentError("transition must be ≥ 0"))
     radial_transition > 0 || throw(ArgumentError("radial_transition must be > 0"))
     angular_transition > 0 || throw(ArgumentError("angular_transition must be > 0"))
-    return SurfaceletParams3{T}(
+    return SurfaceletParams3D{T}(
         J, collect(Int, L_array), poly,
         T(transition), T(radial_transition), T(angular_transition)
     )
 end
 
-Base.eltype(::SurfaceletParams3{T}) where {T} = T
+Base.eltype(::SurfaceletParams3D{T}) where {T} = T
 
-function Base.show(io::IO, p::SurfaceletParams3)
-    return print(io, "SurfaceletParams3(J=$(p.J), L_array=$(p.L_array), …)")
+function Base.show(io::IO, p::SurfaceletParams3D)
+    return print(io, "SurfaceletParams3D(J=$(p.J), L_array=$(p.L_array), …)")
 end
 
 """
-    surfacelet3_nsubbands(p::SurfaceletParams3, j::Int) -> Int
+    surfacelet3d_nsubbands(p::SurfaceletParams3D, j::Int) -> Int
 
 Number of directional subbands at scale `j`, `3 * 2^L_array[j]`.
 """
-surfacelet3_nsubbands(p::SurfaceletParams3, j::Int) = 3 * (1 << p.L_array[j])
+surfacelet3d_nsubbands(p::SurfaceletParams3D, j::Int) = 3 * (1 << p.L_array[j])
 
 # One subband's frequency box: per-axis index maps into the box, and its size.
 struct SubbandBox
@@ -145,18 +145,18 @@ struct SubbandBox
 end
 
 """
-    Surfacelet3Plan{T}
+    Surfacelet3DPlan{T}
 
 Precomputed masks metadata and FFT plans for one volume size.  Build with
-[`make_surfacelet3`](@ref).
+[`make_surfacelet3d`](@ref).
 
 The per-subband masks are *not* stored — at 256³ that would be gigabytes.  Only
 the 1-D frequency tables, the per-scale wedge boundaries, and each subband's
 frequency box are kept; masks are evaluated on the fly.
 """
-struct Surfacelet3Plan{T <: AbstractFloat, P}
+struct Surfacelet3DPlan{T <: AbstractFloat, P}
     dims::NTuple{3, Int}
-    params::SurfaceletParams3{T}
+    params::SurfaceletParams3D{T}
     wfreq::NTuple{3, Vector{T}}      # ω_d folded to (-π, π]
     signed::NTuple{3, Vector{Int}}   # signed frequency index per axis
     negidx::NTuple{3, Vector{Int}}   # index of the negated frequency, per axis
@@ -169,16 +169,16 @@ struct Surfacelet3Plan{T <: AbstractFloat, P}
 end
 
 """
-    make_surfacelet3(params::SurfaceletParams3, dims::NTuple{3,Int}, ::Type{T}=Float64;
-                     threading=Auto(), flags=FFTW.MEASURE) -> Surfacelet3Plan
+    make_surfacelet3d(params::SurfaceletParams3D, dims::NTuple{3,Int}, ::Type{T}=Float64;
+                     threading=Auto(), flags=FFTW.MEASURE) -> Surfacelet3DPlan
 
 Plan the surfacelet transform for `dims`-sized volumes.
 
 Planning scans every subband mask once to find its frequency support, so it
 costs one full-grid pass per subband.  Reuse the plan.
 """
-function make_surfacelet3(
-        params::SurfaceletParams3, dims::NTuple{3, Int}, ::Type{T} = Float64;
+function make_surfacelet3d(
+        params::SurfaceletParams3D, dims::NTuple{3, Int}, ::Type{T} = Float64;
         threading::ThreadingPolicy = Auto(),
         flags::Integer = FFTW.MEASURE
     ) where {T <: AbstractFloat}
@@ -195,31 +195,31 @@ function make_surfacelet3(
     spec = Array{Complex{T}, 3}(undef, dims)
     work = Array{Complex{T}, 3}(undef, dims)
 
-    plan = Surfacelet3Plan{T, typeof(fwd)}(
+    plan = Surfacelet3DPlan{T, typeof(fwd)}(
         dims, p, wfreq, signed, negidx, radii,
         [SubbandBox[] for _ in 1:p.J], _full_box(dims), fwd, spec, work
     )
     # Support boxes, found by scanning each mask once.
     mask = Array{T, 3}(undef, dims)
     for j in 1:p.J
-        for k in 1:surfacelet3_nsubbands(p, j)
+        for k in 1:surfacelet3d_nsubbands(p, j)
             _fill_surfacelet_mask!(mask, plan, j, k)
             push!(plan.boxes[j], _support_box(mask, plan))
         end
     end
     _fill_coarse_mask!(mask, plan)
-    return Surfacelet3Plan{T, typeof(fwd)}(
+    return Surfacelet3DPlan{T, typeof(fwd)}(
         dims, p, wfreq, signed, negidx, radii, plan.boxes,
         _support_box(mask, plan), fwd, spec, work
     )
 end
 
-make_surfacelet3(params::SurfaceletParams3, dims::Vararg{Int, 3}; kwargs...) =
-    make_surfacelet3(params, dims; kwargs...)
+make_surfacelet3d(params::SurfaceletParams3D, dims::Vararg{Int, 3}; kwargs...) =
+    make_surfacelet3d(params, dims; kwargs...)
 
-_convert_sparams(::Type{T}, p::SurfaceletParams3{T}) where {T} = p
-_convert_sparams(::Type{T}, p::SurfaceletParams3) where {T <: AbstractFloat} =
-    SurfaceletParams3{T}(
+_convert_sparams(::Type{T}, p::SurfaceletParams3D{T}) where {T} = p
+_convert_sparams(::Type{T}, p::SurfaceletParams3D) where {T <: AbstractFloat} =
+    SurfaceletParams3D{T}(
     p.J, p.L_array, p.poly,
     T(p.transition), T(p.radial_transition), T(p.angular_transition)
 )
@@ -236,37 +236,37 @@ _full_box(dims::NTuple{3, Int}) =
     SubbandBox(dims, ntuple(d -> collect(1:dims[d]), 3))
 
 """
-    Surfacelet3Coefficients{T}
+    Surfacelet3DCoefficients{T}
 
-Output of [`surfacelet3_forward`](@ref).  Unlike the NSCT containers the arrays
+Output of [`surfacelet3d_forward`](@ref).  Unlike the NSCT containers the arrays
 here have *different* sizes: each subband is stored at its own decimated
 resolution, which is the whole point.
 """
-struct Surfacelet3Coefficients{T <: AbstractFloat}
+struct Surfacelet3DCoefficients{T <: AbstractFloat}
     dims::NTuple{3, Int}     # size of the volume this came from
     coarse::Array{T, 3}
     subbands::Vector{Vector{Array{T, 3}}}
 end
 
-Base.eltype(::Surfacelet3Coefficients{T}) where {T} = T
+Base.eltype(::Surfacelet3DCoefficients{T}) where {T} = T
 
-function Base.show(io::IO, c::Surfacelet3Coefficients)
+function Base.show(io::IO, c::Surfacelet3DCoefficients)
     ns = sum(length, c.subbands; init = 0)
     n = length(c.coarse) + sum(sum(length, s; init = 0) for s in c.subbands; init = 0)
     return print(
-        io, "Surfacelet3Coefficients(dims=$(c.dims), J=$(length(c.subbands)), ",
+        io, "Surfacelet3DCoefficients(dims=$(c.dims), J=$(length(c.subbands)), ",
         "subbands=$(ns), coefficients=$(n))"
     )
 end
 
 """
-    surfacelet3_redundancy(plan::Surfacelet3Plan) -> Float64
+    surfacelet3d_redundancy(plan::Surfacelet3DPlan) -> Float64
 
 Total stored coefficients divided by the number of input voxels.  This is
 measured from the plan's actual support boxes, so it reflects the transition
 widths that were chosen rather than an idealised figure.
 """
-function surfacelet3_redundancy(plan::Surfacelet3Plan)
+function surfacelet3d_redundancy(plan::Surfacelet3DPlan)
     total = prod(plan.coarse_box.size)
     for scale in plan.boxes, box in scale
         total += prod(box.size)
@@ -286,21 +286,23 @@ end
 
 # Radial (cube-shell) weight of scale `j`, from r = ‖ω‖_∞.  Scale 1 is finest.
 # The shells telescope: the sum over j = 1..J plus the coarse weight is 1.
-@inline function _radial_weight(r::T, plan::Surfacelet3Plan{T}, j::Int) where {T}
+@inline function _radial_weight(r::T, plan::Surfacelet3DPlan{T}, j::Int) where {T}
     p = plan.params
-    inner = _radial_edge(r, plan, j)          # 1 above the inner boundary
+    inner = _radial_edge(r, plan, j)          # 1 below the outer shell edge
     outer = j == 1 ? one(T) : _radial_edge(r, plan, j - 1)
     return outer - inner
 end
 
-# 1 well above the boundary between scales j and j+1, 0 well below it.
-@inline function _radial_edge(r::T, plan::Surfacelet3Plan{T}, j::Int) where {T}
+# 1 well *below* the boundary between scales j and j+1, 0 well above it: a soft
+# low-pass indicator of that shell edge, which is what makes the differences in
+# `_radial_weight` telescope to 1.
+@inline function _radial_edge(r::T, plan::Surfacelet3DPlan{T}, j::Int) where {T}
     b = plan.radii[j + 1]
     w = plan.params.radial_transition * b
     return one(T) - _step((r - b) / w, plan.params.poly)
 end
 
-@inline _coarse_weight(r::T, plan::Surfacelet3Plan{T}) where {T} =
+@inline _coarse_weight(r::T, plan::Surfacelet3DPlan{T}) where {T} =
     _radial_edge(r, plan, plan.params.J)
 
 # Unnormalised hourglass weight of axis `i`: 1 where |ω_i| dominates both other
@@ -335,7 +337,7 @@ end
 
 # W = radial_j · normalised hourglass · wedge_p · wedge_q, then V = √W.
 function _fill_surfacelet_mask!(
-        out::AbstractArray{T, 3}, plan::Surfacelet3Plan{T}, j::Int, k::Int
+        out::AbstractArray{T, 3}, plan::Surfacelet3DPlan{T}, j::Int, k::Int
     ) where {T}
     p = plan.params
     nw = 1 << p.L_array[j]
@@ -398,7 +400,7 @@ function _fill_surfacelet_mask!(
     return out
 end
 
-function _fill_coarse_mask!(out::AbstractArray{T, 3}, plan::Surfacelet3Plan{T}) where {T}
+function _fill_coarse_mask!(out::AbstractArray{T, 3}, plan::Surfacelet3DPlan{T}) where {T}
     w1, w2, w3 = plan.wfreq
     @inbounds for k3 in eachindex(w3), k2 in eachindex(w2)
         for k1 in eachindex(w1)
@@ -416,7 +418,7 @@ _wedge_counts(L::Int) = (1 << cld(L, 2), 1 << fld(L, 2))
 # Smallest box symmetric about the origin containing the mask's support, as
 # per-axis index maps.  Symmetry matters: the masks are even in ω, so a
 # symmetric box keeps the restricted spectrum Hermitian and the subband real.
-function _support_box(mask::AbstractArray{T, 3}, plan::Surfacelet3Plan{T}) where {T}
+function _support_box(mask::AbstractArray{T, 3}, plan::Surfacelet3DPlan{T}) where {T}
     dims = plan.dims
     reach = zeros(Int, 3)
     found = false
@@ -451,14 +453,14 @@ end
 # ── Transform ────────────────────────────────────────────────────────────────
 
 """
-    surfacelet3_forward(volume, params::SurfaceletParams3; plan=nothing) -> Surfacelet3Coefficients
+    surfacelet3d_forward(volume, params::SurfaceletParams3D; plan=nothing) -> Surfacelet3DCoefficients
 
 Decimated 3-D surfacelet transform.  Each subband is returned at its own reduced
 resolution, so the total coefficient count is a small multiple of the input —
-see [`surfacelet3_redundancy`](@ref).
+see [`surfacelet3d_redundancy`](@ref).
 
 Not shift-invariant: that is what the decimation costs, and it is why
-[`nsct3_forward`](@ref) still exists.
+[`nsct3d_forward`](@ref) still exists.
 
 # Examples
 ```jldoctest
@@ -466,20 +468,20 @@ julia> using Contourlets, Random
 
 julia> x = randn(Xoshiro(7), 32, 32, 32);
 
-julia> p = SurfaceletParams3(J = 2, L_array = [1, 1]);
+julia> p = SurfaceletParams3D(J = 2, L_array = [1, 1]);
 
-julia> c = surfacelet3_forward(x, p);
+julia> c = surfacelet3d_forward(x, p);
 
-julia> maximum(abs, surfacelet3_inverse(c, p) .- x) < 1e-10
+julia> maximum(abs, surfacelet3d_inverse(c, p) .- x) < 1e-10
 true
 ```
 """
-function surfacelet3_forward(
-        volume::AbstractArray{<:Real, 3}, params::SurfaceletParams3;
-        plan::Union{Surfacelet3Plan, Nothing} = nothing
+function surfacelet3d_forward(
+        volume::AbstractArray{<:Real, 3}, params::SurfaceletParams3D;
+        plan::Union{Surfacelet3DPlan, Nothing} = nothing
     )
     T = _filter_eltype(_data_eltype(volume))
-    pl = _surfacelet3_plan(plan, params, size(volume), T)
+    pl = _surfacelet3d_plan(plan, params, size(volume), T)
     p = pl.params
 
     copyto!(pl.spec, volume)
@@ -489,7 +491,7 @@ function surfacelet3_forward(
     mask = Array{T, 3}(undef, pl.dims)
     subbands = Vector{Vector{Array{T, 3}}}(undef, p.J)
     for j in 1:p.J
-        subbands[j] = Vector{Array{T, 3}}(undef, surfacelet3_nsubbands(p, j))
+        subbands[j] = Vector{Array{T, 3}}(undef, surfacelet3d_nsubbands(p, j))
         for k in eachindex(subbands[j])
             _fill_surfacelet_mask!(mask, pl, j, k)
             subbands[j][k] = _extract_subband(pl, mask, pl.boxes[j][k])
@@ -497,20 +499,20 @@ function surfacelet3_forward(
     end
     _fill_coarse_mask!(mask, pl)
     coarse = _extract_subband(pl, mask, pl.coarse_box)
-    return Surfacelet3Coefficients(pl.dims, coarse, subbands)
+    return Surfacelet3DCoefficients(pl.dims, coarse, subbands)
 end
 
 """
-    surfacelet3_inverse(coeffs::Surfacelet3Coefficients, params::SurfaceletParams3; plan=nothing) -> volume
+    surfacelet3d_inverse(coeffs::Surfacelet3DCoefficients, params::SurfaceletParams3D; plan=nothing) -> volume
 
-Invert [`surfacelet3_forward`](@ref).  Exact: the masks satisfy `Σ V² = 1` and
+Invert [`surfacelet3d_forward`](@ref).  Exact: the masks satisfy `Σ V² = 1` and
 each vanishes outside its box, so restriction loses nothing.
 """
-function surfacelet3_inverse(
-        coeffs::Surfacelet3Coefficients{T}, params::SurfaceletParams3;
-        plan::Union{Surfacelet3Plan, Nothing} = nothing
+function surfacelet3d_inverse(
+        coeffs::Surfacelet3DCoefficients{T}, params::SurfaceletParams3D;
+        plan::Union{Surfacelet3DPlan, Nothing} = nothing
     ) where {T}
-    pl = _surfacelet3_plan(plan, params, coeffs.dims, T)
+    pl = _surfacelet3d_plan(plan, params, coeffs.dims, T)
     p = pl.params
     length(coeffs.subbands) == p.J ||
         throw(ArgumentError("coefficients were produced for a different number of scales"))
@@ -518,7 +520,7 @@ function surfacelet3_inverse(
     fill!(pl.spec, zero(Complex{T}))
     mask = Array{T, 3}(undef, pl.dims)
     for j in 1:p.J
-        length(coeffs.subbands[j]) == surfacelet3_nsubbands(p, j) ||
+        length(coeffs.subbands[j]) == surfacelet3d_nsubbands(p, j) ||
             throw(DimensionMismatch("scale $(j) has the wrong number of subbands"))
         for k in eachindex(coeffs.subbands[j])
             _fill_surfacelet_mask!(mask, pl, j, k)
@@ -536,11 +538,11 @@ function surfacelet3_inverse(
     return out
 end
 
-function _surfacelet3_plan(
-        plan::Union{Surfacelet3Plan, Nothing}, params::SurfaceletParams3,
+function _surfacelet3d_plan(
+        plan::Union{Surfacelet3DPlan, Nothing}, params::SurfaceletParams3D,
         dims::NTuple{3, Int}, ::Type{T}
     ) where {T}
-    plan === nothing && return make_surfacelet3(params, dims, T)
+    plan === nothing && return make_surfacelet3d(params, dims, T)
     plan.dims == dims || throw(DimensionMismatch("plan size does not match the volume"))
     return plan
 end
@@ -549,7 +551,7 @@ end
 # size.  The mask is even in ω and the box is symmetric, so the restricted data
 # is Hermitian on the box grid and the result is real up to rounding.
 function _extract_subband(
-        pl::Surfacelet3Plan{T}, mask::AbstractArray{T, 3}, box::SubbandBox
+        pl::Surfacelet3DPlan{T}, mask::AbstractArray{T, 3}, box::SubbandBox
     ) where {T}
     buf = zeros(Complex{T}, box.size)
     m1, m2, m3 = box.maps
@@ -578,7 +580,7 @@ end
 # Transform the subband back up to its box spectrum and accumulate it, masked,
 # into the full spectrum.
 function _accumulate_subband!(
-        pl::Surfacelet3Plan{T}, band::AbstractArray{T, 3},
+        pl::Surfacelet3DPlan{T}, band::AbstractArray{T, 3},
         mask::AbstractArray{T, 3}, box::SubbandBox
     ) where {T}
     size(band) == box.size ||

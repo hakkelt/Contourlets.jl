@@ -14,7 +14,7 @@
 # Bernstein mapping polynomials -- so the masks are compared on geometry
 # (which hourglass dominates a given frequency) rather than value.
 
-@testitem "hourglass3 matches the SurfBox reference partition" tags = [:directional] begin
+@testitem "hourglass3d matches the SurfBox reference partition" tags = [:directional] begin
     reference_octant() = reshape(
         reinterpret(Float32, read(joinpath(@__DIR__, "..", "reference", "surfbox_hourglass_32.bin"))),
         17, 17, 17
@@ -38,8 +38,8 @@
     # Restrict to the rfft grid this package works on, and convert to weights.
     w_ref = ntuple(k -> (v[k][1:17, :, :] .^ 2) ./ 3, 3)
 
-    fb = make_hourglass3((32, 32, 32), Float64)
-    w_mine = ntuple(k -> hourglass3_weight(fb, k), 3)
+    fb = make_hourglass3d((32, 32, 32), Float64)
+    w_mine = ntuple(k -> hourglass3d_weight(fb, k), 3)
 
     @test all(size(w_mine[k]) == size(w_ref[k]) for k in 1:3)
 
@@ -73,14 +73,14 @@
     # differences measured above.
     unity = w_mine[1] .+ w_mine[2] .+ w_mine[3]
     @test all(x -> isapprox(x, 1.0; atol = 1.0e-12), unity)
-    masks = ntuple(k -> hourglass3_mask(fb, k), 3)
+    masks = ntuple(k -> hourglass3d_mask(fb, k), 3)
     parseval = masks[1] .^ 2 .+ masks[2] .^ 2 .+ masks[3] .^ 2
     @test all(x -> isapprox(x, 1.0; atol = 1.0e-12), parseval)
 
     # Without the normalisation the masks are the weights themselves, and the
     # frame-bound ratio is 3 rather than 1.
-    loose = make_hourglass3((32, 32, 32), Float64; tight = false)
-    energy = sum(hourglass3_mask(loose, k) .^ 2 for k in 1:3)
+    loose = make_hourglass3d((32, 32, 32), Float64; tight = false)
+    energy = sum(hourglass3d_mask(loose, k) .^ 2 for k in 1:3)
     @test isapprox(minimum(energy), 1 / 3; atol = 1.0e-3)
     @test isapprox(maximum(energy), 1.0; atol = 1.0e-12)
 end
@@ -88,12 +88,12 @@ end
 # `test/reference/surfbox_directions_32.bin` records which of SurfBox's 12
 # directional subbands carries the most energy for each of 80 plane waves.
 # SurfBox's NDFB is decimated and built from an iteratively resampled
-# checkerboard chain, this package's `nsdfb3` places the same ideal wedge
+# checkerboard chain, this package's `nsdfb3d` places the same ideal wedge
 # boundaries directly in frequency, and neither orders its subbands the same
 # way -- so the test asks whether the two agree on the *partition* of
 # directions, up to relabelling.
 
-@testitem "nsdfb3 matches the SurfBox reference wedge partition" tags = [:directional] begin
+@testitem "nsdfb3d matches the SurfBox reference wedge partition" tags = [:directional] begin
     raw = reshape(
         reinterpret(Float64, read(joinpath(@__DIR__, "..", "reference", "surfbox_directions_32.bin"))),
         :
@@ -104,8 +104,8 @@ end
     @test length(ref_label) == ndirs
     @test length(unique(ref_label)) == 12
 
-    fb = make_nsdfb3((32, 32, 32), Float64; levels = 2)
-    @test nsdfb3_nsubbands(fb) == 12
+    fb = make_nsdfb3d((32, 32, 32), Float64; levels = 2)
+    @test nsdfb3d_nsubbands(fb) == 12
 
     energies = zeros(ndirs, 12)
     for t in 1:ndirs
@@ -115,7 +115,7 @@ end
             cospi(2 * (k[1] * (i - 1) + k[2] * (j - 1) + k[3] * (l - 1)) / 32)
                 for i in 1:32, j in 1:32, l in 1:32
         ]
-        energies[t, :] = [sum(abs2, b) for b in nsdfb3_decompose(vol, fb)]
+        energies[t, :] = [sum(abs2, b) for b in nsdfb3d_decompose(vol, fb)]
     end
     my_label = [argmax(@view energies[t, :]) for t in 1:ndirs]
     @test length(unique(my_label)) == 12

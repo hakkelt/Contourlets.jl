@@ -39,12 +39,12 @@
 # the three hourglass masks sum to 1, and reconstruction is a plain sum.
 
 """
-    NSDFB3{T}
+    NSDFB3D{T}
 
-3-D nonsubsampled directional filter bank: [`HourglassFB3`](@ref) followed by a
-wedge refinement of each hourglass.  Build with [`make_nsdfb3`](@ref).
+3-D nonsubsampled directional filter bank: [`HourglassFB3D`](@ref) followed by a
+wedge refinement of each hourglass.  Build with [`make_nsdfb3d`](@ref).
 """
-struct NSDFB3{T <: AbstractFloat, A3 <: AbstractArray{T, 3}, FB <: HourglassFB3{T}}
+struct NSDFB3D{T <: AbstractFloat, A3 <: AbstractArray{T, 3}, FB <: HourglassFB3D{T}}
     fb::FB
     levels::NTuple{2, Int}          # (l_a, l_b) refinement levels per hourglass
     # Wedge masks, `[hourglass][which plane][wedge]`.  Each depends on only two
@@ -55,7 +55,7 @@ struct NSDFB3{T <: AbstractFloat, A3 <: AbstractArray{T, 3}, FB <: HourglassFB3{
 end
 
 """
-    make_nsdfb3(dims::NTuple{3,Int}, ::Type{T}=Float64;
+    make_nsdfb3d(dims::NTuple{3,Int}, ::Type{T}=Float64;
                 levels::Int=2, order::Int=12, poly::Int=1, tight::Bool=true,
                 transition::Real=1.0, threading=Auto(), flags=FFTW.MEASURE)
 
@@ -67,14 +67,14 @@ between the two transverse planes of each hourglass (`l_a = ceil(L/2)`,
 `l_b = floor(L/2)`), matching the balanced expansion rule of the paper.
 `levels = 0` leaves the plain three-subband hourglass bank.
 
-`order`, `poly` and `tight` are forwarded to [`make_hourglass3`](@ref); with
+`order`, `poly` and `tight` are forwarded to [`make_hourglass3d`](@ref); with
 `tight = true` (the default) the whole bank is a Parseval frame, since the wedge
 weights are themselves a partition of unity.  `transition`
 scales the width of the overlap between neighbouring wedges, as a fraction of
 the wedge width: `0` gives hard boundaries, `1` (the default) makes the
 transition as wide as one wedge.
 """
-function make_nsdfb3(
+function make_nsdfb3d(
         dims::NTuple{3, Int}, ::Type{T} = Float64;
         levels::Int = 2, order::Int = 12, poly::Int = 1, tight::Bool = true,
         transition::Real = 1.0,
@@ -83,38 +83,38 @@ function make_nsdfb3(
     ) where {T <: AbstractFloat}
     levels >= 0 || throw(ArgumentError("levels must be ≥ 0"))
     0 <= transition || throw(ArgumentError("transition must be ≥ 0"))
-    fb = make_hourglass3(
+    fb = make_hourglass3d(
         dims, T; order = order, poly = poly, tight = tight,
         threading = threading, flags = flags
     )
-    return nsdfb3_sharing(fb, levels; poly = poly, transition = transition)
+    return nsdfb3d_sharing(fb, levels; poly = poly, transition = transition)
 end
 
 """
-    nsdfb3_sharing(fb::HourglassFB3, levels::Int; poly=fb.poly, transition=1.0) -> NSDFB3
+    nsdfb3d_sharing(fb::HourglassFB3D, levels::Int; poly=fb.poly, transition=1.0) -> NSDFB3D
 
 Build a directional bank on top of an *existing* hourglass bank instead of
 planning a new one.  The hourglass stage depends only on the volume size, so a
 multiscale transform can plan it once and vary only the wedge refinement per
 scale — the wedge masks are matrices, so an extra scale costs kilobytes.
 """
-function nsdfb3_sharing(
-        fb::HourglassFB3{T}, levels::Int;
+function nsdfb3d_sharing(
+        fb::HourglassFB3D{T}, levels::Int;
         poly::Int = fb.poly, transition::Real = 1.0
     ) where {T <: AbstractFloat}
     levels >= 0 || throw(ArgumentError("levels must be ≥ 0"))
     transition >= 0 || throw(ArgumentError("transition must be ≥ 0"))
     la, lb = cld(levels, 2), fld(levels, 2)
     wedges = ntuple(i -> _wedge_masks(fb, i, (la, lb), poly, T(transition)), 3)
-    return NSDFB3{T, typeof(wedges[1][1][1]), typeof(fb)}(fb, (la, lb), wedges)
+    return NSDFB3D{T, typeof(wedges[1][1][1]), typeof(fb)}(fb, (la, lb), wedges)
 end
 
-function make_nsdfb3(dims::NTuple{3, Int}, ::Type{Complex{T}}; kwargs...) where {T <: AbstractFloat}
-    return make_nsdfb3(dims, T; kwargs...)
+function make_nsdfb3d(dims::NTuple{3, Int}, ::Type{Complex{T}}; kwargs...) where {T <: AbstractFloat}
+    return make_nsdfb3d(dims, T; kwargs...)
 end
 
-make_nsdfb3(n1::Int, n2::Int, n3::Int, ::Type{Td} = Float64; kwargs...) where {Td} =
-    make_nsdfb3((n1, n2, n3), Td; kwargs...)
+make_nsdfb3d(n1::Int, n2::Int, n3::Int, ::Type{Td} = Float64; kwargs...) where {Td} =
+    make_nsdfb3d((n1, n2, n3), Td; kwargs...)
 
 # The two transverse axes of hourglass `i`, in increasing order.
 @inline _transverse_axes(i::Int) = i == 1 ? (2, 3) : (i == 2 ? (1, 3) : (1, 2))
@@ -139,7 +139,7 @@ end
 
 # Wedge masks for one hourglass: one vector of matrices per transverse plane.
 function _wedge_masks(
-        fb::HourglassFB3{T}, i::Int, levels::NTuple{2, Int}, poly::Int, transition::T
+        fb::HourglassFB3D{T}, i::Int, levels::NTuple{2, Int}, poly::Int, transition::T
     ) where {T}
     a, b = _transverse_axes(i)
     return (
@@ -149,7 +149,7 @@ function _wedge_masks(
 end
 
 function _wedge_masks_plane(
-        fb::HourglassFB3{T}, ref::Int, tr::Int, l::Int, poly::Int, transition::T
+        fb::HourglassFB3D{T}, ref::Int, tr::Int, l::Int, poly::Int, transition::T
     ) where {T}
     n = fb.dims
     wref = _folded_frequencies(T, n[ref]; half = ref == 1)
@@ -166,9 +166,10 @@ function _wedge_masks_plane(
 
     delta = T(2) / nw
     width = transition * delta
+    nref, ntr = n[ref], n[tr]
     @inbounds for (q, wt) in enumerate(wtr), (p, wr) in enumerate(wref)
         # Ratio parameterising direction inside the hourglass.
-        s = _wedge_ratio(wr, wt)
+        s = _wedge_ratio(wr, wt, _self_conjugate_bin(p, nref), _self_conjugate_bin(q, ntr))
         # The outermost steps are hard (1 and 0) so the telescoping sum is
         # exactly 1 for every `s`, including |s| > 1 outside the hourglass.
         prev = one(T)
@@ -181,8 +182,15 @@ function _wedge_masks_plane(
     return [_orient(m, ref, tr, shape) for m in flat]
 end
 
-# Lay a matrix indexed (reference axis, transverse axis) into a 3-D array whose
-# non-singleton axes are `ref` and `tr`, ready to broadcast against a full mask.
+# Whether bin `k` of an `n`-point DFT axis is its own negative: bin 1 (`ω = 0`)
+# always, plus the Nyquist bin of an even-length axis.  Decided from the *index*,
+# never from the frequency value.  `2π(k - 1)/n` misses `T(π)` by an ulp for
+# roughly half of all even `n` (22, 26, 30, 44, 52, 60, 88, 120, 240, …) — either
+# landing just short of π, or just past it and folding to ≈ -π — so a value
+# comparison silently skips the canonicalisation below at those sizes, and the
+# `tight = true` bank then loses perfect reconstruction outright.
+@inline _self_conjugate_bin(k::Int, n::Int) = mod(2 * (k - 1), n) == 0
+
 # Signed slope `ω_tr / ω_ref`, evaluated at a canonical representative of the
 # ± frequency pair.
 #
@@ -197,20 +205,22 @@ end
 # the masks (`tight = true`).
 #
 # The fix is to fix the sign from the first coordinate that *can* carry one:
-# `ω_ref` when it is neither 0 nor π, `ω_tr` otherwise.  When both are
+# `ω_ref` when its bin is not self-conjugate, `ω_tr` otherwise.  When both are
 # self-negating the ratio is constant anyway.  Each factor canonicalises its own
 # plane, which keeps the masks separable — the property the GPU path depends on.
-@inline function _wedge_ratio(wr::T, wt::T) where {T}
+@inline function _wedge_ratio(wr::T, wt::T, ref_self::Bool, tr_self::Bool) where {T}
     # ω_ref = 0 is the hourglass apex; the value is arbitrary because the wedge
     # weights sum to 1 for any `s`.
     wr == 0 && return zero(T)
-    # ω_ref at Nyquist: the sign comes from ω_tr instead.
-    wr == T(π) && return abs(wt) / wr
-    # ω_tr at Nyquist: it cannot carry a sign, so ω_ref decides.
-    wt == T(π) && return wt / abs(wr)
+    # ω_ref at Nyquist: it cannot carry a sign, so ω_tr's magnitude decides.
+    ref_self && return abs(wt) / abs(wr)
+    # ω_tr at Nyquist: it cannot carry a sign, so ω_ref's magnitude decides.
+    tr_self && return wt / abs(wr)
     return wt / wr
 end
 
+# Lay a matrix indexed (reference axis, transverse axis) into a 3-D array whose
+# non-singleton axes are `ref` and `tr`, ready to broadcast against a full mask.
 function _orient(m::Matrix{T}, ref::Int, tr::Int, shape::NTuple{3, Int}) where {T}
     out = Array{T, 3}(undef, shape)
     @inbounds for idx in CartesianIndices(out)
@@ -221,20 +231,20 @@ function _orient(m::Matrix{T}, ref::Int, tr::Int, shape::NTuple{3, Int}) where {
 end
 
 """
-    nsdfb3_nsubbands(fb::NSDFB3) -> Int
+    nsdfb3d_nsubbands(fb::NSDFB3D) -> Int
 
 Number of directional subbands, `3 * 2^levels`.
 """
-nsdfb3_nsubbands(fb::NSDFB3) = 3 * (1 << sum(fb.levels))
+nsdfb3d_nsubbands(fb::NSDFB3D) = 3 * (1 << sum(fb.levels))
 
 """
-    nsdfb3_subband_index(fb::NSDFB3, hourglass, p, q) -> Int
+    nsdfb3d_subband_index(fb::NSDFB3D, hourglass, p, q) -> Int
 
 Linear index of the subband refining `hourglass` (1-3) at wedge `p` of its first
 transverse plane and wedge `q` of its second.  Subbands are ordered hourglass
 first, then `p`, then `q`.
 """
-function nsdfb3_subband_index(fb::NSDFB3, hourglass::Int, p::Int, q::Int)
+function nsdfb3d_subband_index(fb::NSDFB3D, hourglass::Int, p::Int, q::Int)
     na, nb = 1 << fb.levels[1], 1 << fb.levels[2]
     1 <= hourglass <= 3 || throw(ArgumentError("hourglass index must be 1, 2 or 3"))
     1 <= p <= na || throw(ArgumentError("wedge index p out of range 1:$(na)"))
@@ -243,13 +253,13 @@ function nsdfb3_subband_index(fb::NSDFB3, hourglass::Int, p::Int, q::Int)
 end
 
 """
-    nsdfb3_subband_triple(fb::NSDFB3, idx::Int) -> (hourglass, p, q)
+    nsdfb3d_subband_triple(fb::NSDFB3D, idx::Int) -> (hourglass, p, q)
 
-Inverse of [`nsdfb3_subband_index`](@ref): which hourglass and which wedge of
+Inverse of [`nsdfb3d_subband_index`](@ref): which hourglass and which wedge of
 each transverse plane subband `idx` refines.  Use it to interpret a subband
 index as a direction.
 """
-function nsdfb3_subband_triple(fb::NSDFB3, idx::Int)
+function nsdfb3d_subband_triple(fb::NSDFB3D, idx::Int)
     na, nb = 1 << fb.levels[1], 1 << fb.levels[2]
     1 <= idx <= 3 * na * nb || throw(ArgumentError("subband index out of range"))
     z = idx - 1
@@ -260,31 +270,31 @@ function nsdfb3_subband_triple(fb::NSDFB3, idx::Int)
 end
 
 """
-    nsdfb3_mask(fb::NSDFB3, idx::Int) -> Array{T,3}
+    nsdfb3d_mask(fb::NSDFB3D, idx::Int) -> Array{T,3}
 
 Frequency-domain analysis mask of directional subband `idx` on the rfft grid.
 For inspection and tests; the transform never materialises one.
 
 The masks sum to 1 over all subbands when the bank is not tight, and their
-squares sum to 1 when it is.  [`nsdfb3_weight`](@ref) returns the underlying
+squares sum to 1 when it is.  [`nsdfb3d_weight`](@ref) returns the underlying
 partition of unity either way.
 """
-function nsdfb3_mask(fb::NSDFB3{T}, idx::Int) where {T}
-    i, p, q = nsdfb3_subband_triple(fb, idx)
+function nsdfb3d_mask(fb::NSDFB3D{T}, idx::Int) where {T}
+    i, p, q = nsdfb3d_subband_triple(fb, idx)
     out = similar(fb.fb.m1)
     _fill_mask!(out, fb, i, p, q)
     return out
 end
 
 """
-    nsdfb3_weight(fb::NSDFB3, idx::Int) -> Array{T,3}
+    nsdfb3d_weight(fb::NSDFB3D, idx::Int) -> Array{T,3}
 
 Frequency-domain *weight* of directional subband `idx`, before the `tight`
 normalisation: the hourglass weight times the two wedge factors.  The weights
 sum to 1 over all subbands at every frequency.
 """
-function nsdfb3_weight(fb::NSDFB3{T}, idx::Int) where {T}
-    i, p, q = nsdfb3_subband_triple(fb, idx)
+function nsdfb3d_weight(fb::NSDFB3D{T}, idx::Int) where {T}
+    i, p, q = nsdfb3d_subband_triple(fb, idx)
     hg = fb.fb
     wa = fb.wedges[i][1][p]
     wb = fb.wedges[i][2][q]
@@ -296,7 +306,7 @@ end
 # Shared mask kernel: hourglass mask times the two wedge factors.  `wa` and `wb`
 # are indexed by (reference axis, transverse axis), so which of the three loop
 # indices to use depends on the hourglass.
-function _fill_mask!(out::AbstractArray{T, 3}, fb::NSDFB3{T}, i::Int, p::Int, q::Int) where {T}
+function _fill_mask!(out::AbstractArray{T, 3}, fb::NSDFB3D{T}, i::Int, p::Int, q::Int) where {T}
     hg = fb.fb
     wa = fb.wedges[i][1][p]
     wb = fb.wedges[i][2][q]
@@ -309,7 +319,7 @@ function _fill_mask!(out::AbstractArray{T, 3}, fb::NSDFB3{T}, i::Int, p::Int, q:
 end
 
 """
-    nsdfb3_decompose(volume, fb::NSDFB3) -> Vector
+    nsdfb3d_decompose(volume, fb::NSDFB3D) -> Vector
 
 All `3 * 2^levels` directional subbands, each the size of `volume`.
 
@@ -317,29 +327,29 @@ Memory warning: at 256³ `Float32` a single subband is 64 MB, so `levels = 3`
 (24 subbands) materialises 1.5 GB.  Use the callback form below to process
 subbands one at a time instead.
 """
-function nsdfb3_decompose(volume::AbstractArray{Td, 3}, fb::NSDFB3) where {Td}
-    out = [similar(volume) for _ in 1:nsdfb3_nsubbands(fb)]
-    nsdfb3_decompose!(out, volume, fb)
+function nsdfb3d_decompose(volume::AbstractArray{Td, 3}, fb::NSDFB3D) where {Td}
+    out = [similar(volume) for _ in 1:nsdfb3d_nsubbands(fb)]
+    nsdfb3d_decompose!(out, volume, fb)
     return out
 end
 
 """
-    nsdfb3_decompose!(dst, volume, fb::NSDFB3) -> dst
+    nsdfb3d_decompose!(dst, volume, fb::NSDFB3D) -> dst
 
-In-place [`nsdfb3_decompose`](@ref); `dst` is an indexable collection of
-`nsdfb3_nsubbands(fb)` arrays.
+In-place [`nsdfb3d_decompose`](@ref); `dst` is an indexable collection of
+`nsdfb3d_nsubbands(fb)` arrays.
 """
-function nsdfb3_decompose!(dst, volume::AbstractArray{Td, 3}, fb::NSDFB3) where {Td}
-    length(dst) == nsdfb3_nsubbands(fb) ||
-        throw(DimensionMismatch("dst must hold $(nsdfb3_nsubbands(fb)) subbands"))
-    nsdfb3_decompose(volume, fb) do idx, band
+function nsdfb3d_decompose!(dst, volume::AbstractArray{Td, 3}, fb::NSDFB3D) where {Td}
+    length(dst) == nsdfb3d_nsubbands(fb) ||
+        throw(DimensionMismatch("dst must hold $(nsdfb3d_nsubbands(fb)) subbands"))
+    nsdfb3d_decompose(volume, fb) do idx, band
         copyto!(dst[idx], band)
     end
     return dst
 end
 
 """
-    nsdfb3_decompose(f, volume, fb::NSDFB3)
+    nsdfb3d_decompose(f, volume, fb::NSDFB3D)
 
 Streaming decomposition: calls `f(idx, subband)` once per directional subband,
 reusing a single scratch buffer between calls.  `subband` is only valid until
@@ -354,11 +364,11 @@ julia> using Contourlets, Random
 
 julia> x = randn(Xoshiro(4), 16, 16, 16);
 
-julia> fb = make_nsdfb3(size(x), Float64; levels = 2, order = 6);
+julia> fb = make_nsdfb3d(size(x), Float64; levels = 2, order = 6);
 
-julia> energy = zeros(nsdfb3_nsubbands(fb));
+julia> energy = zeros(nsdfb3d_nsubbands(fb));
 
-julia> nsdfb3_decompose(x, fb) do i, band
+julia> nsdfb3d_decompose(x, fb) do i, band
            energy[i] = sum(abs2, band)
        end;
 
@@ -366,7 +376,7 @@ julia> abs(sum(energy) / sum(abs2, x) - 1) < 2.0
 true
 ```
 """
-function nsdfb3_decompose(f, volume::AbstractArray{T, 3}, fb::NSDFB3{T}) where {T <: AbstractFloat}
+function nsdfb3d_decompose(f, volume::AbstractArray{T, 3}, fb::NSDFB3D{T}) where {T <: AbstractFloat}
     hg = fb.fb
     size(volume) == hg.dims || throw(DimensionMismatch("volume size does not match the plan"))
     copyto!(hg.rbuf, volume)
@@ -375,8 +385,8 @@ function nsdfb3_decompose(f, volume::AbstractArray{T, 3}, fb::NSDFB3{T}) where {
     return nothing
 end
 
-function nsdfb3_decompose(
-        f, volume::AbstractArray{Complex{T}, 3}, fb::NSDFB3{T}
+function nsdfb3d_decompose(
+        f, volume::AbstractArray{Complex{T}, 3}, fb::NSDFB3D{T}
     ) where {T <: AbstractFloat}
     hg = fb.fb
     size(volume) == hg.dims || throw(DimensionMismatch("volume size does not match the plan"))
@@ -397,7 +407,7 @@ end
 
 # Walk every (hourglass, p, q) triple, applying its mask to the spectrum already
 # sitting in `hg.spec` and handing the inverse transform to `g`.
-function _stream_subbands(g, fb::NSDFB3)
+function _stream_subbands(g, fb::NSDFB3D)
     hg = fb.fb
     _walk_subbands(fb) do idx, mask
         _mask_and_invert!(hg, hg.spec, mask, hg.rbuf)
@@ -406,78 +416,80 @@ function _stream_subbands(g, fb::NSDFB3)
     return nothing
 end
 
-# Iterate the subband masks in index order, reusing one mask buffer.
-function _walk_subbands(g, fb::NSDFB3)
+# Iterate the subband masks in index order, reusing one mask buffer.  The buffer
+# lives on the (shared) hourglass stage, so neither the streaming decomposition
+# nor the tight synthesis allocates once the bank has been used.
+function _walk_subbands(g, fb::NSDFB3D)
     na, nb = 1 << fb.levels[1], 1 << fb.levels[2]
-    mask = similar(fb.fb.m1)
+    mask = _mask_scratch!(fb.fb)
     for i in 1:3, p in 1:na, q in 1:nb
         _fill_mask!(mask, fb, i, p, q)
-        g(nsdfb3_subband_index(fb, i, p, q), mask)
+        g(nsdfb3d_subband_index(fb, i, p, q), mask)
     end
     return nothing
 end
 
-function _mask_and_invert!(hg::HourglassFB3, spec, mask, dst)
+function _mask_and_invert!(hg::HourglassFB3D, spec, mask, dst)
     @. hg.work = spec * mask
     mul!(dst, hg.inv, hg.work)
     return dst
 end
 
 """
-    nsdfb3_reconstruct(subbands, fb::NSDFB3) -> volume
+    nsdfb3d_reconstruct(subbands, fb::NSDFB3D) -> volume
 
-Invert [`nsdfb3_decompose`](@ref).  Perfect reconstruction is exact either way,
+Invert [`nsdfb3d_decompose`](@ref).  Perfect reconstruction is exact either way,
 but the cost depends on the bank: when the hourglass bank is not tight the masks
 are a partition of unity and this is a plain sum, and when it is tight the same
 `√W` masks are reapplied, costing a forward transform per subband and one
 inverse for the lot.
 """
-function nsdfb3_reconstruct(subbands, fb::NSDFB3)
+function nsdfb3d_reconstruct(subbands, fb::NSDFB3D)
     out = similar(first(subbands))
-    return nsdfb3_reconstruct!(out, subbands, fb)
+    return nsdfb3d_reconstruct!(out, subbands, fb)
 end
 
 """
-    nsdfb3_reconstruct!(volume, subbands, fb::NSDFB3) -> volume
+    nsdfb3d_reconstruct!(volume, subbands, fb::NSDFB3D) -> volume
 
-In-place [`nsdfb3_reconstruct`](@ref).
+In-place [`nsdfb3d_reconstruct`](@ref).
 """
-function nsdfb3_reconstruct!(
+function nsdfb3d_reconstruct!(
         volume::AbstractArray{<:Number, 3}, subbands::Union{AbstractVector, Tuple},
-        fb::NSDFB3
+        fb::NSDFB3D
     )
-    length(subbands) == nsdfb3_nsubbands(fb) ||
-        throw(DimensionMismatch("expected $(nsdfb3_nsubbands(fb)) subbands"))
-    return nsdfb3_reconstruct!(k -> subbands[k], volume, fb)
+    length(subbands) == nsdfb3d_nsubbands(fb) ||
+        throw(DimensionMismatch("expected $(nsdfb3d_nsubbands(fb)) subbands"))
+    return nsdfb3d_reconstruct!(k -> subbands[k], volume, fb)
 end
 
 """
-    nsdfb3_reconstruct!(f, volume, fb::NSDFB3) -> volume
+    nsdfb3d_reconstruct!(f, volume, fb::NSDFB3D) -> volume
 
 Streaming reconstruction: `f(k)` must return directional subband `k`.  Subbands
 are consumed one at a time and in index order, so a caller holding them on disk
 or regenerating them never materialises the full set.
 """
-function nsdfb3_reconstruct!(f, volume::AbstractArray{<:Number, 3}, fb::NSDFB3)
+function nsdfb3d_reconstruct!(f, volume::AbstractArray{<:Number, 3}, fb::NSDFB3D)
     size(volume) == fb.fb.dims || throw(DimensionMismatch("volume size does not match the plan"))
     hg = fb.fb
     if !hg.tight
         fill!(volume, zero(eltype(volume)))
-        for k in 1:nsdfb3_nsubbands(fb)
+        for k in 1:nsdfb3d_nsubbands(fb)
             b = f(k)
             @. volume += b
         end
         return volume
     end
-    return _nsdfb3_synthesise!(f, volume, fb)
+    return _nsdfb3d_synthesise!(f, volume, fb)
 end
 
-function _nsdfb3_synthesise!(f, volume::AbstractArray{T, 3}, fb::NSDFB3{T}) where {T <: AbstractFloat}
+function _nsdfb3d_synthesise!(f, volume::AbstractArray{T, 3}, fb::NSDFB3D{T}) where {T <: AbstractFloat}
     hg = fb.fb
-    acc, _ = _synthesis_scratch!(hg)
+    acc = _synthesis_acc!(hg)
     fill!(acc, zero(eltype(acc)))
     _walk_subbands(fb) do idx, mask
-        copyto!(hg.rbuf, f(idx))
+        _load_subband!(hg.rbuf, f(idx))
         mul!(hg.spec, hg.fwd, hg.rbuf)
         @. acc += hg.spec * mask
         nothing
@@ -488,11 +500,11 @@ function _nsdfb3_synthesise!(f, volume::AbstractArray{T, 3}, fb::NSDFB3{T}) wher
     return volume
 end
 
-function _nsdfb3_synthesise!(
-        f, volume::AbstractArray{Complex{T}, 3}, fb::NSDFB3{T}
+function _nsdfb3d_synthesise!(
+        f, volume::AbstractArray{Complex{T}, 3}, fb::NSDFB3D{T}
     ) where {T <: AbstractFloat}
     hg = fb.fb
-    acc, acc2 = _synthesis_scratch!(hg)
+    acc, acc2 = _synthesis_acc!(hg), _synthesis_acc2!(hg)
     spec2, rbuf2 = _complex_scratch!(hg)
     fill!(acc, zero(eltype(acc)))
     fill!(acc2, zero(eltype(acc2)))

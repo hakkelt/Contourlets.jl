@@ -297,7 +297,7 @@ end
     for (nr, nc) in [(3, 3), (4, 4)]
         x = randn(nr, nc)
         @test maximum(abs, conv2d_sep(x, h9, h9; boundary = :symmetric) .- ref_conv_sep(x, h9)) <
-              1.0e-12
+            1.0e-12
     end
 end
 
@@ -310,4 +310,35 @@ end
     out_auto = Contourlets.conv2d(x, k; threading = Auto())
     @test size(out_enabled) == size(x)
     @test maximum(abs, out_enabled .- out_auto) < 1.0e-10
+end
+
+@testitem "even-length filters: fast path matches generic path" tags = [:primitives] begin
+    using Random
+    using Contourlets: conv2d_sep, conv3d_sep
+    Random.seed!(42)
+
+    # The real fast paths split the domain into a border band and an interior
+    # slab that indexes `src` unchecked.  For an even-length filter the tap loop
+    # reaches one sample further back than for an odd one, so the slab's lower
+    # bound is `l - c + 1`, not `c`.  Complex data takes the fully folded
+    # generic path, and the transform is real-linear, so the real part of the
+    # complex result is the reference for the real fast path.
+    h4 = Float64[0.1, 0.4, 0.35, 0.15]
+    h6 = Float64[0.05, 0.15, 0.3, 0.28, 0.15, 0.07]
+
+    for boundary in (:symmetric, :periodic), h in (h4, h6)
+        for (n1, n2) in ((8, 6), (16, 16), (5, 4))
+            x = randn(n1, n2)
+            fast = conv2d_sep(x, h, h; boundary = boundary)
+            ref = real(conv2d_sep(complex(x), h, h; boundary = boundary))
+            @test maximum(abs, fast .- ref) < 1.0e-12
+        end
+
+        for sz in ((8, 6, 5), (12, 12, 12))
+            v = randn(sz...)
+            fast = conv3d_sep(v, h, h, h; boundary = boundary, backend = :direct)
+            ref = real(conv3d_sep(complex(v), h, h, h; boundary = boundary, backend = :direct))
+            @test maximum(abs, fast .- ref) < 1.0e-12
+        end
+    end
 end

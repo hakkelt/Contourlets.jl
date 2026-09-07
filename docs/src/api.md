@@ -26,24 +26,24 @@ nsct_inverse!
 ## Transforms (3-D)
 
 ```@docs
-nsct3_forward
-nsct3_inverse
-nsct3_inverse!
-nsct3_nsubbands
-make_nsct3_workspace
+nsct3d_forward
+nsct3d_inverse
+nsct3d_inverse!
+nsct3d_nsubbands
+make_nsct3d_workspace
 ```
 
 ## Surfacelet transform (3-D, decimated)
 
 ```@docs
-SurfaceletParams3
-Surfacelet3Coefficients
-Surfacelet3Plan
-make_surfacelet3
-surfacelet3_forward
-surfacelet3_inverse
-surfacelet3_nsubbands
-surfacelet3_redundancy
+SurfaceletParams3D
+Surfacelet3DCoefficients
+Surfacelet3DPlan
+make_surfacelet3d
+surfacelet3d_forward
+surfacelet3d_inverse
+surfacelet3d_nsubbands
+surfacelet3d_redundancy
 ```
 
 ## Types
@@ -53,9 +53,9 @@ ContourletParams
 ContourletCoefficients
 NSCTCoefficients
 ContourletWorkspace
-ContourletParams3
-NSCT3Coefficients
-NSCT3Workspace
+ContourletParams3D
+NSCT3DCoefficients
+NSCT3DWorkspace
 ```
 
 
@@ -89,10 +89,10 @@ nsp_decompose
 nsp_decompose!
 nsp_reconstruct
 nsp_reconstruct!
-nsp3_decompose
-nsp3_decompose!
-nsp3_reconstruct
-nsp3_reconstruct!
+nsp3d_decompose
+nsp3d_decompose!
+nsp3d_reconstruct
+nsp3d_reconstruct!
 ```
 
 ## Directional Filter Bank
@@ -114,26 +114,26 @@ nsdfb_reconstruct
 ## Directional Filter Bank (3-D)
 
 ```@docs
-HourglassFB3
-make_hourglass3
-hourglass3_mask
-hourglass3_weight
-hourglass3_decompose
-hourglass3_decompose!
-hourglass3_reconstruct
-hourglass3_reconstruct!
-NSDFB3
-make_nsdfb3
-nsdfb3_sharing
-nsdfb3_nsubbands
-nsdfb3_subband_index
-nsdfb3_subband_triple
-nsdfb3_mask
-nsdfb3_weight
-nsdfb3_decompose
-nsdfb3_decompose!
-nsdfb3_reconstruct
-nsdfb3_reconstruct!
+HourglassFB3D
+make_hourglass3d
+hourglass3d_mask
+hourglass3d_weight
+hourglass3d_decompose
+hourglass3d_decompose!
+hourglass3d_reconstruct
+hourglass3d_reconstruct!
+NSDFB3D
+make_nsdfb3d
+nsdfb3d_sharing
+nsdfb3d_nsubbands
+nsdfb3d_subband_index
+nsdfb3d_subband_triple
+nsdfb3d_mask
+nsdfb3d_weight
+nsdfb3d_decompose
+nsdfb3d_decompose!
+nsdfb3d_reconstruct
+nsdfb3d_reconstruct!
 ```
 
 ## Primitives

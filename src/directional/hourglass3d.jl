@@ -53,17 +53,17 @@
 # constant `√N`, and bound 1 is the convention the rest of this package uses.)
 
 """
-    HourglassFB3{T}
+    HourglassFB3D{T}
 
 Precomputed 3-D nonsubsampled hourglass filter bank for one volume size and real
-precision `T`.  Build with [`make_hourglass3`](@ref).
+precision `T`.  Build with [`make_hourglass3d`](@ref).
 
 Holds the two mapping-kernel frequency responses (`m1` on the 3-D rfft grid,
 `m2` on the 2-D `(ω₂, ω₃)` grid) rather than the three subband masks, which are
 derived pointwise on the fly — a third of the memory, and the polynomial
 evaluation is negligible next to the transforms.
 """
-mutable struct HourglassFB3{
+mutable struct HourglassFB3D{
         T <: AbstractFloat, A3 <: AbstractArray{T, 3},
         C3 <: AbstractArray{Complex{T}, 3}, Pf, Pi,
     }
@@ -96,12 +96,17 @@ mutable struct HourglassFB3{
     # so the analysis-only and `tight = false` paths never pay for them.
     acc::Union{Nothing, C3}
     acc2::Union{Nothing, C3}
+    # Scratch for one derived subband mask, shared by every directional bank
+    # built on this hourglass stage (they all work on the same rfft grid).  The
+    # mask is half a volume, so materialising a fresh one per call would make the
+    # workspace paths allocate ~33 MB per scale at 256³ Float32.
+    maskbuf::Union{Nothing, A3}
 end
 
 """
-    make_hourglass3(dims::NTuple{3,Int}, ::Type{T}=Float64;
+    make_hourglass3d(dims::NTuple{3,Int}, ::Type{T}=Float64;
                     order::Int=12, poly::Int=1, tight::Bool=true,
-                    threading=Auto(), flags=FFTW.MEASURE) -> HourglassFB3
+                    threading=Auto(), flags=FFTW.MEASURE) -> HourglassFB3D
 
 Build the 3-D hourglass filter bank for `dims`-sized volumes.
 
@@ -124,7 +129,7 @@ A complex element type is accepted and produces a plan of the corresponding real
 precision; complex volumes are filtered as two real passes, keeping
 `T(x + i·y) == T(x) + i·T(y)` exact.
 """
-function make_hourglass3(
+function make_hourglass3d(
         dims::NTuple{3, Int}, ::Type{T} = Float64;
         order::Int = 12, poly::Int = 1, tight::Bool = true,
         threading::ThreadingPolicy = Auto(),
@@ -152,22 +157,22 @@ function make_hourglass3(
     fwd = plan_rfft(rbuf; flags = flags)
     spec = fwd * rbuf
     inv = plan_irfft(spec, n1; flags = flags)
-    return HourglassFB3{T, typeof(m1), typeof(spec), typeof(fwd), typeof(inv)}(
+    return HourglassFB3D{T, typeof(m1), typeof(spec), typeof(fwd), typeof(inv)}(
         dims, order, poly, tight, m1, m2, fwd, inv, spec, similar(spec), rbuf,
-        nothing, nothing, nothing, nothing
+        nothing, nothing, nothing, nothing, nothing
     )
 end
 
-function make_hourglass3(
+function make_hourglass3d(
         dims::NTuple{3, Int}, ::Type{Complex{T}}; kwargs...
     ) where {T <: AbstractFloat}
-    fb = make_hourglass3(dims, T; kwargs...)
+    fb = make_hourglass3d(dims, T; kwargs...)
     _complex_scratch!(fb)
     return fb
 end
 
 # Ensure the imaginary-half buffers exist; returns them.
-function _complex_scratch!(fb::HourglassFB3{T, A3}) where {T, A3}
+function _complex_scratch!(fb::HourglassFB3D{T, A3}) where {T, A3}
     s2 = fb.spec2
     if s2 === nothing
         s2 = similar(fb.spec)
@@ -181,23 +186,52 @@ function _complex_scratch!(fb::HourglassFB3{T, A3}) where {T, A3}
     return s2, r2
 end
 
-# Ensure the synthesis accumulator spectra exist; returns them.
-function _synthesis_scratch!(fb::HourglassFB3)
+# Ensure the shared subband-mask scratch exists; returns it.
+function _mask_scratch!(fb::HourglassFB3D)
+    m = fb.maskbuf
+    if m === nothing
+        m = similar(fb.m1)
+        fb.maskbuf = m
+    end
+    return m
+end
+
+# Ensure the synthesis accumulator spectrum exists; returns it.  Kept separate
+# from the second one so a real-valued tight synthesis never allocates the
+# imaginary half it has no use for.
+function _synthesis_acc!(fb::HourglassFB3D)
     a = fb.acc
     if a === nothing
         a = similar(fb.spec)
         fb.acc = a
     end
+    return a
+end
+
+# Ensure the second synthesis accumulator exists; returns it.  Only the complex
+# path needs it.
+function _synthesis_acc2!(fb::HourglassFB3D)
     a2 = fb.acc2
     if a2 === nothing
         a2 = similar(fb.spec)
         fb.acc2 = a2
     end
-    return a, a2
+    return a2
+end
+
+# Load one subband into a real scratch buffer.  A bare `copyto!` accepts any
+# array of the same total length, silently reconstructing from a wrongly shaped
+# subband, so the shape is checked here — the plain-sum path gets the same check
+# for free from broadcasting.
+function _load_subband!(dst::AbstractArray{T, 3}, band::AbstractArray) where {T}
+    size(dst) == size(band) || throw(
+        DimensionMismatch("subband size $(size(band)) does not match the plan $(size(dst))")
+    )
+    return copyto!(dst, band)
 end
 
 # Load the real and imaginary parts of `volume` into the two spectra.
-function _load_complex_spectra!(fb::HourglassFB3{T}, volume::AbstractArray{Complex{T}, 3}) where {T}
+function _load_complex_spectra!(fb::HourglassFB3D{T}, volume::AbstractArray{Complex{T}, 3}) where {T}
     spec2, _ = _complex_scratch!(fb)
     @. fb.rbuf = real(volume)
     mul!(fb.spec, fb.fwd, fb.rbuf)
@@ -206,34 +240,34 @@ function _load_complex_spectra!(fb::HourglassFB3{T}, volume::AbstractArray{Compl
     return fb
 end
 
-make_hourglass3(n1::Int, n2::Int, n3::Int, ::Type{Td} = Float64; kwargs...) where {Td} =
-    make_hourglass3((n1, n2, n3), Td; kwargs...)
+make_hourglass3d(n1::Int, n2::Int, n3::Int, ::Type{Td} = Float64; kwargs...) where {Td} =
+    make_hourglass3d((n1, n2, n3), Td; kwargs...)
 
 """
-    hourglass3_mask(fb::HourglassFB3, i::Int) -> Array{T,3}
+    hourglass3d_mask(fb::HourglassFB3D, i::Int) -> Array{T,3}
 
 The frequency-domain analysis mask of hourglass subband `i` (1, 2 or 3) on the
 rfft grid.  Materialising it is only useful for inspection and tests — the
 transform derives mask values on the fly.
 
 The three masks sum to 1 at every frequency when `fb.tight` is false, and their
-*squares* sum to 1 when it is true.  See [`hourglass3_weight`](@ref) for the
+*squares* sum to 1 when it is true.  See [`hourglass3d_weight`](@ref) for the
 underlying partition of unity in either case.
 """
-function hourglass3_mask(fb::HourglassFB3{T}, i::Int) where {T}
-    out = hourglass3_weight(fb, i)
+function hourglass3d_mask(fb::HourglassFB3D{T}, i::Int) where {T}
+    out = hourglass3d_weight(fb, i)
     fb.tight && @. out = _tight_sqrt(out)
     return out
 end
 
 """
-    hourglass3_weight(fb::HourglassFB3, i::Int) -> Array{T,3}
+    hourglass3d_weight(fb::HourglassFB3D, i::Int) -> Array{T,3}
 
 The frequency-domain *weight* `W_i` of hourglass subband `i` on the rfft grid,
 before the `tight` normalisation.  The three weights are a partition of unity —
 `Σ_i W_i = 1` at every frequency — for any `order`/`poly`.
 """
-function hourglass3_weight(fb::HourglassFB3{T}, i::Int) where {T}
+function hourglass3d_weight(fb::HourglassFB3D{T}, i::Int) where {T}
     1 <= i <= 3 || throw(ArgumentError("hourglass subband index must be 1, 2 or 3"))
     out = similar(fb.m1)
     @. out = _stage1_weight(fb.m1, i) * _stage2_weight(fb.m2, i)
@@ -259,7 +293,7 @@ end
 end
 
 """
-    hourglass3_decompose(volume, fb::HourglassFB3) -> (s₁, s₂, s₃)
+    hourglass3d_decompose(volume, fb::HourglassFB3D) -> (s₁, s₂, s₃)
 
 Split `volume` into the three hourglass subbands.  Every subband keeps the full
 size of the input — the bank is nonsubsampled, so the decomposition is exactly
@@ -273,35 +307,35 @@ julia> using Contourlets, Random
 
 julia> x = randn(Xoshiro(2), 16, 16, 16);
 
-julia> fb = make_hourglass3(size(x), Float64; order = 6);
+julia> fb = make_hourglass3d(size(x), Float64; order = 6);
 
-julia> s = hourglass3_decompose(x, fb);
+julia> s = hourglass3d_decompose(x, fb);
 
-julia> maximum(abs, hourglass3_reconstruct(s, fb) .- x) < 1e-10
+julia> maximum(abs, hourglass3d_reconstruct(s, fb) .- x) < 1e-10
 true
 ```
 """
-function hourglass3_decompose(volume::AbstractArray{T, 3}, fb::HourglassFB3{T}) where {T <: AbstractFloat}
+function hourglass3d_decompose(volume::AbstractArray{T, 3}, fb::HourglassFB3D{T}) where {T <: AbstractFloat}
     out = ntuple(_ -> similar(volume), 3)
-    return hourglass3_decompose!(out, volume, fb)
+    return hourglass3d_decompose!(out, volume, fb)
 end
 
-function hourglass3_decompose(
-        volume::AbstractArray{Complex{T}, 3}, fb::HourglassFB3{T}
+function hourglass3d_decompose(
+        volume::AbstractArray{Complex{T}, 3}, fb::HourglassFB3D{T}
     ) where {T <: AbstractFloat}
     out = ntuple(_ -> similar(volume), 3)
-    return hourglass3_decompose!(out, volume, fb)
+    return hourglass3d_decompose!(out, volume, fb)
 end
 
 """
-    hourglass3_decompose!(dst, volume, fb) -> dst
+    hourglass3d_decompose!(dst, volume, fb) -> dst
 
-In-place [`hourglass3_decompose`](@ref); `dst` is a 3-tuple of arrays matching
+In-place [`hourglass3d_decompose`](@ref); `dst` is a 3-tuple of arrays matching
 the plan size and the element type of `volume`.
 """
-function hourglass3_decompose!(
+function hourglass3d_decompose!(
         dst::NTuple{3, <:AbstractArray{T, 3}}, volume::AbstractArray{T, 3},
-        fb::HourglassFB3{T}
+        fb::HourglassFB3D{T}
     ) where {T <: AbstractFloat}
     size(volume) == fb.dims || throw(DimensionMismatch("volume size does not match the plan"))
     copyto!(fb.rbuf, volume)
@@ -314,9 +348,9 @@ function hourglass3_decompose!(
     return dst
 end
 
-function hourglass3_decompose!(
+function hourglass3d_decompose!(
         dst::NTuple{3, <:AbstractArray{Complex{T}, 3}}, volume::AbstractArray{Complex{T}, 3},
-        fb::HourglassFB3{T}
+        fb::HourglassFB3D{T}
     ) where {T <: AbstractFloat}
     size(volume) == fb.dims || throw(DimensionMismatch("volume size does not match the plan"))
     # Real and imaginary parts go through the identical real kernel — the same
@@ -336,7 +370,7 @@ function hourglass3_decompose!(
 end
 
 # work .= spec .* mask_i, with the mask derived from the two mapping responses.
-function _apply_hourglass_mask!(fb::HourglassFB3, spec::AbstractArray, i::Int)
+function _apply_hourglass_mask!(fb::HourglassFB3D, spec::AbstractArray, i::Int)
     work, m1, m2 = fb.work, fb.m1, fb.m2
     if fb.tight
         @. work = spec * _tight_sqrt(_stage1_weight(m1, i) * _stage2_weight(m2, i))
@@ -347,16 +381,16 @@ function _apply_hourglass_mask!(fb::HourglassFB3, spec::AbstractArray, i::Int)
 end
 
 # acc .+= spec .* mask_i — the synthesis counterpart, used only when tight.
-function _accumulate_hourglass_mask!(acc, fb::HourglassFB3, spec::AbstractArray, i::Int)
+function _accumulate_hourglass_mask!(acc, fb::HourglassFB3D, spec::AbstractArray, i::Int)
     m1, m2 = fb.m1, fb.m2
     @. acc += spec * _tight_sqrt(_stage1_weight(m1, i) * _stage2_weight(m2, i))
     return acc
 end
 
 """
-    hourglass3_reconstruct(subbands, fb::HourglassFB3) -> volume
+    hourglass3d_reconstruct(subbands, fb::HourglassFB3D) -> volume
 
-Invert [`hourglass3_decompose`](@ref).  Perfect reconstruction holds exactly for
+Invert [`hourglass3d_decompose`](@ref).  Perfect reconstruction holds exactly for
 any `order`/`poly` — it is structural, not an approximation that degrades with
 filter sharpness.
 
@@ -365,19 +399,19 @@ sum, with no transforms.  When it is true the same `√W` masks are applied on t
 way back, so each subband costs a forward transform and the sum is completed by
 one inverse.
 """
-function hourglass3_reconstruct(subbands::NTuple{3, <:AbstractArray{Td, 3}}, fb::HourglassFB3) where {Td}
+function hourglass3d_reconstruct(subbands::NTuple{3, <:AbstractArray{Td, 3}}, fb::HourglassFB3D) where {Td}
     out = similar(subbands[1])
-    return hourglass3_reconstruct!(out, subbands, fb)
+    return hourglass3d_reconstruct!(out, subbands, fb)
 end
 
 """
-    hourglass3_reconstruct!(volume, subbands, fb) -> volume
+    hourglass3d_reconstruct!(volume, subbands, fb) -> volume
 
-In-place [`hourglass3_reconstruct`](@ref).
+In-place [`hourglass3d_reconstruct`](@ref).
 """
-function hourglass3_reconstruct!(
+function hourglass3d_reconstruct!(
         volume::AbstractArray{Td, 3}, subbands::NTuple{3, <:AbstractArray{Td, 3}},
-        fb::HourglassFB3
+        fb::HourglassFB3D
     ) where {Td}
     size(volume) == fb.dims || throw(DimensionMismatch("volume size does not match the plan"))
     if !fb.tight
@@ -385,16 +419,16 @@ function hourglass3_reconstruct!(
         @. volume = s1 + s2 + s3
         return volume
     end
-    return _hourglass3_synthesise!(volume, subbands, fb)
+    return _hourglass3d_synthesise!(volume, subbands, fb)
 end
 
-function _hourglass3_synthesise!(
-        volume::AbstractArray{T, 3}, subbands, fb::HourglassFB3{T}
+function _hourglass3d_synthesise!(
+        volume::AbstractArray{T, 3}, subbands, fb::HourglassFB3D{T}
     ) where {T <: AbstractFloat}
-    acc, _ = _synthesis_scratch!(fb)
+    acc = _synthesis_acc!(fb)
     fill!(acc, zero(eltype(acc)))
     for i in 1:3
-        copyto!(fb.rbuf, subbands[i])
+        _load_subband!(fb.rbuf, subbands[i])
         mul!(fb.spec, fb.fwd, fb.rbuf)
         _accumulate_hourglass_mask!(acc, fb, fb.spec, i)
     end
@@ -404,12 +438,12 @@ function _hourglass3_synthesise!(
     return volume
 end
 
-function _hourglass3_synthesise!(
-        volume::AbstractArray{Complex{T}, 3}, subbands, fb::HourglassFB3{T}
+function _hourglass3d_synthesise!(
+        volume::AbstractArray{Complex{T}, 3}, subbands, fb::HourglassFB3D{T}
     ) where {T <: AbstractFloat}
     # Real and imaginary parts take the identical real kernel, as everywhere
     # else in the 3-D stack, so `T(x + i·y) == T(x) + i·T(y)` stays exact.
-    acc, acc2 = _synthesis_scratch!(fb)
+    acc, acc2 = _synthesis_acc!(fb), _synthesis_acc2!(fb)
     spec2, rbuf2 = _complex_scratch!(fb)
     fill!(acc, zero(eltype(acc)))
     fill!(acc2, zero(eltype(acc2)))

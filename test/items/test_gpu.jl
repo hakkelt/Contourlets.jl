@@ -404,16 +404,16 @@ end
     Random.seed!(200)
     dims = (16, 16, 16)
     x = randn(Float32, dims...)
-    cpu = make_hourglass3(dims, Float32; order = 6)
-    ref = hourglass3_decompose(x, cpu)
+    cpu = make_hourglass3d(dims, Float32; order = 6)
+    ref = hourglass3d_decompose(x, cpu)
     for backend in FFTBackends.fft_backends
         xg = to_gpu(backend, x)
         fb = Adapt.adapt(typeof(xg), cpu)
-        s = hourglass3_decompose(xg, fb)
+        s = hourglass3d_decompose(xg, fb)
         for i in 1:3
             @test maximum(abs, Array(s[i]) .- ref[i]) < 1.0f-4
         end
-        @test maximum(abs, Array(hourglass3_reconstruct(s, fb)) .- x) < 1.0f-4
+        @test maximum(abs, Array(hourglass3d_reconstruct(s, fb)) .- x) < 1.0f-4
     end
 end
 
@@ -425,17 +425,17 @@ end
     Random.seed!(201)
     dims = (16, 16, 16)
     x = randn(Float32, dims...)
-    cpu = make_nsdfb3(dims, Float32; levels = 2, order = 6)
-    ref = nsdfb3_decompose(x, cpu)
+    cpu = make_nsdfb3d(dims, Float32; levels = 2, order = 6)
+    ref = nsdfb3d_decompose(x, cpu)
     for backend in FFTBackends.fft_backends
         xg = to_gpu(backend, x)
         fb = Adapt.adapt(typeof(xg), cpu)
-        s = nsdfb3_decompose(xg, fb)
-        @test length(s) == nsdfb3_nsubbands(fb)
+        s = nsdfb3d_decompose(xg, fb)
+        @test length(s) == nsdfb3d_nsubbands(fb)
         for i in eachindex(s)
             @test maximum(abs, Array(s[i]) .- ref[i]) < 1.0f-4
         end
-        @test maximum(abs, Array(nsdfb3_reconstruct(s, fb)) .- x) < 1.0f-4
+        @test maximum(abs, Array(nsdfb3d_reconstruct(s, fb)) .- x) < 1.0f-4
     end
 end
 
@@ -447,31 +447,31 @@ end
     Random.seed!(202)
     dims = (16, 16, 16)
     x = randn(Float32, dims...)
-    p = ContourletParams3(J = 2, L_array = [1, 1], order = 6)
-    ws_cpu = make_nsct3_workspace(p, dims, Float32)
-    ref = nsct3_forward(x, p; workspace = ws_cpu)
+    p = ContourletParams3D(J = 2, L_array = [1, 1], order = 6)
+    ws_cpu = make_nsct3d_workspace(p, dims, Float32)
+    ref = nsct3d_forward(x, p; workspace = ws_cpu)
     for backend in FFTBackends.fft_backends
         xg = to_gpu(backend, x)
         # One adapt of the workspace moves the shared hourglass response once,
         # not once per scale.
         ws = Adapt.adapt(typeof(xg), ws_cpu)
-        c = nsct3_forward(xg, p; workspace = ws)
+        c = nsct3d_forward(xg, p; workspace = ws)
         @test maximum(abs, Array(c.coarse) .- ref.coarse) < 1.0f-4
         for j in 1:2, k in eachindex(c.subbands[j])
             @test maximum(abs, Array(c.subbands[j][k]) .- ref.subbands[j][k]) < 1.0f-4
         end
-        rec = nsct3_inverse(c, p; workspace = ws)
+        rec = nsct3d_inverse(c, p; workspace = ws)
         @test maximum(abs, Array(rec) .- x) < 1.0f-4
         # Streaming works on the device too.
         total = Ref(0.0f0)
-        nsct3_forward(xg, p; workspace = ws) do j, k, band
+        nsct3d_forward(xg, p; workspace = ws) do j, k, band
             total[] += sum(abs2, Array(band))
         end
         @test total[] > 0
     end
 end
 
-@testitem "GPU Adapt.adapt_structure for NSCT3 coefficients" tags = [:gpu] setup = [FFTBackends] begin
+@testitem "GPU Adapt.adapt_structure for NSCT3D coefficients" tags = [:gpu] setup = [FFTBackends] begin
     using GPUEnv, Random
     const Adapt = Base.require(
         Base.PkgId(Base.UUID("79e6a3ab-5dfb-504d-930d-738a2a938a0e"), "Adapt")
@@ -479,8 +479,8 @@ end
     Random.seed!(203)
     dims = (16, 16, 16)
     x = randn(Float32, dims...)
-    p = ContourletParams3(J = 1, L_array = [1], order = 6)
-    c = nsct3_forward(x, p)
+    p = ContourletParams3D(J = 1, L_array = [1], order = 6)
+    c = nsct3d_forward(x, p)
     for backend in FFTBackends.fft_backends
         xg = to_gpu(backend, x)
         dev = Adapt.adapt(typeof(xg), c)

@@ -9,8 +9,8 @@
 #
 #   | stage                  | direct  | FFT (1 thr) | FFT (16 thr) |
 #   |------------------------|---------|-------------|--------------|
-#   | NSP3 level 1 (9 taps)  | 0.878 s | 1.07 s      | 0.107 s      |
-#   | NSP3 level 3 (33 taps) | 5.740 s | 1.07 s      | 0.107 s      |
+#   | NSP3D level 1 (9 taps)  | 0.878 s | 1.07 s      | 0.107 s      |
+#   | NSP3D level 3 (33 taps) | 5.740 s | 1.07 s      | 0.107 s      |
 #
 # Hence the auto-selection rule in `_conv3d_use_fft`: with a single FFTW thread
 # the crossover sits near 11 taps; with FFTW threading enabled the FFT path wins

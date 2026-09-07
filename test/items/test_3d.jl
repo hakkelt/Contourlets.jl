@@ -116,88 +116,88 @@ end
     @test_throws DimensionMismatch conv3d_sep!(similar(x), x, h, h, h; tmp = zeros(8, 8, 7))
 end
 
-@testitem "NSP3 PR — multiple levels" tags = [:pyramid] begin
+@testitem "NSP3D PR — multiple levels" tags = [:pyramid] begin
     using Random
     Random.seed!(50)
     x = randn(16, 16, 16)
     for lv in 1:3
-        c, bp = nsp3_decompose(x, CDF97, lv)
+        c, bp = nsp3d_decompose(x, CDF97, lv)
         @test size(c) == size(x)
         @test size(bp) == size(x)
-        rec = nsp3_reconstruct(c, bp, CDF97, lv)
+        rec = nsp3d_reconstruct(c, bp, CDF97, lv)
         @test maximum(abs, rec .- x) < 1.0e-12
     end
 end
 
-@testitem "NSP3 — prediction has unit DC gain" tags = [:pyramid] begin
+@testitem "NSP3D — prediction has unit DC gain" tags = [:pyramid] begin
     # A constant volume must land entirely in `coarse`; the bandpass must vanish.
     # This is what the per-axis _NSP_SYNTH_SCALE guarantees, and it is the check
     # that catches a wrong 2^N normalisation when going from 2-D to 3-D.
     x = fill(2.5, 16, 16, 16)
     for lv in 1:3
-        c, bp = nsp3_decompose(x, CDF97, lv)
+        c, bp = nsp3d_decompose(x, CDF97, lv)
         @test maximum(abs, c .- 2.5) < 1.0e-12
         @test maximum(abs, bp) < 1.0e-12
     end
 end
 
-@testitem "NSP3 — exact circular-shift equivariance" tags = [:pyramid] begin
+@testitem "NSP3D — exact circular-shift equivariance" tags = [:pyramid] begin
     using Random
     Random.seed!(51)
     x = randn(16, 16, 16)
     s = (3, -5, 2)
-    c, bp = nsp3_decompose(x, CDF97, 2)
-    cs, bps = nsp3_decompose(circshift(x, s), CDF97, 2)
+    c, bp = nsp3d_decompose(x, CDF97, 2)
+    cs, bps = nsp3d_decompose(circshift(x, s), CDF97, 2)
     @test maximum(abs, cs .- circshift(c, s)) < 1.0e-10
     @test maximum(abs, bps .- circshift(bp, s)) < 1.0e-10
 end
 
-@testitem "NSP3 in-place round-trip and cached à trous filters" tags = [:pyramid] begin
+@testitem "NSP3D in-place round-trip and cached à trous filters" tags = [:pyramid] begin
     using Random
     Random.seed!(52)
     x = randn(16, 16, 16)
     c = similar(x); bp = similar(x); tmp = similar(x); tmp2 = similar(x)
-    nsp3_decompose!(c, bp, x, CDF97, 2; tmp = tmp, tmp2 = tmp2)
-    cr, bpr = nsp3_decompose(x, CDF97, 2)
+    nsp3d_decompose!(c, bp, x, CDF97, 2; tmp = tmp, tmp2 = tmp2)
+    cr, bpr = nsp3d_decompose(x, CDF97, 2)
     @test maximum(abs, c .- cr) < 1.0e-12
     @test maximum(abs, bp .- bpr) < 1.0e-12
 
     rec = similar(x)
-    nsp3_reconstruct!(rec, c, bp, CDF97, 2; tmp = tmp, tmp2 = tmp2)
+    nsp3d_reconstruct!(rec, c, bp, CDF97, 2; tmp = tmp, tmp2 = tmp2)
     @test maximum(abs, rec .- x) < 1.0e-12
 
     # Explicitly supplied filters must agree with the internally built ones.
-    h_j, g_j = Contourlets._nsp3_atrous_filters(CDF97, 2, Float64)
+    h_j, g_j = Contourlets._nsp3d_atrous_filters(CDF97, 2, Float64)
     c2 = similar(x); bp2 = similar(x)
-    nsp3_decompose!(c2, bp2, x, CDF97, 2; tmp = tmp, tmp2 = tmp2, h_j = h_j, g_j = g_j)
+    nsp3d_decompose!(c2, bp2, x, CDF97, 2; tmp = tmp, tmp2 = tmp2, h_j = h_j, g_j = g_j)
     @test maximum(abs, c2 .- c) < 1.0e-12
     @test maximum(abs, bp2 .- bp) < 1.0e-12
 end
 
-@testitem "NSP3 — complex data equals real + i·imag" tags = [:pyramid] begin
+@testitem "NSP3D — complex data equals real + i·imag" tags = [:pyramid] begin
     using Random
     Random.seed!(53)
     xr = randn(16, 16, 16); xi = randn(16, 16, 16)
-    cc, bc = nsp3_decompose(complex.(xr, xi), CDF97, 1)
-    c1, b1 = nsp3_decompose(xr, CDF97, 1)
-    c2, b2 = nsp3_decompose(xi, CDF97, 1)
+    cc, bc = nsp3d_decompose(complex.(xr, xi), CDF97, 1)
+    c1, b1 = nsp3d_decompose(xr, CDF97, 1)
+    c2, b2 = nsp3d_decompose(xi, CDF97, 1)
     @test maximum(abs, cc .- complex.(c1, c2)) == 0.0
     @test maximum(abs, bc .- complex.(b1, b2)) == 0.0
 end
 
-@testitem "NSP3 — Float32 PR at single precision" tags = [:pyramid] begin
+@testitem "NSP3D — Float32 PR at single precision" tags = [:pyramid] begin
     using Random
     Random.seed!(54)
     x = randn(Float32, 16, 16, 16)
-    c, bp = nsp3_decompose(x, CDF97, 1)
+    c, bp = nsp3d_decompose(x, CDF97, 1)
     @test eltype(c) == Float32
     @test eltype(bp) == Float32
-    rec = nsp3_reconstruct(c, bp, CDF97, 1)
+    rec = nsp3d_reconstruct(c, bp, CDF97, 1)
     @test maximum(abs, rec .- x) < 1.0f-4
 end
 
-@testitem "NSP3 — invalid level throws" tags = [:pyramid] begin
-    @test_throws ArgumentError nsp3_decompose(randn(8, 8, 8), CDF97, 0)
+@testitem "NSP3D — invalid level throws" tags = [:pyramid] begin
+    @test_throws ArgumentError nsp3d_decompose(randn(8, 8, 8), CDF97, 0)
 end
 
 @testitem "conv3d_sep_fft — matches direct periodic backend" tags = [:primitives] begin
@@ -259,15 +259,15 @@ end
     end
 end
 
-@testitem "NSP3 — FFT and direct backends give the same coefficients" tags = [:pyramid] begin
+@testitem "NSP3D — FFT and direct backends give the same coefficients" tags = [:pyramid] begin
     using Random
     Random.seed!(64)
     x = randn(32, 32, 32)
     for lv in 1:3
-        h_j, g_j = Contourlets._nsp3_atrous_filters(CDF97, lv, Float64)
+        h_j, g_j = Contourlets._nsp3d_atrous_filters(CDF97, lv, Float64)
         plan = make_conv3d_fft_plan(size(x), Float64)
         c = similar(x); bp = similar(x); t1 = similar(x); t2 = similar(x)
-        nsp3_decompose!(c, bp, x, CDF97, lv; tmp = t1, tmp2 = t2, h_j = h_j, g_j = g_j, plan = plan)
+        nsp3d_decompose!(c, bp, x, CDF97, lv; tmp = t1, tmp2 = t2, h_j = h_j, g_j = g_j, plan = plan)
 
         cd = similar(x); bpd = similar(x)
         conv3d_sep!(cd, x, h_j, h_j, h_j; boundary = :periodic, tmp = t2, backend = :direct)
@@ -278,7 +278,7 @@ end
         @test maximum(abs, bp .- bpd) < 1.0e-11
 
         rec = similar(x)
-        nsp3_reconstruct!(rec, c, bp, CDF97, lv; tmp = t1, tmp2 = t2, g_j = g_j, plan = plan)
+        nsp3d_reconstruct!(rec, c, bp, CDF97, lv; tmp = t1, tmp2 = t2, g_j = g_j, plan = plan)
         @test maximum(abs, rec .- x) < 1.0e-11
     end
 end
@@ -324,14 +324,14 @@ end
     @test maximum(abs, z .- y) == 0.0
 end
 
-@testitem "NSP3 — complex volumes take the FFT path" tags = [:pyramid] begin
+@testitem "NSP3D — complex volumes take the FFT path" tags = [:pyramid] begin
     using Random
     Random.seed!(68)
     x = complex.(randn(32, 32, 32), randn(32, 32, 32))
     for lv in 1:3
-        h_j, g_j = Contourlets._nsp3_atrous_filters(CDF97, lv, Float64)
-        @test Contourlets._nsp3_plan(x, max(length(h_j), length(g_j))) !== nothing
-        c, bp = nsp3_decompose(x, CDF97, lv)
-        @test maximum(abs, nsp3_reconstruct(c, bp, CDF97, lv) .- x) < 1.0e-11
+        h_j, g_j = Contourlets._nsp3d_atrous_filters(CDF97, lv, Float64)
+        @test Contourlets._nsp3d_plan(x, max(length(h_j), length(g_j))) !== nothing
+        c, bp = nsp3d_decompose(x, CDF97, lv)
+        @test maximum(abs, nsp3d_reconstruct(c, bp, CDF97, lv) .- x) < 1.0e-11
     end
 end

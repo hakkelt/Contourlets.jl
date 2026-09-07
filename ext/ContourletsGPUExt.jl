@@ -28,6 +28,6 @@ include("ContourletsGPUExt/primitives_gpu.jl")
 include("ContourletsGPUExt/dfb_gpu.jl")
 include("ContourletsGPUExt/nsdfb_gpu.jl")
 include("ContourletsGPUExt/transforms_gpu.jl")
-include("ContourletsGPUExt/nsct3_gpu.jl")
+include("ContourletsGPUExt/nsct3d_gpu.jl")
 
 end # module ContourletsGPUExt

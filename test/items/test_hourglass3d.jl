@@ -47,95 +47,95 @@ end
     @test_throws ArgumentError Contourlets.halfband_split(0.0, -1)
 end
 
-@testitem "hourglass3 — weights are a partition of unity in [0,1]" tags = [:directional] begin
-    fb = make_hourglass3((12, 14, 10), Float64; order = 6, poly = 1)
-    w = ntuple(i -> hourglass3_weight(fb, i), 3)
+@testitem "hourglass3d — weights are a partition of unity in [0,1]" tags = [:directional] begin
+    fb = make_hourglass3d((12, 14, 10), Float64; order = 6, poly = 1)
+    w = ntuple(i -> hourglass3d_weight(fb, i), 3)
     @test maximum(abs, w[1] .+ w[2] .+ w[3] .- 1) < 1.0e-14
     for wi in w
         @test minimum(wi) >= -1.0e-14
         @test maximum(wi) <= 1 + 1.0e-14
     end
-    @test_throws ArgumentError hourglass3_mask(fb, 4)
-    @test_throws ArgumentError hourglass3_weight(fb, 4)
+    @test_throws ArgumentError hourglass3d_mask(fb, 4)
+    @test_throws ArgumentError hourglass3d_weight(fb, 4)
 end
 
-@testitem "hourglass3 — tight masks are a Parseval frame" tags = [:directional] begin
+@testitem "hourglass3d — tight masks are a Parseval frame" tags = [:directional] begin
     using Random
-    fb = make_hourglass3((12, 14, 10), Float64; order = 6, poly = 1)
+    fb = make_hourglass3d((12, 14, 10), Float64; order = 6, poly = 1)
     @test fb.tight
-    m = ntuple(i -> hourglass3_mask(fb, i), 3)
+    m = ntuple(i -> hourglass3d_mask(fb, i), 3)
     # sum of squares, not sum, is what is 1 for the tight normalisation
     @test maximum(abs, m[1] .^ 2 .+ m[2] .^ 2 .+ m[3] .^ 2 .- 1) < 1.0e-14
     # ... and it shows up as energy preservation of the analysis operator.
     x = randn(Xoshiro(71), 12, 14, 10)
-    s = hourglass3_decompose(x, fb)
+    s = hourglass3d_decompose(x, fb)
     @test abs(sum(sum(abs2, b) for b in s) / sum(abs2, x) - 1) < 1.0e-12
 
     # The untight bank is the partition of unity, and is not energy preserving.
-    loose = make_hourglass3((12, 14, 10), Float64; order = 6, poly = 1, tight = false)
+    loose = make_hourglass3d((12, 14, 10), Float64; order = 6, poly = 1, tight = false)
     @test !loose.tight
-    ml = ntuple(i -> hourglass3_mask(loose, i), 3)
+    ml = ntuple(i -> hourglass3d_mask(loose, i), 3)
     @test maximum(abs, ml[1] .+ ml[2] .+ ml[3] .- 1) < 1.0e-14
-    sl = hourglass3_decompose(x, loose)
+    sl = hourglass3d_decompose(x, loose)
     @test sum(sum(abs2, b) for b in sl) / sum(abs2, x) < 0.9
     # Both invert exactly.
-    @test maximum(abs, hourglass3_reconstruct(s, fb) .- x) < 1.0e-12
-    @test maximum(abs, hourglass3_reconstruct(sl, loose) .- x) < 1.0e-12
+    @test maximum(abs, hourglass3d_reconstruct(s, fb) .- x) < 1.0e-12
+    @test maximum(abs, hourglass3d_reconstruct(sl, loose) .- x) < 1.0e-12
 end
 
-@testitem "hourglass3 — perfect reconstruction" tags = [:directional] begin
+@testitem "hourglass3d — perfect reconstruction" tags = [:directional] begin
     using Random
     Random.seed!(70)
     for dims in ((16, 16, 16), (12, 20, 8))
         x = randn(dims...)
         for (order, poly) in ((4, 0), (8, 1), (12, 2))
-            fb = make_hourglass3(dims, Float64; order = order, poly = poly)
-            s = hourglass3_decompose(x, fb)
+            fb = make_hourglass3d(dims, Float64; order = order, poly = poly)
+            s = hourglass3d_decompose(x, fb)
             @test all(b -> size(b) == dims, s)
-            @test maximum(abs, hourglass3_reconstruct(s, fb) .- x) < 1.0e-12
+            @test maximum(abs, hourglass3d_reconstruct(s, fb) .- x) < 1.0e-12
         end
     end
 end
 
-@testitem "hourglass3 — axis-aligned plane waves land in the matching subband" tags = [:directional] begin
+@testitem "hourglass3d — axis-aligned plane waves land in the matching subband" tags = [:directional] begin
     n = 16
-    fb = make_hourglass3((n, n, n), Float64; order = 8, poly = 1)
+    fb = make_hourglass3d((n, n, n), Float64; order = 8, poly = 1)
     for ax in 1:3
         v = Array{Float64, 3}(undef, n, n, n)
         for I in CartesianIndices(v)
             t = (Tuple(I) .- 1)[ax]
             v[I] = cospi(2 * 6 * t / n)
         end
-        e = [sum(abs2, b) for b in hourglass3_decompose(v, fb)]
+        e = [sum(abs2, b) for b in hourglass3d_decompose(v, fb)]
         e ./= sum(e)
         @test e[ax] > 0.999
         @test sum(e[setdiff(1:3, ax)]) < 1.0e-3
     end
 end
 
-@testitem "hourglass3 — a diagonal wave splits between its two axes" tags = [:directional] begin
+@testitem "hourglass3d — a diagonal wave splits between its two axes" tags = [:directional] begin
     # Equal frequency along axes 1 and 2 sits exactly on the P₁/P₂ boundary, so
     # it must divide evenly between those subbands and leave P₃ empty.
     n = 16
-    fb = make_hourglass3((n, n, n), Float64; order = 8, poly = 1)
+    fb = make_hourglass3d((n, n, n), Float64; order = 8, poly = 1)
     v = Array{Float64, 3}(undef, n, n, n)
     for I in CartesianIndices(v)
         i, j, _ = Tuple(I) .- 1
         v[I] = cospi(2 * 5 * (i + j) / n)
     end
-    e = [sum(abs2, b) for b in hourglass3_decompose(v, fb)]
+    e = [sum(abs2, b) for b in hourglass3d_decompose(v, fb)]
     e ./= sum(e)
     @test abs(e[1] - e[2]) < 1.0e-6
     @test e[3] < 1.0e-6
 end
 
-@testitem "hourglass3 — sharper with a higher Bernstein order" tags = [:directional] begin
+@testitem "hourglass3d — sharper with a higher Bernstein order" tags = [:directional] begin
     # Mean absolute deviation of mask 1 from the ideal indicator must fall as the
     # Bernstein order grows (Lu & Do 2008, Fig. 10).
     n = 24
     function mae(order)
-        fb = make_hourglass3((n, n, n), Float64; order = order, poly = 1)
-        m = hourglass3_mask(fb, 1)
+        fb = make_hourglass3d((n, n, n), Float64; order = order, poly = 1)
+        m = hourglass3d_mask(fb, 1)
         fold(k) = let w = (k - 1) * 2π / n
             min(w, 2π - w)
         end
@@ -155,49 +155,49 @@ end
     @test e20 < e12
 end
 
-@testitem "hourglass3 — exact circular-shift equivariance" tags = [:directional] begin
+@testitem "hourglass3d — exact circular-shift equivariance" tags = [:directional] begin
     using Random
     Random.seed!(71)
     n = 16
     x = randn(n, n, n)
-    fb = make_hourglass3((n, n, n), Float64; order = 6, poly = 1)
+    fb = make_hourglass3d((n, n, n), Float64; order = 6, poly = 1)
     s = (3, -5, 2)
-    a = hourglass3_decompose(x, fb)
-    b = hourglass3_decompose(circshift(x, s), fb)
+    a = hourglass3d_decompose(x, fb)
+    b = hourglass3d_decompose(circshift(x, s), fb)
     for i in 1:3
         @test maximum(abs, b[i] .- circshift(a[i], s)) < 1.0e-10
     end
 end
 
-@testitem "hourglass3 — complex equals real + i·imag bit-for-bit" tags = [:directional] begin
+@testitem "hourglass3d — complex equals real + i·imag bit-for-bit" tags = [:directional] begin
     using Random
     Random.seed!(72)
     n = 16
     xr = randn(n, n, n); xi = randn(n, n, n)
-    fb = make_hourglass3((n, n, n), ComplexF64; order = 6, poly = 1)
-    sc = hourglass3_decompose(complex.(xr, xi), fb)
-    sr = hourglass3_decompose(xr, fb)
-    si = hourglass3_decompose(xi, fb)
+    fb = make_hourglass3d((n, n, n), ComplexF64; order = 6, poly = 1)
+    sc = hourglass3d_decompose(complex.(xr, xi), fb)
+    sr = hourglass3d_decompose(xr, fb)
+    si = hourglass3d_decompose(xi, fb)
     for i in 1:3
         @test maximum(abs, sc[i] .- complex.(sr[i], si[i])) == 0.0
     end
-    @test maximum(abs, hourglass3_reconstruct(sc, fb) .- complex.(xr, xi)) < 1.0e-12
+    @test maximum(abs, hourglass3d_reconstruct(sc, fb) .- complex.(xr, xi)) < 1.0e-12
 end
 
-@testitem "hourglass3 — Float32 plan" tags = [:directional] begin
+@testitem "hourglass3d — Float32 plan" tags = [:directional] begin
     using Random
     Random.seed!(73)
     n = 16
     x = randn(Float32, n, n, n)
-    fb = make_hourglass3((n, n, n), Float32; order = 6, poly = 1)
-    s = hourglass3_decompose(x, fb)
+    fb = make_hourglass3d((n, n, n), Float32; order = 6, poly = 1)
+    s = hourglass3d_decompose(x, fb)
     @test all(b -> eltype(b) == Float32, s)
-    @test maximum(abs, hourglass3_reconstruct(s, fb) .- x) < 1.0f-4
+    @test maximum(abs, hourglass3d_reconstruct(s, fb) .- x) < 1.0f-4
 end
 
-@testitem "hourglass3 — argument validation" tags = [:directional] begin
-    @test_throws ArgumentError make_hourglass3((0, 4, 4), Float64)
-    @test_throws ArgumentError make_hourglass3((8, 8, 8), Float64; order = 0)
-    fb = make_hourglass3((8, 8, 8), Float64; order = 4)
-    @test_throws DimensionMismatch hourglass3_decompose(randn(8, 8, 4), fb)
+@testitem "hourglass3d — argument validation" tags = [:directional] begin
+    @test_throws ArgumentError make_hourglass3d((0, 4, 4), Float64)
+    @test_throws ArgumentError make_hourglass3d((8, 8, 8), Float64; order = 0)
+    fb = make_hourglass3d((8, 8, 8), Float64; order = 4)
+    @test_throws DimensionMismatch hourglass3d_decompose(randn(8, 8, 4), fb)
 end

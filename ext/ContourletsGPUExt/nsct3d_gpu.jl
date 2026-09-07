@@ -9,8 +9,8 @@
 # across and the FFT plans rebuilt for device arrays, which is what these
 # `Adapt.adapt_structure` methods do:
 #
-#     fb  = Adapt.adapt(CuArray, make_hourglass3(dims, Float32))
-#     ws  = Adapt.adapt(CuArray, make_nsct3_workspace(params, dims, Float32))
+#     fb  = Adapt.adapt(CuArray, make_hourglass3d(dims, Float32))
+#     ws  = Adapt.adapt(CuArray, make_nsct3d_workspace(params, dims, Float32))
 #
 # FFTW plans cannot be moved, so each is replanned against the adapted buffer;
 # `plan_rfft` is the AbstractFFTs generic, so it dispatches to the backend's FFT
@@ -21,9 +21,9 @@
 # launch overhead than it saves.  Only the transfer-function arrays live on the
 # device.
 
-using Contourlets: HourglassFB3, NSDFB3, NSCT3Workspace, NSCT3Coefficients, Conv3DFFTPlan
+using Contourlets: HourglassFB3D, NSDFB3D, NSCT3DWorkspace, NSCT3DCoefficients, Conv3DFFTPlan
 
-function Adapt.adapt_structure(to, fb::HourglassFB3)
+function Adapt.adapt_structure(to, fb::HourglassFB3D)
     m1 = Adapt.adapt(to, fb.m1)
     m2 = Adapt.adapt(to, fb.m2)
     rbuf = Adapt.adapt(to, fb.rbuf)
@@ -31,29 +31,30 @@ function Adapt.adapt_structure(to, fb::HourglassFB3)
     spec = fwd * rbuf
     inv = Contourlets.plan_irfft(spec, size(rbuf, 1))
     T = eltype(m1)
-    return HourglassFB3{T, typeof(m1), typeof(spec), typeof(fwd), typeof(inv)}(
+    return HourglassFB3D{T, typeof(m1), typeof(spec), typeof(fwd), typeof(inv)}(
         fb.dims, fb.order, fb.poly, fb.tight, m1, m2, fwd, inv, spec, similar(spec), rbuf,
         fb.spec2 === nothing ? nothing : similar(spec),
         fb.rbuf2 === nothing ? nothing : similar(rbuf),
         fb.acc === nothing ? nothing : similar(spec),
         fb.acc2 === nothing ? nothing : similar(spec),
+        fb.maskbuf === nothing ? nothing : similar(m1),
     )
 end
 
 # Rebuild a directional bank around an already-adapted hourglass bank, so a
 # multiscale workspace does not end up with one copy of the (large) mapping
 # response per scale.
-function _adapt_nsdfb3(to, fb::NSDFB3, hg::HourglassFB3)
+function _adapt_nsdfb3d(to, fb::NSDFB3D, hg::HourglassFB3D)
     wedges = map(fb.wedges) do planes
         map(planes) do masks
             [Adapt.adapt(to, w) for w in masks]
         end
     end
     A3 = typeof(wedges[1][1][1])
-    return NSDFB3{eltype(hg.m1), A3, typeof(hg)}(hg, fb.levels, wedges)
+    return NSDFB3D{eltype(hg.m1), A3, typeof(hg)}(hg, fb.levels, wedges)
 end
 
-Adapt.adapt_structure(to, fb::NSDFB3) = _adapt_nsdfb3(to, fb, Adapt.adapt(to, fb.fb))
+Adapt.adapt_structure(to, fb::NSDFB3D) = _adapt_nsdfb3d(to, fb, Adapt.adapt(to, fb.fb))
 
 function Adapt.adapt_structure(to, p::Conv3DFFTPlan)
     ker = Adapt.adapt(to, p.ker)
@@ -69,22 +70,22 @@ function Adapt.adapt_structure(to, p::Conv3DFFTPlan)
     )
 end
 
-function Adapt.adapt_structure(to, ws::NSCT3Workspace)
+function Adapt.adapt_structure(to, ws::NSCT3DWorkspace)
     hg = Adapt.adapt(to, ws.banks[1].fb)
-    banks = [_adapt_nsdfb3(to, b, hg) for b in ws.banks]
+    banks = [_adapt_nsdfb3d(to, b, hg) for b in ws.banks]
     conv = Adapt.adapt(to, ws.conv)
     input = Adapt.adapt(to, ws.input)
     Td = eltype(input)
     T = eltype(hg.m1)
-    return NSCT3Workspace{Td, T, eltype(banks), typeof(conv), typeof(input)}(
+    return NSCT3DWorkspace{Td, T, eltype(banks), typeof(conv), typeof(input)}(
         ws.dims, banks, conv, input,
         Adapt.adapt(to, ws.coarse), Adapt.adapt(to, ws.bandpass),
         Adapt.adapt(to, ws.tmp), Adapt.adapt(to, ws.tmp2),
     )
 end
 
-function Adapt.adapt_structure(to, c::NSCT3Coefficients)
-    return NSCT3Coefficients(
+function Adapt.adapt_structure(to, c::NSCT3DCoefficients)
+    return NSCT3DCoefficients(
         Adapt.adapt(to, c.coarse),
         [[Adapt.adapt(to, s) for s in lvl] for lvl in c.subbands],
     )

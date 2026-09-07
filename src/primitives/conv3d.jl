@@ -1,7 +1,7 @@
 # 3-D separable convolution with configurable boundary extension.
 #
 # Structure mirrors the 2-D `conv2d_sep!` path: a fully generic kernel driven by
-# `_get3` (any boundary, any element type) plus a fast path for real CPU arrays
+# `_get3d` (any boundary, any element type) plus a fast path for real CPU arrays
 # with :symmetric / :periodic extension that splits the volume into an interior
 # slab (no boundary handling needed) and two border slabs.
 #
@@ -12,7 +12,7 @@
 # dense 3-D kernel.  The periodic-boundary FFT backend lives in `conv3d_fft.jl`
 # and is selected automatically by `conv3d_sep!`; see `_conv3d_use_fft`.
 
-@inline function _get3(
+@inline function _get3d(
         src::AbstractArray{T, 3}, i::Int, j::Int, k::Int,
         n1::Int, n2::Int, n3::Int, bv::Val{B}
     )::T where {T, B}
@@ -44,7 +44,7 @@ end
         acc = zero(Td)
         for t in 1:l
             o1, o2, o3 = _axis_offsets(dv, c - t)
-            acc += h[t] * _get3(src, i + o1, j + o2, k + o3, n1, n2, n3, bv)
+            acc += h[t] * _get3d(src, i + o1, j + o2, k + o3, n1, n2, n3, bv)
         end
         dst[i, j, k] = acc
     end
@@ -105,7 +105,10 @@ function _filter_dim!(
     l = length(h)
     c = (l + 1) ÷ 2
 
-    lo = c                 # first index along D needing no extension
+    # The tap loop reads `i + c - t` for `t ∈ 1:l`, i.e. `i - (l - c)` up to
+    # `i + (c - 1)`.  Both bounds must stay inside `1:n`, which for an
+    # even-length filter is *not* `c` (there `l - c = c`, one tap further back).
+    lo = l - c + 1         # first index along D needing no extension
     hi = n - l + c         # last such index
     if hi < lo
         # Filter longer than the volume along this axis — no interior at all.
@@ -164,6 +167,14 @@ function conv3d_sep!(
     ) where {Td, Tf}
     size(dst) == size(src) || throw(DimensionMismatch("dst and src must have the same size"))
     size(tmp) == size(src) || throw(DimensionMismatch("tmp and src must have the same size"))
+    # Reject typos rather than silently falling through to :zero / :auto — the
+    # wrong boundary is a wrong answer, not a wrong performance.
+    boundary in (:symmetric, :periodic, :zero) ||
+        throw(ArgumentError("unsupported boundary $(boundary); use :symmetric, :periodic or :zero"))
+    backend in (:auto, :direct, :fft) ||
+        throw(ArgumentError("unsupported backend $(backend); use :auto, :direct or :fft"))
+    backend === :fft && boundary !== :periodic &&
+        throw(ArgumentError("the FFT backend is exact only for boundary = :periodic"))
     # Periodic separable filtering is exactly circular convolution, so the FFT
     # backend is not an approximation — only a different cost curve.
     if backend !== :direct && boundary === :periodic &&

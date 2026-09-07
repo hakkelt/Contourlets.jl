@@ -4,20 +4,20 @@ The 3-D Nonsubsampled Contourlet Transform decomposes a volume into a coarse
 residual plus `3 * 2^L` directional subbands per scale, all at the input size.
 Like its 2-D counterpart it is exactly equivariant under circular shifts.
 
-```@example nsct3
+```@example nsct3d
 using Contourlets, Random
 
 vol    = randn(Xoshiro(1), 32, 32, 32)
-params = ContourletParams3(J = 2, L_array = [1, 2])
+params = ContourletParams3D(J = 2, L_array = [1, 2])
 ```
 
 ---
 
 ## Variant 1 — Allocating
 
-```@example nsct3
-c   = nsct3_forward(vol, params)
-rec = nsct3_inverse(c, params)
+```@example nsct3d
+c   = nsct3d_forward(vol, params)
+rec = nsct3d_inverse(c, params)
 
 println("PR error: ", maximum(abs, rec .- vol))
 println("coarse: ", size(c.coarse))
@@ -37,13 +37,13 @@ the price of shift invariance, and it is why the streaming form below exists.
 Build the plans once and reuse them. This is the entry point for reconstruction
 loops, where the transform is applied hundreds of times to the same volume size.
 
-```@example nsct3
-ws  = make_nsct3_workspace(params, size(vol), Float64)
+```@example nsct3d
+ws  = make_nsct3d_workspace(params, size(vol), Float64)
 out = similar(vol)
 
 for _ in 1:3
-    coeffs = nsct3_forward(vol, params; workspace = ws)
-    nsct3_inverse!(out, coeffs, params; workspace = ws)
+    coeffs = nsct3d_forward(vol, params; workspace = ws)
+    nsct3d_inverse!(out, coeffs, params; workspace = ws)
 end
 println("PR error with workspace: ", maximum(abs, out .- vol))
 @assert maximum(abs, out .- vol) < 1e-12
@@ -58,10 +58,10 @@ would materialise 49 volumes — 3.1 GB — before you do anything with them. Th
 streaming form calls back once per subband and reuses one buffer, so it holds
 two volumes plus the plans.
 
-```@example nsct3
+```@example nsct3d
 energy = Dict{Tuple{Int, Int}, Float64}()
 
-coarse = nsct3_forward(vol, params) do j, k, band
+coarse = nsct3d_forward(vol, params) do j, k, band
     # `band` is valid only until this callback returns — copy or reduce here.
     energy[(j, k)] = sum(abs2, band)
 end
@@ -74,8 +74,8 @@ The inverse streams too: `f(j, k)` returns each subband on demand, so a caller
 that keeps coefficients on disk — or regenerates them — never holds the full
 set.
 
-```@example nsct3
-r = nsct3_inverse(c.coarse, params) do j, k
+```@example nsct3d
+r = nsct3d_inverse(c.coarse, params) do j, k
     c.subbands[j][k]
 end
 println("streaming inverse PR error: ", maximum(abs, r .- vol))
@@ -86,10 +86,10 @@ println("streaming inverse PR error: ", maximum(abs, r .- vol))
 
 ## Shift invariance
 
-```@example nsct3
+```@example nsct3d
 s = (3, -2, 5)
-a = nsct3_forward(vol, params)
-b = nsct3_forward(circshift(vol, s), params)
+a = nsct3d_forward(vol, params)
+b = nsct3d_forward(circshift(vol, s), params)
 
 err = maximum(
     maximum(abs, b.subbands[j][k] .- circshift(a.subbands[j][k], s))
@@ -107,7 +107,7 @@ A plane wave lands in the subband whose wedge contains its frequency vector.
 Here the frequency is steepest along axis 3, so the winning subband belongs to
 the third hourglass.
 
-```@example nsct3
+```@example nsct3d
 n = 32
 k = (2, 5, 13)
 wave = [
@@ -115,14 +115,14 @@ wave = [
         for i in 1:n, j in 1:n, l in 1:n
 ]
 
-fb = make_nsdfb3((n, n, n), Float64; levels = 4, transition = 0.5)
-e  = zeros(nsdfb3_nsubbands(fb))
-nsdfb3_decompose(wave, fb) do idx, band
+fb = make_nsdfb3d((n, n, n), Float64; levels = 4, transition = 0.5)
+e  = zeros(nsdfb3d_nsubbands(fb))
+nsdfb3d_decompose(wave, fb) do idx, band
     e[idx] = sum(abs2, band)
 end
 
 best = argmax(e)
-hourglass, p, q = nsdfb3_subband_triple(fb, best)
+hourglass, p, q = nsdfb3d_subband_triple(fb, best)
 println("winning subband $best: hourglass $hourglass, wedge ($p, $q)")
 println("its share of the energy: ", round(e[best] / sum(e), digits = 3))
 @assert hourglass == 3
@@ -136,14 +136,14 @@ Complex data is filtered as two real passes through the identical kernel, so the
 transform is exactly real-linear: `T(x + i·y) == T(x) + i·T(y)`, bit for bit.
 That makes it a usable correctness check on your own code built on top.
 
-```@example nsct3
+```@example nsct3d
 xr = randn(Xoshiro(2), 16, 16, 16)
 xi = randn(Xoshiro(3), 16, 16, 16)
-p  = ContourletParams3(J = 1, L_array = [1])
+p  = ContourletParams3D(J = 1, L_array = [1])
 
-cc = nsct3_forward(complex.(xr, xi), p)
-cr = nsct3_forward(xr, p)
-ci = nsct3_forward(xi, p)
+cc = nsct3d_forward(complex.(xr, xi), p)
+cr = nsct3d_forward(xr, p)
+ci = nsct3d_forward(xi, p)
 
 println(
     "linearity error: ",
@@ -156,19 +156,19 @@ println(
 
 ## Decimated: the surfacelet transform
 
-The NSCT3 keeps every subband at full size. The surfacelet transform stores each
+The NSCT3D keeps every subband at full size. The surfacelet transform stores each
 one at its own reduced resolution instead, giving up shift invariance for a
 smaller coefficient set. Reconstruction is still exact.
 
-```@example nsct3
-sp = SurfaceletParams3(J = 2, L_array = [1, 1])
-pl = make_surfacelet3(sp, size(vol), Float64)
+```@example nsct3d
+sp = SurfaceletParams3D(J = 2, L_array = [1, 1])
+pl = make_surfacelet3d(sp, size(vol), Float64)
 
-sc = surfacelet3_forward(vol, sp; plan = pl)
-sr = surfacelet3_inverse(sc, sp; plan = pl)
+sc = surfacelet3d_forward(vol, sp; plan = pl)
+sr = surfacelet3d_inverse(sc, sp; plan = pl)
 
 println("PR error: ", maximum(abs, sr .- vol))
-println("redundancy: ", round(surfacelet3_redundancy(pl), digits = 2))
+println("redundancy: ", round(surfacelet3d_redundancy(pl), digits = 2))
 println("coarse subband: ", size(sc.coarse), " from a ", size(vol), " volume")
 println("scale 1 subband: ", size(sc.subbands[1][1]))
 println("scale 2 subband: ", size(sc.subbands[2][1]))

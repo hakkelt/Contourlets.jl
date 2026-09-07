@@ -9,7 +9,7 @@ using PrecompileTools: @setup_workload, @compile_workload
     # produced would be for a size nobody asked for.
     vol = zeros(Float64, 8, 8, 8)
     vol[4, 4, 4] = 1.0
-    params3 = ContourletParams3(J = 1, L_array = [1], order = 4)
+    params3d = ContourletParams3D(J = 1, L_array = [1], order = 4)
     @compile_workload begin
         # Allocating CT / NSCT round trips.
         c = ct_forward(img, params)
@@ -31,11 +31,11 @@ using PrecompileTools: @setup_workload, @compile_workload
 
         # 3-D: the allocating round trip, the workspace path and the streaming
         # form, which is the entry point at working sizes.
-        ws3 = make_nsct3_workspace(params3, size(vol), Float64; flags = FFTW.ESTIMATE)
-        c3 = nsct3_forward(vol, params3; workspace = ws3)
-        rec3 = similar(vol)
-        nsct3_inverse!(rec3, c3, params3; workspace = ws3)
-        nsct3_forward(vol, params3; workspace = ws3) do j, k, band
+        ws3d = make_nsct3d_workspace(params3d, size(vol), Float64; flags = FFTW.ESTIMATE)
+        c3d = nsct3d_forward(vol, params3d; workspace = ws3d)
+        rec3d = similar(vol)
+        nsct3d_inverse!(rec3d, c3d, params3d; workspace = ws3d)
+        nsct3d_forward(vol, params3d; workspace = ws3d) do j, k, band
             sum(band)
         end
     end

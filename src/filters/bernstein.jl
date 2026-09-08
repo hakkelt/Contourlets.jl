@@ -36,16 +36,22 @@ the coefficients do — this is what bounds the mapped filter responses.
 function bernstein_table(N::Int, omega::AbstractVector{T}) where {T <: AbstractFloat}
     N >= 1 || throw(ArgumentError("Bernstein order must be ≥ 1"))
     tbl = Matrix{T}(undef, N + 1, length(omega))
+    # The binomial row depends only on `N`, so it is built once rather than per
+    # frequency: the table is `(N+1) × length(omega)` and `omega` is a grid axis.
+    bin = _binomial_row(T, N)
     @inbounds for (k, w) in enumerate(omega)
         x = (one(T) - cos(w)) / 2
         x = clamp(x, zero(T), one(T))
         y = one(T) - x
         for j in 0:N
-            tbl[j + 1, k] = T(binomial(N, j)) * x^j * y^(N - j)
+            tbl[j + 1, k] = bin[j + 1] * x^j * y^(N - j)
         end
     end
     return tbl
 end
+
+# Binomial coefficients of one row of Pascal's triangle, in `T`.
+_binomial_row(::Type{T}, N::Int) where {T} = T[T(binomial(N, j)) for j in 0:N]
 
 """
     dft_frequencies(n::Int; half::Bool=false) -> Vector{Float64}
@@ -58,6 +64,17 @@ function dft_frequencies(::Type{T}, n::Int; half::Bool = false) where {T <: Abst
     return T[2 * T(π) * (k - 1) / n for k in 1:m]
 end
 dft_frequencies(n::Int; half::Bool = false) = dft_frequencies(Float64, n; half = half)
+
+# Folded angular frequencies of the DFT grid: ω ∈ (-π, π].  With `half = true`
+# only the non-negative half kept by `rfft` is returned, already in [0, π].
+function _folded_frequencies(::Type{T}, n::Int; half::Bool = false) where {T}
+    half && return dft_frequencies(T, n; half = true)
+    return T[
+        let w = 2 * T(π) * (k - 1) / n
+                w > T(π) ? w - 2 * T(π) : w
+        end for k in 1:n
+    ]
+end
 
 """
     mapping_coefficients(N::Int, d::Int, group::NTuple) -> Array{Int,d}
@@ -149,8 +166,26 @@ function halfband_split(x::T, m::Int) where {T <: Real}
     u = (one(T) + x) / 2
     v = (one(T) - x) / 2
     s = zero(T)
+    # binomial(m+k, k) by the recurrence `c_{k+1} = c_k · (m+k+1) ÷ (k+1)`, which
+    # is exact in integers: this runs once per voxel per subband, and
+    # `binomial`'s overflow checking is not free at that rate.
+    c = 1
     @inbounds for k in 0:m
-        s += T(binomial(m + k, k)) * v^k
+        s += T(c) * v^k
+        c = c * (m + k + 1) ÷ (k + 1)
     end
     return u^(m + 1) * s
+end
+
+# Soft step from 0 to 1 across `[-1, 1]`, flat outside it: `halfband_split` on a
+# clamped argument, which is exactly 0 at -1 and exactly 1 at 1.  Consecutive
+# steps therefore telescope to 1, which is what makes every partition built from
+# them (hourglass, wedge, radial shell) a partition of unity.
+@inline _step(u::T, poly::Int) where {T} = halfband_split(clamp(u, -one(T), one(T)), poly)
+
+# The same step placed at `b` with half-width `w`.  A non-positive width degrades
+# to a hard step rather than dividing by zero.
+@inline function _soft_step(s::T, b::T, w::T, poly::Int) where {T}
+    w <= 0 && return s >= b ? one(T) : zero(T)
+    return _step((s - b) / w, poly)
 end

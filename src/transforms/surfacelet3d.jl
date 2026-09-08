@@ -154,18 +154,25 @@ The per-subband masks are *not* stored — at 256³ that would be gigabytes.  On
 the 1-D frequency tables, the per-scale wedge boundaries, and each subband's
 frequency box are kept; masks are evaluated on the fly.
 """
-struct Surfacelet3DPlan{T <: AbstractFloat, P}
-    dims::NTuple{3, Int}
-    params::SurfaceletParams3D{T}
-    wfreq::NTuple{3, Vector{T}}      # ω_d folded to (-π, π]
-    signed::NTuple{3, Vector{Int}}   # signed frequency index per axis
-    negidx::NTuple{3, Vector{Int}}   # index of the negated frequency, per axis
-    radii::Vector{T}                 # shell boundaries π, π/2, …, π/2^J
-    boxes::Vector{Vector{SubbandBox}}   # [scale][subband]
+mutable struct Surfacelet3DPlan{T <: AbstractFloat, P, Pi}
+    const dims::NTuple{3, Int}
+    const params::SurfaceletParams3D{T}
+    const wfreq::NTuple{3, Vector{T}}      # ω_d folded to (-π, π]
+    const signed::NTuple{3, Vector{Int}}   # signed frequency index per axis
+    const negidx::NTuple{3, Vector{Int}}   # index of the negated frequency, per axis
+    const radii::Vector{T}                 # shell boundaries π, π/2, …, π/2^J
+    const boxes::Vector{Vector{SubbandBox}}   # [scale][subband]
+    # Filled in once the masks have been scanned; the scan needs the plan.
     coarse_box::SubbandBox
-    fwd::P
-    spec::Array{Complex{T}, 3}
-    work::Array{Complex{T}, 3}
+    const fwd::P
+    const inv::Pi                          # in-place inverse for the full grid
+    # In-place forward/inverse plans per distinct box size, built on first use.
+    # Every subband of every call transforms at its box size, so planning them
+    # per call — which is what a bare `fft!`/`ifft!` does — is pure overhead.
+    const boxplans::Dict{NTuple{3, Int}, Tuple{Any, Any}}
+    const flags::UInt32
+    const spec::Array{Complex{T}, 3}
+    const work::Array{Complex{T}, 3}
 end
 
 """
@@ -192,12 +199,14 @@ function make_surfacelet3d(
     FFTW.set_num_threads(_fftw_threads(threading))
     buf = zeros(Complex{T}, dims)
     fwd = plan_fft(buf; flags = flags)
+    inv = plan_ifft!(buf; flags = flags)
     spec = Array{Complex{T}, 3}(undef, dims)
     work = Array{Complex{T}, 3}(undef, dims)
 
-    plan = Surfacelet3DPlan{T, typeof(fwd)}(
+    plan = Surfacelet3DPlan{T, typeof(fwd), typeof(inv)}(
         dims, p, wfreq, signed, negidx, radii,
-        [SubbandBox[] for _ in 1:p.J], _full_box(dims), fwd, spec, work
+        [SubbandBox[] for _ in 1:p.J], _full_box(dims), fwd, inv,
+        Dict{NTuple{3, Int}, Tuple{Any, Any}}(), UInt32(flags), spec, work
     )
     # Support boxes, found by scanning each mask once.
     mask = Array{T, 3}(undef, dims)
@@ -208,10 +217,17 @@ function make_surfacelet3d(
         end
     end
     _fill_coarse_mask!(mask, plan)
-    return Surfacelet3DPlan{T, typeof(fwd)}(
-        dims, p, wfreq, signed, negidx, radii, plan.boxes,
-        _support_box(mask, plan), fwd, spec, work
-    )
+    plan.coarse_box = _support_box(mask, plan)
+    return plan
+end
+
+# In-place forward and inverse plans for one box size, built once per size.
+function _box_plans(pl::Surfacelet3DPlan{T}, sz::NTuple{3, Int}) where {T}
+    return get!(pl.boxplans, sz) do
+        buf = Array{Complex{T}, 3}(undef, sz)
+        # Planning may scribble on `buf`; it is scratch and discarded here.
+        (plan_fft!(buf; flags = pl.flags), plan_ifft!(buf; flags = pl.flags))
+    end
 end
 
 make_surfacelet3d(params::SurfaceletParams3D, dims::Vararg{Int, 3}; kwargs...) =
@@ -281,8 +297,10 @@ end
 # that: `f₀(-1) = 0` and `f₀(1) = 1` exactly, and `f₀(x) + f₀(-x) = 1` makes the
 # factors telescope to a partition of unity.
 
-# Soft step: 0 for u ≤ -1, 1 for u ≥ 1, monotone in between.
-@inline _step(u::T, poly::Int) where {T} = halfband_split(clamp(u, -one(T), one(T)), poly)
+# The soft step (`_step`) and the wedge partition (`_wedge_weight`) are shared
+# with the nonsubsampled bank — see `filters/bernstein.jl` and
+# `directional/nsdfb3d.jl`.  Only the radial and hourglass factors below are
+# specific to the decimated transform.
 
 # Radial (cube-shell) weight of scale `j`, from r = ‖ω‖_∞.  Scale 1 is finest.
 # The shells telescope: the sum over j = 1..J plus the coarse weight is 1.
@@ -319,33 +337,13 @@ end
     return w
 end
 
-# Wedge weight along one transverse ratio: which of the `nw` equal slabs of
-# [-1, 1] the ratio `s` falls in, softened.  Outermost edges are hard so the
-# slabs telescope to 1 for any `s`, including |s| > 1.
-@inline function _wedge_weight(s::T, idx::Int, nw::Int, transition::T, poly::Int) where {T}
-    nw == 1 && return one(T)
-    delta = T(2) / nw
-    width = transition * delta
-    lo = idx == 1 ? one(T) : _wedge_edge(s, idx - 1, delta, width, poly)
-    hi = idx == nw ? zero(T) : _wedge_edge(s, idx, delta, width, poly)
-    return lo - hi
-end
-
-@inline function _wedge_edge(s::T, k::Int, delta::T, width::T, poly::Int) where {T}
-    return _step((s - (-one(T) + k * delta)) / width, poly)
-end
-
 # W = radial_j · normalised hourglass · wedge_p · wedge_q, then V = √W.
 function _fill_surfacelet_mask!(
         out::AbstractArray{T, 3}, plan::Surfacelet3DPlan{T}, j::Int, k::Int
     ) where {T}
     p = plan.params
-    nw = 1 << p.L_array[j]
     na, nb = _wedge_counts(p.L_array[j])
-    hg = (k - 1) ÷ nw + 1
-    rest = (k - 1) % nw
-    ip = rest ÷ nb + 1
-    iq = rest % nb + 1
+    hg, ip, iq = _subband_triple(k, na, nb)
     ax, bx = _transverse_axes(hg)
     w1, w2, w3 = plan.wfreq
     s1, s2, s3 = plan.signed
@@ -383,9 +381,12 @@ function _fill_surfacelet_mask!(
                 out[k1, k2, k3] = zero(T)
                 continue
             end
-            norm = _hourglass_weight(a, 1, delta, p.poly) +
-                _hourglass_weight(a, 2, delta, p.poly) +
-                _hourglass_weight(a, 3, delta, p.poly)
+            # The normalising sum includes `hw`, so only the other two are new.
+            norm = hw
+            for t in 1:3
+                t == hg && continue
+                norm += _hourglass_weight(a, t, delta, p.poly)
+            end
             # Signed ratios: the wedge slabs span [-1, 1], so using |ω_a|/|ω_i|
             # here would fold the two halves together and starve half the
             # wedges.
@@ -410,8 +411,6 @@ function _fill_coarse_mask!(out::AbstractArray{T, 3}, plan::Surfacelet3DPlan{T})
     end
     return out
 end
-
-_wedge_counts(L::Int) = (1 << cld(L, 2), 1 << fld(L, 2))
 
 # ── Support boxes ────────────────────────────────────────────────────────────
 
@@ -484,9 +483,8 @@ function surfacelet3d_forward(
     pl = _surfacelet3d_plan(plan, params, size(volume), T)
     p = pl.params
 
-    copyto!(pl.spec, volume)
-    mul!(pl.work, pl.fwd, pl.spec)
-    copyto!(pl.spec, pl.work)                      # keep the spectrum
+    copyto!(pl.work, volume)
+    mul!(pl.spec, pl.fwd, pl.work)                 # the spectrum stays in `spec`
 
     mask = Array{T, 3}(undef, pl.dims)
     subbands = Vector{Vector{Array{T, 3}}}(undef, p.J)
@@ -530,7 +528,7 @@ function surfacelet3d_inverse(
     _fill_coarse_mask!(mask, pl)
     _accumulate_subband!(pl, coeffs.coarse, mask, pl.coarse_box)
 
-    ifft!(pl.spec)
+    pl.inv * pl.spec
     out = Array{T, 3}(undef, pl.dims)
     @inbounds @simd for i in eachindex(out, pl.spec)
         out[i] = real(pl.spec[i])
@@ -569,7 +567,7 @@ function _extract_subband(
             end
         end
     end
-    ifft!(buf)
+    _box_plans(pl, box.size)[2] * buf
     out = Array{T, 3}(undef, box.size)
     @inbounds @simd for i in eachindex(out, buf)
         out[i] = real(buf[i])
@@ -587,7 +585,7 @@ function _accumulate_subband!(
         throw(DimensionMismatch("subband is $(size(band)), expected $(box.size)"))
     buf = Array{Complex{T}, 3}(undef, box.size)
     copyto!(buf, band)
-    fft!(buf)
+    _box_plans(pl, box.size)[1] * buf
     m1, m2, m3 = box.maps
     spec = pl.spec
     @inbounds for k3 in axes(spec, 3)

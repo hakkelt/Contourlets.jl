@@ -35,9 +35,7 @@ function Adapt.adapt_structure(to, fb::HourglassFB3D)
         fb.dims, fb.order, fb.poly, fb.tight, m1, m2, fwd, inv, spec, similar(spec), rbuf,
         fb.spec2 === nothing ? nothing : similar(spec),
         fb.rbuf2 === nothing ? nothing : similar(rbuf),
-        fb.acc === nothing ? nothing : similar(spec),
-        fb.acc2 === nothing ? nothing : similar(spec),
-        fb.maskbuf === nothing ? nothing : similar(m1),
+        fb.cbuf === nothing ? nothing : similar(spec, fb.dims),
     )
 end
 

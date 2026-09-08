@@ -91,16 +91,10 @@ mutable struct HourglassFB3D{
     # every subband's real part, which is what a two-pass scheme would need.
     spec2::Union{Nothing, C3}
     rbuf2::Union{Nothing, A3}
-    # Accumulator spectra for the tight synthesis path, which sums masked
-    # subband spectra before a single inverse transform.  Allocated on first use
-    # so the analysis-only and `tight = false` paths never pay for them.
-    acc::Union{Nothing, C3}
-    acc2::Union{Nothing, C3}
-    # Scratch for one derived subband mask, shared by every directional bank
-    # built on this hourglass stage (they all work on the same rfft grid).  The
-    # mask is half a volume, so materialising a fresh one per call would make the
-    # workspace paths allocate ~33 MB per scale at 256³ Float32.
-    maskbuf::Union{Nothing, A3}
+    # Full-size complex scratch, for handing a complex subband to a streaming
+    # callback.  Allocated on first complex use for the same reason as the pair
+    # above (128 MB at 256³ ComplexF32).
+    cbuf::Union{Nothing, C3}
 end
 
 """
@@ -159,7 +153,7 @@ function make_hourglass3d(
     inv = plan_irfft(spec, n1; flags = flags)
     return HourglassFB3D{T, typeof(m1), typeof(spec), typeof(fwd), typeof(inv)}(
         dims, order, poly, tight, m1, m2, fwd, inv, spec, similar(spec), rbuf,
-        nothing, nothing, nothing, nothing, nothing
+        nothing, nothing, nothing
     )
 end
 
@@ -186,37 +180,14 @@ function _complex_scratch!(fb::HourglassFB3D{T, A3}) where {T, A3}
     return s2, r2
 end
 
-# Ensure the shared subband-mask scratch exists; returns it.
-function _mask_scratch!(fb::HourglassFB3D)
-    m = fb.maskbuf
-    if m === nothing
-        m = similar(fb.m1)
-        fb.maskbuf = m
+# Ensure the full-size complex scratch exists; returns it.
+function _volume_scratch!(fb::HourglassFB3D)
+    c = fb.cbuf
+    if c === nothing
+        c = similar(fb.spec, fb.dims)
+        fb.cbuf = c
     end
-    return m
-end
-
-# Ensure the synthesis accumulator spectrum exists; returns it.  Kept separate
-# from the second one so a real-valued tight synthesis never allocates the
-# imaginary half it has no use for.
-function _synthesis_acc!(fb::HourglassFB3D)
-    a = fb.acc
-    if a === nothing
-        a = similar(fb.spec)
-        fb.acc = a
-    end
-    return a
-end
-
-# Ensure the second synthesis accumulator exists; returns it.  Only the complex
-# path needs it.
-function _synthesis_acc2!(fb::HourglassFB3D)
-    a2 = fb.acc2
-    if a2 === nothing
-        a2 = similar(fb.spec)
-        fb.acc2 = a2
-    end
-    return a2
+    return c
 end
 
 # Load one subband into a real scratch buffer.  A bare `copyto!` accepts any
@@ -255,8 +226,10 @@ The three masks sum to 1 at every frequency when `fb.tight` is false, and their
 underlying partition of unity in either case.
 """
 function hourglass3d_mask(fb::HourglassFB3D{T}, i::Int) where {T}
-    out = hourglass3d_weight(fb, i)
-    fb.tight && @. out = _tight_sqrt(out)
+    1 <= i <= 3 || throw(ArgumentError("hourglass subband index must be 1, 2 or 3"))
+    out = similar(fb.m1)
+    # The transform kernel with a unit spectrum: the mask itself.
+    _mask_multiply!(out, fb, true, i)
     return out
 end
 
@@ -315,14 +288,7 @@ julia> maximum(abs, hourglass3d_reconstruct(s, fb) .- x) < 1e-10
 true
 ```
 """
-function hourglass3d_decompose(volume::AbstractArray{T, 3}, fb::HourglassFB3D{T}) where {T <: AbstractFloat}
-    out = ntuple(_ -> similar(volume), 3)
-    return hourglass3d_decompose!(out, volume, fb)
-end
-
-function hourglass3d_decompose(
-        volume::AbstractArray{Complex{T}, 3}, fb::HourglassFB3D{T}
-    ) where {T <: AbstractFloat}
+function hourglass3d_decompose(volume::AbstractArray{<:Number, 3}, fb::HourglassFB3D)
     out = ntuple(_ -> similar(volume), 3)
     return hourglass3d_decompose!(out, volume, fb)
 end
@@ -341,7 +307,7 @@ function hourglass3d_decompose!(
     copyto!(fb.rbuf, volume)
     mul!(fb.spec, fb.fwd, fb.rbuf)
     for i in 1:3
-        _apply_hourglass_mask!(fb, fb.spec, i)
+        _mask_multiply!(fb.work, fb, fb.spec, i)
         mul!(fb.rbuf, fb.inv, fb.work)
         copyto!(dst[i], fb.rbuf)
     end
@@ -360,30 +326,53 @@ function hourglass3d_decompose!(
     _load_complex_spectra!(fb, volume)
     spec2, rbuf2 = _complex_scratch!(fb)
     for i in 1:3
-        _apply_hourglass_mask!(fb, fb.spec, i)
+        _mask_multiply!(fb.work, fb, fb.spec, i)
         mul!(fb.rbuf, fb.inv, fb.work)
-        _apply_hourglass_mask!(fb, spec2, i)
+        _mask_multiply!(fb.work, fb, spec2, i)
         mul!(rbuf2, fb.inv, fb.work)
         @. dst[i] = complex(fb.rbuf, rbuf2)
     end
     return dst
 end
 
-# work .= spec .* mask_i, with the mask derived from the two mapping responses.
-function _apply_hourglass_mask!(fb::HourglassFB3D, spec::AbstractArray, i::Int)
-    work, m1, m2 = fb.work, fb.m1, fb.m2
+# The mask kernels, shared with the directional bank in `nsdfb3d.jl`: the wedge
+# factors `wa`, `wb` are `nothing` here and oriented wedge planes there, so the
+# two banks differ by which arguments they pass and not by a second copy of the
+# mask expression.  That matters beyond duplication — when `tight` is set the
+# same mask is reapplied on synthesis, so the two expressions drifting apart
+# would break the Parseval normalisation silently.
+#
+# `_wedge_scale` resolves `nothing` at compile time, so the hourglass bank does
+# not pay two multiplies by an all-ones factor it does not have.
+#
+# The mask is never materialised on the transform paths: at 256³ Float32 it is a
+# 34 MB write followed immediately by a 34 MB read, per subband.  Folding it into
+# the multiply removes both while keeping the expression broadcast-only, which is
+# what the GPU path needs.
+@inline _wedge_scale(x, w) = x * w
+@inline _wedge_scale(x, ::Nothing) = x
+
+# dst .= spec .* mask, the mask being hourglass weight `i` times the wedges.
+function _mask_multiply!(dst, fb::HourglassFB3D, spec, i::Int, wa = nothing, wb = nothing)
+    m1, m2 = fb.m1, fb.m2
     if fb.tight
-        @. work = spec * _tight_sqrt(_stage1_weight(m1, i) * _stage2_weight(m2, i))
+        @. dst = spec * _tight_sqrt(
+            _wedge_scale(_wedge_scale(_stage1_weight(m1, i) * _stage2_weight(m2, i), wa), wb)
+        )
     else
-        @. work = spec * (_stage1_weight(m1, i) * _stage2_weight(m2, i))
+        @. dst = spec * _wedge_scale(
+            _wedge_scale(_stage1_weight(m1, i) * _stage2_weight(m2, i), wa), wb
+        )
     end
-    return work
+    return dst
 end
 
-# acc .+= spec .* mask_i — the synthesis counterpart, used only when tight.
-function _accumulate_hourglass_mask!(acc, fb::HourglassFB3D, spec::AbstractArray, i::Int)
+# acc .+= spec .* mask — the synthesis counterpart, used only when tight.
+function _mask_accumulate!(acc, fb::HourglassFB3D, spec, i::Int, wa = nothing, wb = nothing)
     m1, m2 = fb.m1, fb.m2
-    @. acc += spec * _tight_sqrt(_stage1_weight(m1, i) * _stage2_weight(m2, i))
+    @. acc += spec * _tight_sqrt(
+        _wedge_scale(_wedge_scale(_stage1_weight(m1, i) * _stage2_weight(m2, i), wa), wb)
+    )
     return acc
 end
 
@@ -425,15 +414,16 @@ end
 function _hourglass3d_synthesise!(
         volume::AbstractArray{T, 3}, subbands, fb::HourglassFB3D{T}
     ) where {T <: AbstractFloat}
-    acc = _synthesis_acc!(fb)
+    # `work` is the buffer the inverse plan consumes and nothing else uses during
+    # synthesis, so the masked spectra accumulate straight into it.
+    acc = fb.work
     fill!(acc, zero(eltype(acc)))
     for i in 1:3
         _load_subband!(fb.rbuf, subbands[i])
         mul!(fb.spec, fb.fwd, fb.rbuf)
-        _accumulate_hourglass_mask!(acc, fb, fb.spec, i)
+        _mask_accumulate!(acc, fb, fb.spec, i)
     end
-    copyto!(fb.work, acc)
-    mul!(fb.rbuf, fb.inv, fb.work)
+    mul!(fb.rbuf, fb.inv, acc)
     copyto!(volume, fb.rbuf)
     return volume
 end
@@ -443,23 +433,21 @@ function _hourglass3d_synthesise!(
     ) where {T <: AbstractFloat}
     # Real and imaginary parts take the identical real kernel, as everywhere
     # else in the 3-D stack, so `T(x + i·y) == T(x) + i·T(y)` stays exact.
-    acc, acc2 = _synthesis_acc!(fb), _synthesis_acc2!(fb)
     spec2, rbuf2 = _complex_scratch!(fb)
+    acc, acc2 = fb.work, spec2
     fill!(acc, zero(eltype(acc)))
     fill!(acc2, zero(eltype(acc2)))
     for i in 1:3
         band = subbands[i]
         @. fb.rbuf = real(band)
         mul!(fb.spec, fb.fwd, fb.rbuf)
-        _accumulate_hourglass_mask!(acc, fb, fb.spec, i)
+        _mask_accumulate!(acc, fb, fb.spec, i)
         @. fb.rbuf = imag(band)
-        mul!(spec2, fb.fwd, fb.rbuf)
-        _accumulate_hourglass_mask!(acc2, fb, spec2, i)
+        mul!(fb.spec, fb.fwd, fb.rbuf)
+        _mask_accumulate!(acc2, fb, fb.spec, i)
     end
-    copyto!(fb.work, acc)
-    mul!(fb.rbuf, fb.inv, fb.work)
-    copyto!(fb.work, acc2)
-    mul!(rbuf2, fb.inv, fb.work)
+    mul!(fb.rbuf, fb.inv, acc)
+    mul!(rbuf2, fb.inv, acc2)
     @. volume = complex(fb.rbuf, rbuf2)
     return volume
 end

@@ -313,8 +313,8 @@ output.
   responses and wedge planes are 3-D arrays with singleton axes where they do
   not depend on a frequency — so mask application, the complex real/imaginary
   split, and the pyramid's frequency multiply are all plain broadcasts. Keep it
-  that way: introducing scalar indexing into `_fill_mask!`,
-  `_apply_hourglass_mask!` or `_apply_freq_filter!` silently breaks the device
+  that way: introducing scalar indexing into `_mask_multiply!`,
+  `_mask_accumulate!` or `_apply_freq_filter!` silently breaks the device
   path. `ext/ContourletsGPUExt/nsct3d_gpu.jl` therefore contains only
   `Adapt.adapt_structure` methods, which move the data and replan the FFTs
   (plans cannot be adapted). A workspace adapt moves the shared hourglass

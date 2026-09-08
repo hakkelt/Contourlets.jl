@@ -29,7 +29,7 @@ the "Theory (3-D)" page.
 """
 module Contourlets
 
-using FFTW: FFTW, plan_rfft, plan_fft, plan_irfft, plan_ifft, rfft, fft, fft!, ifft!
+using FFTW: FFTW, plan_rfft, plan_fft, plan_fft!, plan_irfft, plan_ifft, plan_ifft!, rfft, fft
 using LinearAlgebra: mul!, adjoint
 using LoopVectorization: @turbo
 using Polyester: @batch

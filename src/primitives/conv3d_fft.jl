@@ -5,16 +5,21 @@
 # filter length.  That matters much more in 3-D than in 2-D: the à trous filters
 # grow as `2^(j-1)` taps per axis, and the direct kernel is memory-bound.
 #
-# Measured at 256³ Float32, single thread:
+# Measured with a preallocated plan, `direct / FFT` per pass (a ratio above 1
+# means the FFT wins), one FFTW thread and four giving the same picture:
 #
-#   | stage                  | direct  | FFT (1 thr) | FFT (16 thr) |
-#   |------------------------|---------|-------------|--------------|
-#   | NSP3D level 1 (9 taps)  | 0.878 s | 1.07 s      | 0.107 s      |
-#   | NSP3D level 3 (33 taps) | 5.740 s | 1.07 s      | 0.107 s      |
+#   | taps | 64³ real | 64³ cplx | 128³ real | 128³ cplx | 256³ real | 256³ cplx |
+#   |------|----------|----------|-----------|-----------|-----------|-----------|
+#   |    3 |     1.21 |     0.76 |      0.70 |      0.78 |      0.73 |      0.67 |
+#   |    5 |     1.69 |     1.94 |      1.44 |      1.78 |      1.20 |      1.36 |
+#   |    9 |     4.90 |     3.37 |      3.92 |      4.99 |      2.73 |      2.70 |
+#   |   33 |    43.44 |    22.85 |     44.72 |     22.82 |         — |         — |
 #
-# Hence the auto-selection rule in `_conv3d_use_fft`: with a single FFTW thread
-# the crossover sits near 11 taps; with FFTW threading enabled the FFT path wins
-# everywhere above a trivially small volume.
+# Hence the single crossover in `_conv3d_use_fft`: five taps, for every volume
+# size, element type and thread count measured.  One threshold for real and
+# complex is not only simpler — it is required, because a complex volume and its
+# real and imaginary parts must reach the same kernel for the package invariant
+# `T(x + i·y) == T(x) + i·T(y)` to hold bit-for-bit.
 #
 # Complex volumes are filtered as two real transforms (real part, then imaginary
 # part) rather than by a complex `plan_fft`.  Two `rfft` round trips cost about
@@ -232,15 +237,13 @@ function conv3d_sep_fft(
     return conv3d_sep_fft!(similar(src), src, h1, h2, h3, plan)
 end
 
-# Minimum filter length at which the FFT path beats the direct kernel, given the
-# current FFTW thread count.  See the table at the top of this file.
-@inline function _conv3d_fft_min_taps(::Type{<:AbstractFloat})
-    return FFTW.get_num_threads() > 1 ? 5 : 11
-end
-
-# Complex volumes have no interior fast path in the direct kernel — every voxel
-# pays an index fold per tap — so the FFT wins from the shortest useful filter.
-@inline _conv3d_fft_min_taps(::Type{<:Complex}) = 3
+# Crossover point of the auto-selection rule, measured as in the table at the top
+# of this file.  It is the one machine-dependent part of the backend choice, so
+# it is named here rather than buried in the dispatch helper.  It deliberately
+# does not depend on the element type or on the FFTW thread count: see the table.
+const _CONV3D_FFT_MIN_TAPS = 5
+# Below this the transform overhead does not amortise whatever the tap count.
+const _CONV3D_FFT_MIN_DIM = 16
 
 """
     _conv3d_use_fft(Td, boundary, dims, taps) -> Bool
@@ -253,6 +256,6 @@ filter long enough to lose to it.
 @inline function _conv3d_use_fft(::Type{Td}, boundary::Symbol, dims::NTuple{3, Int}, taps::Int) where {Td}
     Td <: Union{AbstractFloat, Complex{<:AbstractFloat}} || return false
     boundary === :periodic || return false
-    minimum(dims) >= 16 || return false
-    return taps >= _conv3d_fft_min_taps(Td)
+    minimum(dims) >= _CONV3D_FFT_MIN_DIM || return false
+    return taps >= _CONV3D_FFT_MIN_TAPS
 end

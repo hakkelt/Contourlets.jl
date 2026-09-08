@@ -94,12 +94,17 @@ function _filter_dim!(
     return _filter_dim_generic!(dst, src, h, dv, bv, 1:n1, 1:n2, 1:n3)
 end
 
-# Fast path: real data, boundary modes whose interior needs no index folding.
+# Fast path: boundary modes whose interior needs no index folding.  Complex data
+# takes it too — the interior kernel is a real-weighted axpy either way, and the
+# element type only widens the accumulator.  Keeping the two in step is not just
+# a performance question: `_conv3d_use_fft` picks the backend from the tap count
+# alone, so a complex volume and its real and imaginary parts must reach the same
+# kernel for `T(x + i·y) == T(x) + i·T(y)` to hold bit-for-bit.
 function _filter_dim!(
         dst::AbstractArray{Td, 3}, src::AbstractArray{Td, 3},
         h::AbstractVector{Tf}, dv::Val{D},
         bv::Union{Val{:symmetric}, Val{:periodic}}
-    ) where {Td <: Real, Tf, D}
+    ) where {Td, Tf, D}
     n1, n2, n3 = size(src)
     n = (n1, n2, n3)[D]
     l = length(h)
@@ -127,7 +132,7 @@ function _filter_dim!(
 end
 
 """
-    conv3d_sep!(dst, src, h1, h2, h3; boundary=:symmetric, tmp=similar(src)) -> dst
+    conv3d_sep!(dst, src, h1, h2, h3; boundary=:symmetric, tmp=nothing) -> dst
 
 Separable 3-D convolution: apply the 1-D filter `h1` along axis 1, then `h2`
 along axis 2, then `h3` along axis 3.  Each filter is treated as centred at
@@ -161,12 +166,13 @@ function conv3d_sep!(
         h2::AbstractVector{Tf},
         h3::AbstractVector{Tf};
         boundary::Symbol = :symmetric,
-        tmp::AbstractArray{Td, 3} = similar(src),
+        tmp::Union{AbstractArray{Td, 3}, Nothing} = nothing,
         plan::Union{Conv3DFFTPlan, Nothing} = nothing,
         backend::Symbol = :auto
     ) where {Td, Tf}
     size(dst) == size(src) || throw(DimensionMismatch("dst and src must have the same size"))
-    size(tmp) == size(src) || throw(DimensionMismatch("tmp and src must have the same size"))
+    tmp === nothing || size(tmp) == size(src) ||
+        throw(DimensionMismatch("tmp and src must have the same size"))
     # Reject typos rather than silently falling through to :zero / :auto — the
     # wrong boundary is a wrong answer, not a wrong performance.
     boundary in (:symmetric, :periodic, :zero) ||
@@ -187,12 +193,16 @@ function conv3d_sep!(
             return conv3d_sep_fft!(dst, src, h1, h2, h3, p)
         end
     end
+    # Only the direct path needs the intermediate buffer, and it is a full volume
+    # (64 MB at 256³ Float32) — so it is allocated here rather than as a default
+    # keyword argument, which would allocate it for the FFT path too.
+    scratch = tmp === nothing ? similar(src) : tmp
     if boundary === :symmetric
-        _conv3d_sep_impl!(dst, src, h1, h2, h3, tmp, Val(:symmetric))
+        _conv3d_sep_impl!(dst, src, h1, h2, h3, scratch, Val(:symmetric))
     elseif boundary === :periodic
-        _conv3d_sep_impl!(dst, src, h1, h2, h3, tmp, Val(:periodic))
+        _conv3d_sep_impl!(dst, src, h1, h2, h3, scratch, Val(:periodic))
     else
-        _conv3d_sep_impl!(dst, src, h1, h2, h3, tmp, Val(:zero))
+        _conv3d_sep_impl!(dst, src, h1, h2, h3, scratch, Val(:zero))
     end
     return dst
 end

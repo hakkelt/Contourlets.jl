@@ -288,9 +288,12 @@ output.
   filtering is circular convolution, so an FFT evaluation is exact, not an
   approximation, and its cost is independent of tap count — which matters
   because à trous filters grow as `2^(j-1)` per axis. `conv3d_sep!`
-  auto-selects it (`_conv3d_use_fft`); complex volumes always take it, since the
-  direct kernel has no interior fast path for them. At 64³ Float32 with 33 taps:
-  182 ms direct vs 1.8 ms via FFT.
+  auto-selects it (`_conv3d_use_fft`) from a single crossover — five taps, the
+  same for real and complex data and for any FFTW thread count. One threshold
+  for both element types is load-bearing, not just tidy: a complex volume and
+  its real and imaginary parts must reach the same kernel or
+  `T(x + i·y) == T(x) + i·T(y)` stops holding bit-for-bit. At 64³ Float32 with
+  33 taps: 183 ms direct vs 4.2 ms via FFT.
 - **Complex is two real passes, everywhere in 3-D.** `plan_rfft` is real-only,
   so a complex volume is filtered as its real part then its imaginary part
   through the identical kernel. Two real transforms cost about one complex

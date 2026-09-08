@@ -26,6 +26,11 @@ struct NSCT3DWorkspace{
     dims::NTuple{3, Int}
     banks::Vector{B}                 # one per scale, sharing one hourglass bank
     conv::P                          # Conv3DFFTPlan for the pyramid stage
+    lp_filters::FilterPair{T}        # the pair `filters` was built from
+    # à trous filter pair per scale, `g_j` already rescaled.  Cached because
+    # rebuilding them per scale per call allocates inside the workspace path,
+    # which is the one thing that path promises not to do.
+    filters::Vector{Tuple{Vector{T}, Vector{T}}}
     input::A3                        # running input of the pyramid cascade
     coarse::A3
     bandpass::A3
@@ -51,6 +56,7 @@ function make_nsct3d_workspace(
         flags::Integer = FFTW.MEASURE
     ) where {Td <: Number}
     T = _filter_eltype(Td)
+    p = _convert_params3d(T, params)
     fb = make_hourglass3d(
         dims, T; order = params.order, poly = params.poly, tight = params.tight,
         threading = threading, flags = flags
@@ -60,14 +66,25 @@ function make_nsct3d_workspace(
             for j in 1:params.J
     ]
     conv = make_conv3d_fft_plan(dims, Td; threading = threading, flags = flags)
+    filters = [_nsp_atrous_filters(p.lp_filters, j, T) for j in 1:params.J]
     bufs = ntuple(_ -> Array{Td, 3}(undef, dims), 5)
     return NSCT3DWorkspace{Td, T, eltype(banks), typeof(conv), typeof(bufs[1])}(
-        dims, banks, conv, bufs[1], bufs[2], bufs[3], bufs[4], bufs[5]
+        dims, banks, conv, p.lp_filters, filters,
+        bufs[1], bufs[2], bufs[3], bufs[4], bufs[5]
     )
 end
 
 make_nsct3d_workspace(params::ContourletParams3D, dims::Vararg{Int, 3}; kwargs...) =
     make_nsct3d_workspace(params, dims; kwargs...)
+
+# Equality of two filter pairs at the workspace's precision — the workspace holds
+# `params`' filters already converted, so the comparison converts rather than
+# promoting (and stays allocation-free).
+function _same_filters(a::FilterPair{T}, b::FilterPair) where {T}
+    length(a.h) == length(b.h) && length(a.g) == length(b.g) || return false
+    all(i -> a.h[i] == T(b.h[i]), eachindex(a.h)) || return false
+    return all(i -> a.g[i] == T(b.g[i]), eachindex(a.g))
+end
 
 # Build a workspace on demand when the caller did not supply one.
 function _nsct3d_workspace(
@@ -87,6 +104,11 @@ function _nsct3d_workspace(
             "workspace was built with tight = $(ws.banks[1].fb.tight), not $(params.tight)"
         )
     )
+    # The à trous filters are cached rather than rebuilt per call, so a workspace
+    # built from a different pyramid filter pair would silently filter with the
+    # wrong one.
+    _same_filters(ws.lp_filters, params.lp_filters) ||
+        throw(ArgumentError("workspace was built for a different pyramid filter pair"))
     # The per-scale directional depth has to match too: the banks decide how many
     # subbands are produced while `params` decides how many the caller allocates,
     # so a mismatch would either overrun the coefficient vector or leave part of
@@ -184,7 +206,7 @@ function nsct3d_forward(
 
     copyto!(ws.input, volume)
     for j in 1:params.J
-        h_j, g_j = _nsp3d_atrous_filters(p.lp_filters, j, _filter_eltype(Td))
+        h_j, g_j = ws.filters[j]
         nsp3d_decompose!(
             ws.coarse, ws.bandpass, ws.input, p.lp_filters, j;
             tmp = ws.tmp, tmp2 = ws.tmp2, h_j = h_j, g_j = g_j, plan = ws.conv
@@ -263,7 +285,7 @@ function nsct3d_inverse!(
             size(band) == dims || throw(DimensionMismatch("subband ($(j), $(k)) has the wrong size"))
             band
         end
-        _, g_j = _nsp3d_atrous_filters(p.lp_filters, j, _filter_eltype(Td))
+        g_j = ws.filters[j][2]
         nsp3d_reconstruct!(
             ws.input, ws.coarse, ws.bandpass, p.lp_filters, j;
             tmp = ws.tmp, tmp2 = ws.tmp2, g_j = g_j, plan = ws.conv

@@ -13,6 +13,18 @@
 # bandpass — defeating the directional decomposition that follows.
 const _NSP_SYNTH_SCALE = 0.5
 
+# à trous analysis/synthesis filter pair for pyramid `level`, in real precision
+# `Tf`.  The returned `g_j` already carries the synthesis rescale above.  Nothing
+# here is dimension-specific: the 3-D pyramid uses the same pair per axis.
+function _nsp_atrous_filters(fp::FilterPair, level::Int, ::Type{Tf}) where {Tf}
+    factor = 2^(level - 1)
+    h_up = upsample_filter(fp.h, factor)
+    h_j = Tf === eltype(h_up) ? h_up : Tf.(h_up)
+    g_up = upsample_filter(fp.g, factor)
+    g_j = Tf(_NSP_SYNTH_SCALE) .* (Tf === eltype(g_up) ? g_up : Tf.(g_up))
+    return h_j, g_j
+end
+
 """
     nsp_decompose(image, fp::FilterPair, level::Int) -> (coarse, bandpass)
 
@@ -36,11 +48,7 @@ function nsp_decompose(image::AbstractMatrix, fp::FilterPair, level::Int)
     Td = _data_eltype(image)   # data type (preserves complex)
     Tf = _filter_eltype(Td)    # real filter precision
     im = Td === eltype(image) ? image : Td.(image)
-    factor = 2^(level - 1)
-    h_up = upsample_filter(fp.h, factor)
-    h_j = Tf === eltype(h_up) ? h_up : Tf.(h_up)
-    g_up = upsample_filter(fp.g, factor)
-    g_j = Tf(_NSP_SYNTH_SCALE) .* (Tf === eltype(g_up) ? g_up : Tf.(g_up))
+    h_j, g_j = _nsp_atrous_filters(fp, level, Tf)
     coarse = conv2d_sep(im, h_j, h_j; boundary = :periodic)
     pred = conv2d_sep(coarse, g_j, g_j; boundary = :periodic)
     bp = im .- pred
@@ -66,16 +74,9 @@ function nsp_decompose!(
     # Use caller-supplied (workspace-cached) à trous filters when given; otherwise
     # build them here.  The cached `g_j` already carries the synthesis rescale.
     if h_j === nothing || g_j === nothing
-        factor = 2^(level - 1)
-        Tf = _filter_eltype(eltype(coarse))
-        if h_j === nothing
-            h_up = upsample_filter(fp.h, factor)
-            h_j = Tf === eltype(h_up) ? h_up : Tf.(h_up)
-        end
-        if g_j === nothing
-            g_up = upsample_filter(fp.g, factor)
-            g_j = Tf(_NSP_SYNTH_SCALE) .* (Tf === eltype(g_up) ? g_up : Tf.(g_up))
-        end
+        h_built, g_built = _nsp_atrous_filters(fp, level, _filter_eltype(eltype(coarse)))
+        h_j = h_j === nothing ? h_built : h_j
+        g_j = g_j === nothing ? g_built : g_j
     end
     conv2d_sep!(coarse, image, h_j, h_j; boundary = :periodic, tmp = tmp2)
     conv2d_sep!(tmp, coarse, g_j, g_j; boundary = :periodic, tmp = tmp2)
@@ -110,9 +111,7 @@ function nsp_reconstruct(
     Tf = _filter_eltype(Td)                              # real filter precision
     coarse_T = Td === eltype(coarse) ? coarse : Td.(coarse)
     bandpass_T = Td === eltype(bandpass) ? bandpass : Td.(bandpass)
-    factor = 2^(level - 1)
-    g_up = upsample_filter(fp.g, factor)
-    g_j = Tf(_NSP_SYNTH_SCALE) .* (Tf === eltype(g_up) ? g_up : Tf.(g_up))
+    _, g_j = _nsp_atrous_filters(fp, level, Tf)
     pred = conv2d_sep(coarse_T, g_j, g_j; boundary = :periodic)
     return bandpass_T .+ pred
 end
@@ -133,11 +132,7 @@ function nsp_reconstruct!(
     )
     # Use the caller-supplied (workspace-cached) synthesis filter when given.
     if g_j === nothing
-        Tf = _filter_eltype(eltype(image))
-        factor = 2^(level - 1)
-        g_up = upsample_filter(fp.g, factor)
-        g_j = Tf(_NSP_SYNTH_SCALE) .* (Tf === eltype(g_up) ? g_up : Tf.(g_up))
-
+        _, g_j = _nsp_atrous_filters(fp, level, _filter_eltype(eltype(image)))
     end
     conv2d_sep!(tmp, coarse, g_j, g_j; boundary = :periodic, tmp = tmp2)
     @. image = bandpass + tmp

@@ -78,7 +78,7 @@ function Adapt.adapt_structure(to, ws::NSCT3DWorkspace)
     Td = eltype(input)
     T = eltype(hg.m1)
     return NSCT3DWorkspace{Td, T, eltype(banks), typeof(conv), typeof(input)}(
-        ws.dims, banks, conv, input,
+        ws.dims, banks, conv, ws.lp_filters, ws.filters, input,
         Adapt.adapt(to, ws.coarse), Adapt.adapt(to, ws.bandpass),
         Adapt.adapt(to, ws.tmp), Adapt.adapt(to, ws.tmp2),
     )

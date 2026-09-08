@@ -40,7 +40,7 @@ function nsp3d_decompose(volume::AbstractArray{<:Number, 3}, fp::FilterPair, lev
     Td = _data_eltype(volume)   # data type (preserves complex)
     Tf = _filter_eltype(Td)     # real filter precision
     vol = Td === eltype(volume) ? volume : Td.(volume)
-    h_j, g_j = _nsp3d_atrous_filters(fp, level, Tf)
+    h_j, g_j = _nsp_atrous_filters(fp, level, Tf)
     plan = _nsp3d_plan(vol, max(length(h_j), length(g_j)))
     coarse = conv3d_sep(vol, h_j, h_j, h_j; boundary = :periodic, plan = plan)
     pred = conv3d_sep(coarse, g_j, g_j, g_j; boundary = :periodic, plan = plan)
@@ -69,7 +69,7 @@ function nsp3d_decompose!(
     # build them here.  The cached `g_j` already carries the synthesis rescale.
     if h_j === nothing || g_j === nothing
         Tf = _filter_eltype(eltype(coarse))
-        h_built, g_built = _nsp3d_atrous_filters(fp, level, Tf)
+        h_built, g_built = _nsp_atrous_filters(fp, level, Tf)
         h_j = h_j === nothing ? h_built : h_j
         g_j = g_j === nothing ? g_built : g_j
     end
@@ -107,7 +107,7 @@ function nsp3d_reconstruct(
     Tf = _filter_eltype(Td)
     coarse_T = Td === eltype(coarse) ? coarse : Td.(coarse)
     bandpass_T = Td === eltype(bandpass) ? bandpass : Td.(bandpass)
-    _, g_j = _nsp3d_atrous_filters(fp, level, Tf)
+    _, g_j = _nsp_atrous_filters(fp, level, Tf)
     pred = conv3d_sep(coarse_T, g_j, g_j, g_j; boundary = :periodic, plan = _nsp3d_plan(coarse_T, length(g_j)))
     return bandpass_T .+ pred
 end
@@ -129,7 +129,7 @@ function nsp3d_reconstruct!(
     )
     if g_j === nothing
         Tf = _filter_eltype(eltype(volume))
-        _, g_j = _nsp3d_atrous_filters(fp, level, Tf)
+        _, g_j = _nsp_atrous_filters(fp, level, Tf)
     end
     p = plan === nothing ? _nsp3d_plan(coarse, length(g_j)) : plan
     conv3d_sep!(tmp, coarse, g_j, g_j, g_j; boundary = :periodic, tmp = tmp2, plan = p)
@@ -137,17 +137,9 @@ function nsp3d_reconstruct!(
     return volume
 end
 
-# à trous analysis/synthesis filter pair for pyramid `level`, in real precision Tf.
-# The returned `g_j` already carries the per-axis synthesis rescale.
-function _nsp3d_atrous_filters(fp::FilterPair, level::Int, ::Type{Tf}) where {Tf}
-    factor = 2^(level - 1)
-    h_up = upsample_filter(fp.h, factor)
-    h_j = Tf === eltype(h_up) ? h_up : Tf.(h_up)
-    g_up = upsample_filter(fp.g, factor)
-    g_j = Tf(_NSP_SYNTH_SCALE) .* (Tf === eltype(g_up) ? g_up : Tf.(g_up))
-    return h_j, g_j
-end
-
+# The à trous filter pair is `_nsp_atrous_filters` from the 2-D pyramid: the
+# rescale is per axis, so the same pair serves all three.
+#
 # Build one FFT plan shared by the analysis and synthesis convolutions of a level,
 # or `nothing` when the auto rule says the direct kernel is cheaper.  Returning
 # `nothing` leaves `conv3d_sep!` on its own (direct) path.

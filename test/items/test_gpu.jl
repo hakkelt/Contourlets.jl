@@ -10,7 +10,18 @@
 
 @testmodule GPUBackends begin
     using GPUEnv
-    export backends
+    using Adapt
+    export backends, fft_backends, Adapt
+
+    # `test/runtests.jl` activates the GPU overlay before the runner starts, but a
+    # test item can also be run on its own — an IDE test runner, or a language
+    # server's test tooling — and that starts in the plain test environment where
+    # no backend package is loadable and `gpu_backends()` comes back empty.
+    # Activating here keeps the items self-contained either way; when the overlay
+    # already exists (`persist = true` writes it to `test/gpu_env`) this only
+    # loads it.
+    isempty(gpu_backends(; include_jlarrays = true)) &&
+        GPUEnv.activate(persist = true, include_jlarrays = true)
 
     # All backends to exercise (JLArrays always present).  GPUEnv supplies the
     # backend packages from its overlay environment, so the tests need no direct
@@ -18,6 +29,10 @@
     # All test data below is Float32 (Metal does not support Float64), so every
     # backend — including Metal — can run the same test bodies.
     const backends = gpu_backends(; include_jlarrays = true)
+
+    # The 3-D items need a backend with an FFT implementation; see the comment
+    # above the first of them for why that rules JLArrays out.
+    const fft_backends = gpu_backends(; include_jlarrays = false, supports_fftw = true)
 end
 
 @testitem "GPU at least one backend (JLArrays)" tags = [:gpu] setup = [GPUBackends] begin
@@ -356,10 +371,7 @@ end
 
 @testitem "GPU Adapt.adapt_structure for CT/NSCT coefficients" tags = [:gpu] setup = [GPUBackends] begin
     using GPUEnv, Random
-    # Adapt is loaded transitively by JLArrays / KernelAbstractions (GPUEnv dep).
-    const Adapt = Base.require(
-        Base.PkgId(Base.UUID("79e6a3ab-5dfb-504d-930d-738a2a938a0e"), "Adapt")
-    )
+    const Adapt = GPUBackends.Adapt
     Random.seed!(60)
     x = randn(Float32, 32, 32)
     p = ContourletParams(J = 2, L_array = [2, 3])
@@ -384,29 +396,23 @@ end
 
 # ── 3-D stack ─────────────────────────────────────────────────────────────────
 #
-# JLArrays is excluded from these items: it ships no FFT implementation, so
-# `plan_rfft` falls back to an AbstractFFTs generic that indexes elementwise and
-# trips the scalar-indexing guard.  The 3-D transforms are FFT-based end to end,
-# so there is nothing to test on a backend without one.  Every real backend
-# (CUDA, AMDGPU, Metal, oneAPI, OpenCL) does provide FFTs and is exercised here.
+# These items run on `GPUBackends.fft_backends`, the backends GPUEnv reports as
+# having a FFTW-compatible FFT library (CUDA and AMDGPU).  The 3-D transforms are
+# FFT-based end to end, so there is nothing to test on a backend without one:
+# `plan_rfft` then falls back to an AbstractFFTs generic that indexes elementwise
+# and trips the scalar-indexing guard.  That rules out JLArrays, which ships no
+# FFT implementation at all, and Metal / oneAPI / OpenCL, which expose their FFTs
+# through their own APIs rather than the AbstractFFTs interface.
 
-@testmodule FFTBackends begin
-    using GPUEnv
-    export fft_backends
-    const fft_backends = filter(b -> b.name !== :JLArray, gpu_backends(; include_jlarrays = true))
-end
-
-@testitem "GPU 3-D hourglass filter bank matches CPU" tags = [:gpu] setup = [FFTBackends] begin
+@testitem "GPU 3-D hourglass filter bank matches CPU" tags = [:gpu] setup = [GPUBackends] begin
     using GPUEnv, Random
-    const Adapt = Base.require(
-        Base.PkgId(Base.UUID("79e6a3ab-5dfb-504d-930d-738a2a938a0e"), "Adapt")
-    )
+    const Adapt = GPUBackends.Adapt
     Random.seed!(200)
     dims = (16, 16, 16)
     x = randn(Float32, dims...)
     cpu = make_hourglass3d(dims, Float32; order = 6)
     ref = hourglass3d_decompose(x, cpu)
-    for backend in FFTBackends.fft_backends
+    for backend in GPUBackends.fft_backends
         xg = to_gpu(backend, x)
         fb = Adapt.adapt(typeof(xg), cpu)
         s = hourglass3d_decompose(xg, fb)
@@ -417,17 +423,15 @@ end
     end
 end
 
-@testitem "GPU 3-D directional filter bank matches CPU" tags = [:gpu] setup = [FFTBackends] begin
+@testitem "GPU 3-D directional filter bank matches CPU" tags = [:gpu] setup = [GPUBackends] begin
     using GPUEnv, Random
-    const Adapt = Base.require(
-        Base.PkgId(Base.UUID("79e6a3ab-5dfb-504d-930d-738a2a938a0e"), "Adapt")
-    )
+    const Adapt = GPUBackends.Adapt
     Random.seed!(201)
     dims = (16, 16, 16)
     x = randn(Float32, dims...)
     cpu = make_nsdfb3d(dims, Float32; levels = 2, order = 6)
     ref = nsdfb3d_decompose(x, cpu)
-    for backend in FFTBackends.fft_backends
+    for backend in GPUBackends.fft_backends
         xg = to_gpu(backend, x)
         fb = Adapt.adapt(typeof(xg), cpu)
         s = nsdfb3d_decompose(xg, fb)
@@ -439,18 +443,16 @@ end
     end
 end
 
-@testitem "GPU 3-D NSCT matches CPU" tags = [:gpu] setup = [FFTBackends] begin
+@testitem "GPU 3-D NSCT matches CPU" tags = [:gpu] setup = [GPUBackends] begin
     using GPUEnv, Random
-    const Adapt = Base.require(
-        Base.PkgId(Base.UUID("79e6a3ab-5dfb-504d-930d-738a2a938a0e"), "Adapt")
-    )
+    const Adapt = GPUBackends.Adapt
     Random.seed!(202)
     dims = (16, 16, 16)
     x = randn(Float32, dims...)
     p = ContourletParams3D(J = 2, L_array = [1, 1], order = 6)
     ws_cpu = make_nsct3d_workspace(p, dims, Float32)
     ref = nsct3d_forward(x, p; workspace = ws_cpu)
-    for backend in FFTBackends.fft_backends
+    for backend in GPUBackends.fft_backends
         xg = to_gpu(backend, x)
         # One adapt of the workspace moves the shared hourglass response once,
         # not once per scale.
@@ -471,17 +473,15 @@ end
     end
 end
 
-@testitem "GPU Adapt.adapt_structure for NSCT3D coefficients" tags = [:gpu] setup = [FFTBackends] begin
+@testitem "GPU Adapt.adapt_structure for NSCT3D coefficients" tags = [:gpu] setup = [GPUBackends] begin
     using GPUEnv, Random
-    const Adapt = Base.require(
-        Base.PkgId(Base.UUID("79e6a3ab-5dfb-504d-930d-738a2a938a0e"), "Adapt")
-    )
+    const Adapt = GPUBackends.Adapt
     Random.seed!(203)
     dims = (16, 16, 16)
     x = randn(Float32, dims...)
     p = ContourletParams3D(J = 1, L_array = [1], order = 6)
     c = nsct3d_forward(x, p)
-    for backend in FFTBackends.fft_backends
+    for backend in GPUBackends.fft_backends
         xg = to_gpu(backend, x)
         dev = Adapt.adapt(typeof(xg), c)
         host = Adapt.adapt(Array, dev)

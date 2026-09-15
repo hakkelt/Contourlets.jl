@@ -1,10 +1,21 @@
-using Documenter, Contourlets
+using Documenter, Contourlets, MultiscaleFilterBanks
 
 DocMeta.setdocmeta!(Contourlets, :DocTestSetup, :(using Contourlets, Random); recursive = true)
+DocMeta.setdocmeta!(
+    MultiscaleFilterBanks, :DocTestSetup,
+    :(using MultiscaleFilterBanks, Random); recursive = true
+)
 
 makedocs(;
-    modules = [Contourlets],
+    # MultiscaleFilterBanks is in the list because Contourlets re-exports its
+    # public names (`FilterPair`, `CDF97`, the threading policies), and their
+    # docstrings live there.
+    modules = [Contourlets, MultiscaleFilterBanks],
     sitename = "Contourlets.jl",
+    remotes = Dict(
+        pkgdir(MultiscaleFilterBanks) =>
+            Documenter.Remotes.GitHub("hakkelt", "MultiscaleFilterBanks.jl"),
+    ),
     authors = "Tamás Hakkel",
     format = Documenter.HTML(;
         canonical = "https://hakkelt.github.io/Contourlets.jl",
@@ -13,13 +24,11 @@ makedocs(;
         "Home" => "index.md",
         "Guide" => [
             "2-D transforms" => "guide/transforms-2d.md",
-            "3-D transforms" => "guide/transforms-3d.md",
             "Denoising and approximation" => "guide/denoising.md",
             "Performance, threading and GPUs" => "guide/performance.md",
         ],
         "Background" => [
             "Theory — 2-D" => "theory.md",
-            "Theory — 3-D" => "theory3d.md",
             "Comparison with the MATLAB toolboxes" => "comparison.md",
         ],
         "API Reference" => "api.md",

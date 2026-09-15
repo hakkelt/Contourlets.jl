@@ -47,9 +47,6 @@ SUITE["LP"] = BenchmarkGroup()
 SUITE["DFB"] = BenchmarkGroup()
 SUITE["NSDFB"] = BenchmarkGroup()
 SUITE["primitives"] = BenchmarkGroup()
-SUITE["NSCT3D"] = BenchmarkGroup()
-SUITE["NSDFB3D"] = BenchmarkGroup()
-SUITE["primitives3"] = BenchmarkGroup()
 
 # ╔════════════════════════════════════════════════════════════════════════════╗
 # ║ SETUP: Random number generator & test sizes                                ║
@@ -259,73 +256,4 @@ for sz in TEST_SIZES
                 @benchmarkable conv2d($img, $k_large, (4, 4))
         end
     end
-end
-
-# ╔════════════════════════════════════════════════════════════════════════════╗
-# ║ 3-D SUITE                                                                  ║
-# ╚════════════════════════════════════════════════════════════════════════════╝
-#
-# Volume sizes are 32³ and 64³, not the 256³ working point: this suite runs once
-# per compared revision in CI, and a 256³ NSCT3D forward pass alone is seconds.
-# Plans are built with FFTW.ESTIMATE so planning does not dominate the setup.
-#
-# Float32 only — the 3-D path treats a complex volume as two real passes through
-# the same kernel, so there is no separate threading regime to measure.
-
-for n in (32, 64)
-    sz_str = "$(n)^3"
-    vol = randn(RNG, Float32, n, n, n)
-
-    # ── NSCT3D ────────────────────────────────────────────────────────────────
-    SUITE["NSCT3D"][sz_str] = BenchmarkGroup()
-    p3d = ContourletParams3D(J = 2, L_array = [1, 2], order = 12)
-    ws3d = make_nsct3d_workspace(p3d, (n, n, n), Float32; flags = FFTW.ESTIMATE)
-    SUITE["NSCT3D"][sz_str]["forward"] = @benchmarkable nsct3d_forward($vol, $p3d)
-    SUITE["NSCT3D"][sz_str]["forward (workspace)"] =
-        @benchmarkable nsct3d_forward($vol, $p3d; workspace = $ws3d)
-    # The streaming form is the one that matters at working sizes: it holds one
-    # subband instead of `1 + Σ 3·2^L` volumes.
-    SUITE["NSCT3D"][sz_str]["forward (streaming)"] =
-        @benchmarkable nsct3d_forward((j, k, b) -> nothing, $vol, $p3d; workspace = $ws3d)
-    coeffs3d = nsct3d_forward(vol, p3d; workspace = ws3d)
-    out3d = similar(vol)
-    SUITE["NSCT3D"][sz_str]["inverse"] = @benchmarkable nsct3d_inverse($coeffs3d, $p3d)
-    SUITE["NSCT3D"][sz_str]["inverse!"] =
-        @benchmarkable nsct3d_inverse!($out3d, $coeffs3d, $p3d; workspace = $ws3d)
-
-    # ── NSDFB3D ───────────────────────────────────────────────────────────────
-    SUITE["NSDFB3D"][sz_str] = BenchmarkGroup()
-    for L in (1, 3)
-        fb3d = make_nsdfb3d((n, n, n), Float32; levels = L, order = 12, flags = FFTW.ESTIMATE)
-        SUITE["NSDFB3D"][sz_str]["L=$(L) forward (streaming)"] =
-            @benchmarkable nsdfb3d_decompose((k, b) -> nothing, $vol, $fb3d)
-    end
-    hg3d = make_hourglass3d((n, n, n), Float32; order = 12, flags = FFTW.ESTIMATE)
-    dst3d = ntuple(_ -> similar(vol), 3)
-    SUITE["NSDFB3D"][sz_str]["hourglass forward"] =
-        @benchmarkable hourglass3d_decompose!($dst3d, $vol, $hg3d)
-
-    # ── 3-D primitives ───────────────────────────────────────────────────────
-    SUITE["primitives3"][sz_str] = BenchmarkGroup()
-    h_short = Float32[0.25, 0.5, 0.25]
-    h_long = upsample_filter(Float32.(CDF97.h), 4)      # 33 taps: the FFT regime
-    dst = similar(vol)
-    tmp = similar(vol)
-    fftplan = make_conv3d_fft_plan((n, n, n), Float32; flags = FFTW.ESTIMATE)
-    SUITE["primitives3"][sz_str]["conv3d_sep direct (3 taps)"] =
-        @benchmarkable conv3d_sep!($dst, $vol, $h_short, $h_short, $h_short; tmp = $tmp, backend = :direct)
-    SUITE["primitives3"][sz_str]["conv3d_sep direct (33 taps)"] =
-        @benchmarkable conv3d_sep!(
-        $dst, $vol, $h_long, $h_long, $h_long;
-        boundary = :periodic, tmp = $tmp, backend = :direct
-    )
-    SUITE["primitives3"][sz_str]["conv3d_sep fft (33 taps)"] =
-        @benchmarkable conv3d_sep_fft!($dst, $vol, $h_long, $h_long, $h_long, $fftplan)
-
-    coarse3d = similar(vol)
-    bp3d = similar(vol)
-    tmp23 = similar(vol)
-    SUITE["primitives3"][sz_str]["nsp3d_decompose!"] = @benchmarkable nsp3d_decompose!(
-        $coarse3d, $bp3d, $vol, CDF97, 3; tmp = $tmp, tmp2 = $tmp23, plan = $fftplan
-    )
 end

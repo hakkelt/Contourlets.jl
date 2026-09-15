@@ -97,30 +97,6 @@ for compute to dominate host-side launch overhead. There is a fixed per-call
 floor of a few milliseconds on the 2-D transforms, so small images are faster on
 the CPU.
 
-## 3-D
-
-The 3-D transforms have a different cost structure: they are a handful of
-full-volume FFTs plus pointwise masks, with no small kernels.
-
-- **Periodic filtering goes through the FFT by default.** Periodic separable
-  filtering *is* circular convolution, so the FFT evaluation is exact, not an
-  approximation, and its cost does not grow with tap count — which matters,
-  because à trous filters grow as `2^(j-1)` per axis. `conv3d_sep!` switches at
-  five taps. At 64³ `Float32` with 33 taps: 183 ms direct against 4.2 ms via FFT.
-- **Memory, not arithmetic, is the binding constraint.** At 256³ `Float32` with
-  `J = 3`, `L = [2, 2, 3]` the materialised coefficient set is 3.1 GB. The
-  streaming form of [`nsct3d_forward`](@ref) holds two volumes plus the plans
-  instead.
-- **No kernels on the GPU, and no graph capture.** Every mask is stored as
-  broadcastable factors, so the device path is plain broadcasts; the extension
-  only adds `Adapt.adapt_structure` methods. Capture is deliberately not applied:
-  the streaming forms call back into arbitrary host code, and with a few large
-  FFTs per call launch overhead is noise.
-- **Plan once.** [`make_surfacelet3d`](@ref) scans every mask over the full grid
-  to find its support box, so a plan built per call dominates the run time. Build
-  the plan on the host, then `Adapt.adapt(CuArray, plan)` — to the *bare* array
-  type, since the plan holds both real and complex buffers.
-
 ## Reproducing
 
 ```bash

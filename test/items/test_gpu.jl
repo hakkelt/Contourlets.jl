@@ -11,7 +11,7 @@
 @testmodule GPUBackends begin
     using GPUEnv
     using Adapt
-    export backends, fft_backends, Adapt
+    export backends, Adapt
 
     # `test/runtests.jl` activates the GPU overlay before the runner starts, but a
     # test item can also be run on its own — an IDE test runner, or a language
@@ -29,10 +29,6 @@
     # All test data below is Float32 (Metal does not support Float64), so every
     # backend — including Metal — can run the same test bodies.
     const backends = gpu_backends(; include_jlarrays = true)
-
-    # The 3-D items need a backend with an FFT implementation; see the comment
-    # above the first of them for why that rules JLArrays out.
-    const fft_backends = gpu_backends(; include_jlarrays = false, supports_fftw = true)
 end
 
 @testitem "GPU at least one backend (JLArrays)" tags = [:gpu] setup = [GPUBackends] begin
@@ -391,145 +387,5 @@ end
         nc_host = Adapt.adapt(Array, nc_dev)
         @test nc_host.coarse isa Array
         @test maximum(abs, nc_host.coarse .- nc.coarse) < 1.0f-6
-    end
-end
-
-# ── 3-D stack ─────────────────────────────────────────────────────────────────
-#
-# These items run on `GPUBackends.fft_backends`, the backends GPUEnv reports as
-# having a FFTW-compatible FFT library (CUDA and AMDGPU).  The 3-D transforms are
-# FFT-based end to end, so there is nothing to test on a backend without one:
-# `plan_rfft` then falls back to an AbstractFFTs generic that indexes elementwise
-# and trips the scalar-indexing guard.  That rules out JLArrays, which ships no
-# FFT implementation at all, and Metal / oneAPI / OpenCL, which expose their FFTs
-# through their own APIs rather than the AbstractFFTs interface.
-
-@testitem "GPU 3-D hourglass filter bank matches CPU" tags = [:gpu] setup = [GPUBackends] begin
-    using GPUEnv, Random
-    const Adapt = GPUBackends.Adapt
-    Random.seed!(200)
-    dims = (16, 16, 16)
-    x = randn(Float32, dims...)
-    cpu = make_hourglass3d(dims, Float32; order = 6)
-    ref = hourglass3d_decompose(x, cpu)
-    for backend in GPUBackends.fft_backends
-        xg = to_gpu(backend, x)
-        fb = Adapt.adapt(typeof(xg), cpu)
-        s = hourglass3d_decompose(xg, fb)
-        for i in 1:3
-            @test maximum(abs, Array(s[i]) .- ref[i]) < 1.0f-4
-        end
-        @test maximum(abs, Array(hourglass3d_reconstruct(s, fb)) .- x) < 1.0f-4
-    end
-end
-
-@testitem "GPU 3-D directional filter bank matches CPU" tags = [:gpu] setup = [GPUBackends] begin
-    using GPUEnv, Random
-    const Adapt = GPUBackends.Adapt
-    Random.seed!(201)
-    dims = (16, 16, 16)
-    x = randn(Float32, dims...)
-    cpu = make_nsdfb3d(dims, Float32; levels = 2, order = 6)
-    ref = nsdfb3d_decompose(x, cpu)
-    for backend in GPUBackends.fft_backends
-        xg = to_gpu(backend, x)
-        fb = Adapt.adapt(typeof(xg), cpu)
-        s = nsdfb3d_decompose(xg, fb)
-        @test length(s) == nsdfb3d_nsubbands(fb)
-        for i in eachindex(s)
-            @test maximum(abs, Array(s[i]) .- ref[i]) < 1.0f-4
-        end
-        @test maximum(abs, Array(nsdfb3d_reconstruct(s, fb)) .- x) < 1.0f-4
-    end
-end
-
-@testitem "GPU 3-D NSCT matches CPU" tags = [:gpu] setup = [GPUBackends] begin
-    using GPUEnv, Random
-    const Adapt = GPUBackends.Adapt
-    Random.seed!(202)
-    dims = (16, 16, 16)
-    x = randn(Float32, dims...)
-    p = ContourletParams3D(J = 2, L_array = [1, 1], order = 6)
-    ws_cpu = make_nsct3d_workspace(p, dims, Float32)
-    ref = nsct3d_forward(x, p; workspace = ws_cpu)
-    for backend in GPUBackends.fft_backends
-        xg = to_gpu(backend, x)
-        # One adapt of the workspace moves the shared hourglass response once,
-        # not once per scale.
-        ws = Adapt.adapt(typeof(xg), ws_cpu)
-        c = nsct3d_forward(xg, p; workspace = ws)
-        @test maximum(abs, Array(c.coarse) .- ref.coarse) < 1.0f-4
-        for j in 1:2, k in eachindex(c.subbands[j])
-            @test maximum(abs, Array(c.subbands[j][k]) .- ref.subbands[j][k]) < 1.0f-4
-        end
-        rec = nsct3d_inverse(c, p; workspace = ws)
-        @test maximum(abs, Array(rec) .- x) < 1.0f-4
-        # Streaming works on the device too.
-        total = Ref(0.0f0)
-        nsct3d_forward(xg, p; workspace = ws) do j, k, band
-            total[] += sum(abs2, Array(band))
-        end
-        @test total[] > 0
-    end
-end
-
-@testitem "GPU Adapt.adapt_structure for NSCT3D coefficients" tags = [:gpu] setup = [GPUBackends] begin
-    using GPUEnv, Random
-    const Adapt = GPUBackends.Adapt
-    Random.seed!(203)
-    dims = (16, 16, 16)
-    x = randn(Float32, dims...)
-    p = ContourletParams3D(J = 1, L_array = [1], order = 6)
-    c = nsct3d_forward(x, p)
-    for backend in GPUBackends.fft_backends
-        xg = to_gpu(backend, x)
-        dev = Adapt.adapt(typeof(xg), c)
-        host = Adapt.adapt(Array, dev)
-        @test host.coarse == c.coarse
-        @test all(k -> host.subbands[1][k] == c.subbands[1][k], eachindex(c.subbands[1]))
-    end
-end
-
-@testitem "GPU surfacelet3d matches CPU" tags = [:gpu, :surfacelet3d] setup = [GPUBackends] begin
-    using GPUEnv, Random
-    const Adapt = GPUBackends.Adapt
-    Random.seed!(204)
-    dims = (16, 16, 16)
-    x = randn(Float32, dims...)
-    p = SurfaceletParams3D(J = 2, L_array = [1, 1])
-    # Planning scans every mask, so it happens once on the host; the device plan
-    # is an adapt of it, never a rebuild.
-    pl_cpu = make_surfacelet3d(p, dims, Float32)
-    ref = surfacelet3d_forward(x, p; plan = pl_cpu)
-    for backend in GPUBackends.fft_backends
-        xg = to_gpu(backend, x)
-        # Adapt to the bare array type, not `typeof(xg)`: the plan holds both
-        # real and complex buffers, so an element-typed destination cannot fit.
-        pl = Adapt.adapt(backend.array_type, pl_cpu)
-        c = surfacelet3d_forward(xg, p; plan = pl)
-        @test size(c.coarse) == size(ref.coarse)
-        @test maximum(abs, Array(c.coarse) .- ref.coarse) < 1.0f-4
-        for j in 1:2, k in eachindex(c.subbands[j])
-            @test size(c.subbands[j][k]) == size(ref.subbands[j][k])
-            @test maximum(abs, Array(c.subbands[j][k]) .- ref.subbands[j][k]) < 1.0f-4
-        end
-        rec = surfacelet3d_inverse(c, p; plan = pl)
-        @test maximum(abs, Array(rec) .- x) < 1.0f-4
-        # Coefficients adapt back and forth.
-        host = Adapt.adapt(Array, c)
-        @test host.coarse == Array(c.coarse)
-        dev = Adapt.adapt(backend.array_type, ref)
-        @test Array(dev.subbands[1][1]) == ref.subbands[1][1]
-    end
-end
-
-@testitem "GPU surfacelet3d needs an explicit plan" tags = [:gpu, :surfacelet3d] setup = [GPUBackends] begin
-    using GPUEnv, Random
-    Random.seed!(205)
-    dims = (8, 8, 8)
-    p = SurfaceletParams3D(J = 1, L_array = [1])
-    for backend in GPUBackends.fft_backends
-        xg = to_gpu(backend, randn(Float32, dims...))
-        @test_throws ArgumentError surfacelet3d_forward(xg, p)
     end
 end

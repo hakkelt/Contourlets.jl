@@ -298,11 +298,11 @@ savefig(p2, "nla_denoise.png"); nothing # hide
     crop without per-image parameter tuning.
 
 
-## The same recipe in 3-D
+## The same recipe on volumes
 
-Nothing above is specific to two dimensions. [`nsct3d_forward`](@ref) is
-likewise shift-invariant and normalised so that the noise variance is the same
-in every subband, so a single threshold applies across the whole coefficient
-set; at working volume sizes the streaming form keeps memory to two volumes.
-For a sparsifying transform in an iterative reconstruction, use the decimated
-[`surfacelet3d_forward`](@ref) instead. See [3-D transforms](@ref guide3d).
+Nothing above is specific to two dimensions.  The same thresholding recipe
+applies to the surfacelet transform in
+[Surfacelets.jl](https://github.com/hakkelt/Surfacelets.jl): its nonsubsampled
+form is shift-invariant, so cycle spinning is unnecessary there too, and its
+decimated form is the one to reach for as a sparsifying transform inside an
+iterative reconstruction.

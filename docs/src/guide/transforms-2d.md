@@ -14,7 +14,7 @@ Laplacian pyramid followed by a directional filter bank:
 Both return a [`ContourletCoefficients`](@ref): a `coarse` low-pass residual
 plus `2^L_array[j]` directional subbands at every scale `j`, ordered by angle —
 subband `k` covers the frequency wedge centred at ``\pi(k-1)/2^{L_j}``. For
-volumes, see [3-D transforms](@ref guide3d); for the underlying filter banks,
+volumes, see [Surfacelets.jl](https://github.com/hakkelt/Surfacelets.jl); for the underlying filter banks,
 [Theory](@ref theory).
 
 ```@setup guide2d

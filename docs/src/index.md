@@ -1,8 +1,7 @@
 # Contourlets.jl
 
-*Directional multiresolution transforms in Julia: the Contourlet Transform, the
-Nonsubsampled Contourlet Transform, and their 3-D counterparts — the 3-D NSCT
-and the decimated surfacelet transform.*
+*Directional multiresolution transforms for images in Julia: the Contourlet
+Transform and the Nonsubsampled Contourlet Transform.*
 
 ## Installation
 
@@ -40,22 +39,13 @@ for _ in 1:100
 end
 ```
 
-Volumes use a parallel 3-D API, including a streaming form for sizes where the
-coefficient set does not fit in memory:
-
-```julia
-vol     = randn(Float32, 256, 256, 256)
-params3 = ContourletParams3D(J = 3, L_array = [2, 2, 3])   # 48 directional subbands
-ws3     = make_nsct3d_workspace(params3, size(vol), Float32)
-
-coarse = nsct3d_forward(vol, params3; workspace = ws3) do j, k, band
-    # `band` is valid only until this callback returns
-end
-```
-
-The decimated counterpart, [`surfacelet3d_forward`](@ref), stores every subband
-at its own reduced resolution — about 3× leaner at useful settings, at the cost
-of shift invariance.
+Volumes are covered by a separate package,
+[Surfacelets.jl](https://github.com/hakkelt/Surfacelets.jl). It is not this
+transform with an extra axis: the quincunx lattice, the shear index remap and
+the Q2345 ladder are all planar, and Lu and Do prove that the hourglass
+frequency partition a volume needs cannot be critically sampled at all. The two
+packages share only the pyramid filter machinery, which lives in
+[MultiscaleFilterBanks.jl](https://github.com/hakkelt/MultiscaleFilterBanks.jl).
 
 ## What is here
 
@@ -67,16 +57,9 @@ of shift invariance.
 | [`make_workspace`](@ref) / [`make_nsct_workspace`](@ref) | Preallocated buffers for iterative algorithms |
 | [`parabolic_levels`](@ref) | Direction counts following the parabolic scaling rule |
 | [`CDF97`](@ref) / [`Q2345`](@ref) | Default pyramid and ladder DFB filter pairs |
-| [`ContourletParams3D`](@ref) | 3-D parameters: scales, per-scale `L`, Bernstein order |
-| [`nsct3d_forward`](@ref) / [`nsct3d_inverse`](@ref) | 3-D NSCT, with streaming forms |
-| [`make_nsct3d_workspace`](@ref) | Preallocated 3-D plans and buffers |
-| [`make_nsdfb3d`](@ref) | 3-D directional filter bank alone (`3·2^L` subbands) |
-| [`SurfaceletParams3D`](@ref) | Decimated 3-D transform: scales, per-scale `L`, transition widths |
-| [`surfacelet3d_forward`](@ref) / [`surfacelet3d_inverse`](@ref) | Surfacelet transform, subbands at reduced resolution |
-| [`make_surfacelet3d`](@ref) | Plan the surfacelet masks and FFTs for one volume size |
 
 Threading is chosen per element type by default — SIMD for real data,
-multi-threaded batching for complex — and the whole 2-D transform runs on the
+multi-threaded batching for complex — and the whole transform runs on the
 GPU when a KernelAbstractions backend is loaded. Both are covered in
 [Performance, threading and GPUs](@ref performance).
 
@@ -84,12 +67,10 @@ GPU when a KernelAbstractions backend is loaded. Both are covered in
 
 - [2-D transforms](@ref guide2d) — CT, NSCT, the four API variants, and the
   pyramid and filter-bank stages on their own.
-- [3-D transforms](@ref guide3d) — the 3-D NSCT, streaming, and surfacelets.
 - [Denoising and approximation](@ref denoising) — worked comparisons against a
   separable wavelet.
 - [Performance, threading and GPUs](@ref performance).
-- [Theory](@ref theory) and [Theory — 3-D](@ref theory3d) — the constructions
-  and where they leave the papers.
+- [Theory](@ref theory) — the construction and where it leaves the papers.
 - [Comparison with the MATLAB toolboxes](@ref comparison) — feature, accuracy
   and timing comparison against the reference implementations.
 - [API Reference](@ref api).

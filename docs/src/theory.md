@@ -1,11 +1,11 @@
-# [Theory — 2-D](@id theory)
+# [Theory](@id theory)
 
 The constructions behind [`ct_forward`](@ref) and [`nsct_forward`](@ref): a
 Laplacian pyramid for scale, a directional filter bank for orientation, and the
 à trous variants of both that make the NSCT shift-invariant.  For in-depth
 derivations see the references at the bottom; for the volume transforms, which
 are a different construction rather than a generalisation of this one, see
-[Theory — 3-D](@ref theory3d).
+[Surfacelets.jl](https://github.com/hakkelt/Surfacelets.jl).
 
 ```@setup theory
 using Contourlets, Plots, FFTW

@@ -314,7 +314,7 @@ end
 
 @testitem "even-length filters: fast path matches generic path" tags = [:primitives] begin
     using Random
-    using Contourlets: conv2d_sep, conv3d_sep
+    using Contourlets: conv2d_sep
     Random.seed!(42)
 
     # The real fast paths split the domain into a border band and an interior
@@ -331,13 +331,6 @@ end
             x = randn(n1, n2)
             fast = conv2d_sep(x, h, h; boundary = boundary)
             ref = real(conv2d_sep(complex(x), h, h; boundary = boundary))
-            @test maximum(abs, fast .- ref) < 1.0e-12
-        end
-
-        for sz in ((8, 6, 5), (12, 12, 12))
-            v = randn(sz...)
-            fast = conv3d_sep(v, h, h, h; boundary = boundary, backend = :direct)
-            ref = real(conv3d_sep(complex(v), h, h, h; boundary = boundary, backend = :direct))
             @test maximum(abs, fast .- ref) < 1.0e-12
         end
     end

@@ -124,7 +124,7 @@ The normalisation exposes a constraint the plain-sum path hides: each mask must
 be **even** in frequency, or the masked spectrum is not Hermitian and the real
 subband is a lossy record of it.  A plain sum never notices, since the
 individual asymmetries cancel before the inverse transform.  See
-"[A sign trap on the DFT grid](@ref)" below — the same trap, in the same place,
+"[A sign trap on the DFT grid](@ref sign-trap)" below — the same trap, in the same place,
 for the same reason.
 
 `order` (the Bernstein order ``N``) controls how sharply the subbands separate.

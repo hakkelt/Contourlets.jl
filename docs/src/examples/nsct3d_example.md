@@ -176,6 +176,7 @@ println("scale 2 subband: ", size(sc.subbands[2][1]))
 ```
 
 Note the sizes: coarser scales cover smaller frequency shells and are stored on
-correspondingly smaller grids. See [Theory — 3-D](@ref theory3d) for how far
-this decimation goes and, specifically, where it stops short of the reference
-construction.
+correspondingly smaller grids. See [3-D Surfacelets](@ref surfacelet3d-example)
+for the transform on its own — atoms, redundancy trade-offs, directional
+selectivity — and [Theory — 3-D](@ref theory3d) for how far this decimation goes
+and where it stops short of the reference construction.

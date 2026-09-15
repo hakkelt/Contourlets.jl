@@ -11,6 +11,7 @@ implemented as a standalone Julia package.
 | `ct_forward` / `ct_inverse` | Discrete CT (nearly critically sampled) |
 | `nsct_forward` / `nsct_inverse` | NSCT (fully shift-invariant) |
 | `nsct3d_forward` / `nsct3d_inverse` | 3-D NSCT on volumes, with a streaming form |
+| `surfacelet3d_forward` / `surfacelet3d_inverse` | Decimated 3-D transform, subbands at reduced resolution |
 | `ct_forward!` / `ct_inverse!` | In-place CT using a preallocated workspace |
 | `nsct_forward!` / `nsct_inverse!` | In-place NSCT |
 | `make_workspace` | Allocate a reusable `ContourletWorkspace` |
@@ -26,6 +27,11 @@ The 3-D transform is a parallel API rather than a generalisation of the 2-D one:
 the directional stage shares nothing with the quincunx filter bank, and is built
 instead from Bernstein mapping kernels (`make_hourglass3d`, `make_nsdfb3d`).  See
 the "Theory (3-D)" page.
+
+`surfacelet3d_forward` is the decimated counterpart of `nsct3d_forward`: the same
+frequency partition, but each subband is stored at its own reduced resolution
+(`make_surfacelet3d`, `surfacelet3d_redundancy`).  It trades shift invariance for
+a roughly 3× smaller coefficient set.
 """
 module Contourlets
 

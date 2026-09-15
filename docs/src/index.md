@@ -1,6 +1,8 @@
 # Contourlets.jl
 
-*Discrete Contourlet Transform and Nonsubsampled Contourlet Transform in Julia.*
+*Discrete Contourlet Transform, Nonsubsampled Contourlet Transform, and their
+3-D counterparts — the 3-D NSCT and the decimated surfacelet transform — in
+Julia.*
 
 ## Installation
 
@@ -56,6 +58,25 @@ coarse = nsct3d_forward(vol, params3d; workspace=ws3d) do j, k, band
 end
 ```
 
+### Surfacelets — the decimated 3-D transform
+
+Same frequency partition as the 3-D NSCT, but every subband is stored at its own
+reduced resolution. Shift invariance is given up; the coefficient set shrinks by
+about 3× at useful settings, which is what makes it usable as a sparsifying
+transform rather than only as an analysis tool.
+
+```julia
+sparams = SurfaceletParams3D(J=2, L_array=[2, 2])   # 12 directional subbands per scale
+plan    = make_surfacelet3d(sparams, size(vol), Float32)   # plan once, reuse
+
+sc = surfacelet3d_forward(vol, sparams; plan=plan)
+sr = surfacelet3d_inverse(sc, sparams; plan=plan)
+@assert maximum(abs, sr .- vol) < 1f-4
+
+size(sc.subbands[2][1])                     # coarser scales are stored smaller
+surfacelet3d_redundancy(plan)               # measured, not idealised
+```
+
 ## Package Overview
 
 | Component | Description |
@@ -71,6 +92,10 @@ end
 | [`nsct3d_forward`](@ref) / [`nsct3d_inverse`](@ref) | 3-D NSCT, with streaming forms |
 | [`make_nsct3d_workspace`](@ref) | Preallocate 3-D plans and buffers |
 | [`make_nsdfb3d`](@ref) | 3-D directional filter bank on its own (`3·2^L` subbands) |
+| [`SurfaceletParams3D`](@ref) | Decimated 3-D transform: scales, per-scale `L`, transition widths |
+| [`surfacelet3d_forward`](@ref) / [`surfacelet3d_inverse`](@ref) | Surfacelet transform, subbands at reduced resolution |
+| [`make_surfacelet3d`](@ref) | Plan the surfacelet masks and FFTs for one volume size |
+| [`surfacelet3d_redundancy`](@ref) | Measured coefficient count per input voxel |
 
 See the [Theory](@ref theory) page and [Theory — 3-D](@ref theory3d) for the mathematical background, and the [API Reference](@ref) for the complete public interface.
 

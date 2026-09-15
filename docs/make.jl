@@ -19,6 +19,7 @@ makedocs(;
             "Nonsubsampled Contourlet Transform" => "examples/nsct_example.md",
             "Approximation & Denoising" => "examples/nla_denoising.md",
             "3-D NSCT" => "examples/nsct3d_example.md",
+            "3-D Surfacelets" => "examples/surfacelet3d_example.md",
         ],
         "Comparison with MATLAB" => "comparison.md",
         "API Reference" => "api.md",

@@ -34,7 +34,35 @@ reproduce the cross-language benchmarks and validation below.
 
 ---
 
+## 3-D: comparison with SurfBox
 
+The 3-D reference implementation is **SurfBox** (Lu & Do,
+[FileExchange 14485](https://www.mathworks.com/matlabcentral/fileexchange/14485-surfbox)),
+which implements both the nonsubsampled hourglass/NDFB bank and the decimated
+surfacelet transform. `test/items/test_surfbox_reference.jl` regression-tests
+this package against golden data extracted from it.
+
+| Feature | Contourlets.jl | SurfBox |
+|---------|---------------|---------|
+| 3-D NSCT (`nsct3d_forward/inverse`) | ✅ | ✅ (`NsdfbDec` + pyramid) |
+| Surfacelet transform (`surfacelet3d_forward/inverse`) | ✅ | ✅ (`Surfdec/Surfrec`) |
+| Directional stage | frequency-domain masks, exact | FIR mapping kernels (37³, 61³), truncated |
+| Hourglass design | Bernstein mapping polynomials | Kaiser-windowed diamond kernel, raised to a power |
+| Wedge partition | boundaries placed directly in frequency | resampled-checkerboard chain |
+| Parseval normalisation | ``\sum_k V_k^2 = 1`` | ``\sum_k V_k^2 = N`` (same, scaled) |
+| Surfacelet redundancy | 15.4 at 24 subbands, 46.4 at 96 | 3.93, flat in the direction count |
+| Multiscale pyramid | dyadic cube shells | resamples by 3/2 per axis |
+| Streaming (one subband at a time) | ✅ | ❌ |
+| GPU support | ✅ (both, CUDA / OpenCL) | ❌ |
+
+The two agree on *geometry*, not coefficients: over a 32³ grid both pick the
+same dominant hourglass at 94.6% of frequencies (every disagreement a near-tie),
+and across 80 plane waves the wedge labellings are related by a bijection with
+the reference's choice always in this package's top two. The redundancy row is
+the one real deviation, and it is structural — see
+[Theory — 3-D](@ref theory3d).
+
+---
 
 ## Algorithm Correspondence
 

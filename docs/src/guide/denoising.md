@@ -1,4 +1,4 @@
-# [Nonlinear Approximation & Denoising](@id nla)
+# [Denoising and approximation](@id denoising)
 
 This page reproduces the two experiments that motivate the contourlet transform
 (Do & Vetterli 2005, §VI) and compares it against a separable 2-D "9/7" wavelet
@@ -297,54 +297,12 @@ savefig(p2, "nla_denoise.png"); nothing # hide
     directionally-selective NSCT frame here yields larger gains on this fabric
     crop without per-image parameter tuning.
 
-## Transform performance: allocating vs workspace API
 
-The NSCT has two execution paths with very different performance profiles:
+## The same recipe in 3-D
 
-- **Allocating** (`nsct_forward(x, params)`): runs the 2-D fan/parallelogram
-  spatial convolutions directly.  Convenient for one-shot use; the optimised
-  sparse kernels skip structural zeros (~70% of each filter) and use SIMD
-  (`@turbo` on real data) or multi-thread batching (`@batch` on complex data).
-- **Workspace / FFT** (`make_nsct_workspace` + `nsct_forward!`): precomputes
-  the 2^L equivalent leaf filters once in the frequency domain; each subsequent
-  call is an FFT + pointwise multiplies + IFFT.  Much faster per call when the
-  same image size is reused (the typical loop-heavy use case).
-
-```@example nla
-using BenchmarkTools
-
-bench_params = ContourletParams(J = 2, L_array = [2, 3])
-bench_img    = randn(256, 256)
-bench_ws     = make_nsct_workspace(bench_params, (256, 256))
-bench_coeffs = similar_nsct_coefficients(bench_params, (256, 256))
-
-t_alloc = @belapsed nsct_forward($bench_img, $bench_params)
-t_ws    = @belapsed nsct_forward!($bench_coeffs, $bench_img, $bench_params; workspace = $bench_ws)
-
-println("nsct_forward  allocating : $(round(t_alloc * 1e3; digits=1)) ms")
-println("nsct_forward! workspace  : $(round(t_ws    * 1e3; digits=1)) ms")
-println("Workspace speedup: $(round(t_alloc / t_ws; digits=1))×")
-```
-
-For iterative algorithms — gain estimation, noise calibration loops,
-iterative reconstruction — the workspace API is the right choice.  The
-allocating form is convenient for exploratory use (no setup) but may be
-several times slower when called repeatedly at the same image size.
-
-The CT transform (critically sampled) uses the decimated DFB (`dfb_decompose`)
-rather than the NSDFB, so it is substantially faster than the NSCT at equal
-image size:
-
-```@example nla
-ct_params = ContourletParams(J = 2, L_array = [2, 3])
-t_ct   = @belapsed ct_forward($bench_img, $ct_params)
-t_nsct = @belapsed nsct_forward($bench_img, $bench_params)
-
-println("ct_forward  (256×256, J=2, L=[2,3]): $(round(t_ct   * 1e3; digits=1)) ms")
-println("nsct_forward                        : $(round(t_nsct * 1e3; digits=1)) ms")
-println("CT vs NSCT speedup (no workspace)   : $(round(t_nsct / t_ct; digits=1))×")
-```
-
-The CT sacrifices shift-invariance (its coefficients alias under fractional-pixel
-shifts) but produces sparser, non-redundant representations — the right tradeoff
-for compression and M-term approximation benchmarks shown above.
+Nothing above is specific to two dimensions. [`nsct3d_forward`](@ref) is
+likewise shift-invariant and normalised so that the noise variance is the same
+in every subband, so a single threshold applies across the whole coefficient
+set; at working volume sizes the streaming form keeps memory to two volumes.
+For a sparsifying transform in an iterative reconstruction, use the decimated
+[`surfacelet3d_forward`](@ref) instead. See [3-D transforms](@ref guide3d).

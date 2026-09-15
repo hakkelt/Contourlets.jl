@@ -12,6 +12,8 @@ lcov.info
 # Third-party MATLAB toolboxes (GPL/BSD; fetched on demand for cross-validation
 # benchmarks, never vendored into this MIT-licensed repository).
 /benchmark/matlab/
+/matlab/Contourlet-transform/
+/matlab/Nonsubsampled-Contourlet-Toolbox/
 
 # Agentic tools
 .gemini

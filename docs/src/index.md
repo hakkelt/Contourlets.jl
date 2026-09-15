@@ -1,109 +1,95 @@
 # Contourlets.jl
 
-*Discrete Contourlet Transform, Nonsubsampled Contourlet Transform, and their
-3-D counterparts — the 3-D NSCT and the decimated surfacelet transform — in
-Julia.*
+*Directional multiresolution transforms in Julia: the Contourlet Transform, the
+Nonsubsampled Contourlet Transform, and their 3-D counterparts — the 3-D NSCT
+and the decimated surfacelet transform.*
 
 ## Installation
 
 ```julia
 using Pkg
-Pkg.add(url="https://github.com/hakkelt/Contourlets.jl")
+Pkg.add(url = "https://github.com/hakkelt/Contourlets.jl")
 ```
 
-## Quick Start
+## Quick start
 
 ```julia
-using Contourlets, Random
+using Contourlets
 
-Random.seed!(42)
-img = randn(256, 256)
+img    = randn(256, 256)
+params = ContourletParams(J = 4, L_array = parabolic_levels(4))
 
-# Choose scale/direction parameters (parabolic scaling rule)
-params = ContourletParams(J=4, L_array=parabolic_levels(4))
-
-# ── Contourlet Transform (critically sampled) ────────────────────────────────
-coeffs = ct_forward(img, params)
+coeffs = ct_forward(img, params)        # critically sampled
 rec    = ct_inverse(coeffs, params)
-@assert maximum(abs, rec .- img) < 1e-12
 
-# ── Nonsubsampled CT (shift-invariant) ───────────────────────────────────────
-ns_coeffs = nsct_forward(img, params)
-ns_rec    = nsct_inverse(ns_coeffs, params)
-@assert maximum(abs, ns_rec .- img) < 1e-12
+ns     = nsct_forward(img, params)      # shift-invariant, redundant
+ns_rec = nsct_inverse(ns, params)
+```
 
-# ── Preallocated-buffer iterative usage ──────────────────────────────────────
-ws  = make_workspace(Float64, size(img), params)
+For iterative algorithms, preallocate the scratch buffers and the output once:
+
+```julia
+ws  = make_workspace(params, size(img))
 buf = similar_coefficients(params, size(img))
+out = similar(img)
+
 for _ in 1:100
-    ct_forward!(buf, img, params; workspace=ws)   # reuses workspace buffers across iterations
+    ct_forward!(buf, img, params; workspace = ws)
+    # … threshold / prox step on buf.subbands …
+    ct_inverse!(out, buf, params; workspace = ws)
 end
 ```
 
-### 3-D volumes
+Volumes use a parallel 3-D API, including a streaming form for sizes where the
+coefficient set does not fit in memory:
 
 ```julia
-vol      = randn(Float32, 128, 128, 128)
-params3d = ContourletParams3D(J=2, L_array=[2, 2])   # 12 directional subbands per scale
-ws3d     = make_nsct3d_workspace(params3d, size(vol), Float32)
+vol     = randn(Float32, 256, 256, 256)
+params3 = ContourletParams3D(J = 3, L_array = [2, 2, 3])   # 48 directional subbands
+ws3     = make_nsct3d_workspace(params3, size(vol), Float32)
 
-c3d   = nsct3d_forward(vol, params3d; workspace=ws3d)
-rec3d = nsct3d_inverse(c3d, params3d; workspace=ws3d)
-@assert maximum(abs, rec3d .- vol) < 1f-4
-
-# Streaming: the form to use at working sizes, where the full coefficient set
-# does not fit — 256³ Float32 with J=3, L=[2,2,3] is 3.1 GB.
-coarse = nsct3d_forward(vol, params3d; workspace=ws3d) do j, k, band
+coarse = nsct3d_forward(vol, params3; workspace = ws3) do j, k, band
     # `band` is valid only until this callback returns
 end
 ```
 
-### Surfacelets — the decimated 3-D transform
+The decimated counterpart, [`surfacelet3d_forward`](@ref), stores every subband
+at its own reduced resolution — about 3× leaner at useful settings, at the cost
+of shift invariance.
 
-Same frequency partition as the 3-D NSCT, but every subband is stored at its own
-reduced resolution. Shift invariance is given up; the coefficient set shrinks by
-about 3× at useful settings, which is what makes it usable as a sparsifying
-transform rather than only as an analysis tool.
-
-```julia
-sparams = SurfaceletParams3D(J=2, L_array=[2, 2])   # 12 directional subbands per scale
-plan    = make_surfacelet3d(sparams, size(vol), Float32)   # plan once, reuse
-
-sc = surfacelet3d_forward(vol, sparams; plan=plan)
-sr = surfacelet3d_inverse(sc, sparams; plan=plan)
-@assert maximum(abs, sr .- vol) < 1f-4
-
-size(sc.subbands[2][1])                     # coarser scales are stored smaller
-surfacelet3d_redundancy(plan)               # measured, not idealised
-```
-
-## Package Overview
+## What is here
 
 | Component | Description |
 |-----------|-------------|
-| [`ContourletParams`](@ref) | Bundles scale `J`, direction counts `L_array`, and filter pair |
-| [`ct_forward`](@ref) / [`ct_inverse`](@ref) | Discrete Contourlet Transform |
-| [`nsct_forward`](@ref) / [`nsct_inverse`](@ref) | Nonsubsampled Contourlet Transform |
-| [`make_workspace`](@ref) | Preallocate buffers for iterative algorithms |
-| [`parabolic_levels`](@ref) | Compute optimal direction counts per scale |
-| [`CDF97`](@ref) | Default CDF 9/7 biorthogonal LP filter pair |
-| [`Q2345`](@ref) | Default "23-45" (Phoong et al. 1995) ladder DFB filter pair |
-| [`ContourletParams3D`](@ref) | 3-D counterpart: scales, per-scale `L`, Bernstein order |
+| [`ContourletParams`](@ref) | Scales `J`, direction counts `L_array`, filter pair |
+| [`ct_forward`](@ref) / [`ct_inverse`](@ref) | Contourlet transform, critically sampled |
+| [`nsct_forward`](@ref) / [`nsct_inverse`](@ref) | Nonsubsampled contourlet transform, shift-invariant |
+| [`make_workspace`](@ref) / [`make_nsct_workspace`](@ref) | Preallocated buffers for iterative algorithms |
+| [`parabolic_levels`](@ref) | Direction counts following the parabolic scaling rule |
+| [`CDF97`](@ref) / [`Q2345`](@ref) | Default pyramid and ladder DFB filter pairs |
+| [`ContourletParams3D`](@ref) | 3-D parameters: scales, per-scale `L`, Bernstein order |
 | [`nsct3d_forward`](@ref) / [`nsct3d_inverse`](@ref) | 3-D NSCT, with streaming forms |
-| [`make_nsct3d_workspace`](@ref) | Preallocate 3-D plans and buffers |
-| [`make_nsdfb3d`](@ref) | 3-D directional filter bank on its own (`3·2^L` subbands) |
+| [`make_nsct3d_workspace`](@ref) | Preallocated 3-D plans and buffers |
+| [`make_nsdfb3d`](@ref) | 3-D directional filter bank alone (`3·2^L` subbands) |
 | [`SurfaceletParams3D`](@ref) | Decimated 3-D transform: scales, per-scale `L`, transition widths |
 | [`surfacelet3d_forward`](@ref) / [`surfacelet3d_inverse`](@ref) | Surfacelet transform, subbands at reduced resolution |
 | [`make_surfacelet3d`](@ref) | Plan the surfacelet masks and FFTs for one volume size |
-| [`surfacelet3d_redundancy`](@ref) | Measured coefficient count per input voxel |
 
-See the [Theory](@ref theory) page and [Theory — 3-D](@ref theory3d) for the mathematical background, and the [API Reference](@ref) for the complete public interface.
+Threading is chosen per element type by default — SIMD for real data,
+multi-threaded batching for complex — and the whole 2-D transform runs on the
+GPU when a KernelAbstractions backend is loaded. Both are covered in
+[Performance, threading and GPUs](@ref performance).
 
-## Performance & Threading
+## Where to go next
 
-Contourlets.jl provides an explicit `ThreadingPolicy` configuration via `threading` keyword arguments. By default, it uses the `Auto()` policy which delivers maximum throughput via a hybrid architecture:
-- **Real-valued Data:** Multithreading is disabled by default, utilizing `LoopVectorization.@turbo` for zero-overhead, single-threaded SIMD acceleration.
-- **Complex-valued Data:** Multithreading is enabled by default, utilizing `Polyester.@batch` to distribute non-vectorizable inner loops efficiently across CPU cores with near-zero latency.
-Users can explicitly opt into or out of multithreading by passing `threading=Enabled()` or `threading=Disabled()`.
-- **GPU Acceleration:** `ContourletsGPUExt` seamlessly runs the full transform (pyramid, directional, and sampling stages) on device-resident arrays for any GPU backend supported by KernelAbstractions.jl (CUDA, AMDGPU, Metal, oneAPI). Pass a device array and the correct operations dispatch automatically. Note that the **CUDA backend** (`ContourletsCUDAExt`) additionally captures the workspace `ct_forward!`/`ct_inverse!` paths into CUDA graphs, reducing per-call host overhead from ~300 kernel launches to a single replay. Without this optimization — i.e. on AMDGPU, Metal, or oneAPI — GPU execution is still correct but only outperforms CPU for sufficiently large images where device compute dominates over host-side launch overhead.
-
+- [2-D transforms](@ref guide2d) — CT, NSCT, the four API variants, and the
+  pyramid and filter-bank stages on their own.
+- [3-D transforms](@ref guide3d) — the 3-D NSCT, streaming, and surfacelets.
+- [Denoising and approximation](@ref denoising) — worked comparisons against a
+  separable wavelet.
+- [Performance, threading and GPUs](@ref performance).
+- [Theory](@ref theory) and [Theory — 3-D](@ref theory3d) — the constructions
+  and where they leave the papers.
+- [Comparison with the MATLAB toolboxes](@ref comparison) — feature, accuracy
+  and timing comparison against the reference implementations.
+- [API Reference](@ref api).

@@ -203,9 +203,17 @@ c  = nsct3d_forward(CuArray(vol), params; workspace = ws)
 ```
 
 A workspace adapt moves the shared hourglass response once, not once per scale.
-Verified against the CPU path on CUDA and OpenCL.  The decimated surfacelet
-transform is CPU-only for now: its support-box extraction is an index gather,
-not a broadcast.
+Verified against the CPU path on CUDA and OpenCL.
+
+The surfacelet transform runs on the device under the same rule, with one extra
+constraint: its masks are evaluated on the fly, so `_fill_surfacelet_mask!` is a
+*single* broadcast over the per-axis frequency tables, and a subband is extracted
+by copying the (at most eight) contiguous corner blocks of its support box rather
+than by a per-voxel index map.  Its plan is built on the host — planning scans
+every mask to find its support — and then adapted to the *bare* array type
+(`Adapt.adapt(CuArray, pl)`, never `typeof(x)`, since the plan holds both real
+and complex buffers).  A device volume with no plan is an `ArgumentError`, not an
+implicit rebuild.
 
 ## Surfacelet transform (decimated)
 

@@ -1,4 +1,4 @@
-# API Reference
+# [API Reference](@id api)
 
 ```@meta
 CurrentModule = Contourlets

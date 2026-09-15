@@ -1,4 +1,4 @@
-# Comparison with MATLAB Alternatives
+# [Comparison with the MATLAB toolboxes](@id comparison)
 
 This page compares Contourlets.jl against the two reference implementations:
 
@@ -6,12 +6,16 @@ This page compares Contourlets.jl against the two reference implementations:
 - **MATLAB Nonsubsampled Contourlet Toolbox** (da Cunha et al., 2006) — [FileExchange 10049](https://www.mathworks.com/matlabcentral/fileexchange/10049-nonsubsampled-contourlet-toolbox), BSD license
 
 These toolboxes are BSD-licensed and are therefore **not** vendored into this
-MIT-licensed repository.  Download them separately into `benchmark/matlab/` to
-reproduce the cross-language benchmarks and validation below.
+MIT-licensed repository.  Clone them into `matlab/` as described in
+[`matlab/README.md`](https://github.com/hakkelt/Contourlets.jl/blob/master/matlab/README.md)
+to reproduce the validation and benchmarks below.
 
 ---
 
-## Feature Comparison
+## Feature comparison
+
+The 2-D transforms, against the two 2-D toolboxes; the 3-D stack is compared
+against SurfBox in the [next section](@ref surfbox).
 
 | Feature | Contourlets.jl | MATLAB CT Toolbox | MATLAB NSCT Toolbox |
 |---------|---------------|------------------|-------------------|
@@ -34,7 +38,7 @@ reproduce the cross-language benchmarks and validation below.
 
 ---
 
-## 3-D: comparison with SurfBox
+## [3-D: SurfBox](@id surfbox)
 
 The 3-D reference implementation is **SurfBox** (Lu & Do,
 [FileExchange 14485](https://www.mathworks.com/matlabcentral/fileexchange/14485-surfbox)),
@@ -64,7 +68,7 @@ the one real deviation, and it is structural — see
 
 ---
 
-## Algorithm Correspondence
+## Algorithm correspondence
 
 | Contourlets.jl | MATLAB CT Toolbox | MATLAB NSCT Toolbox |
 |---------------|------------------|-------------------|
@@ -82,98 +86,116 @@ the one real deviation, and it is structural — see
 
 ---
 
-## Numerical Accuracy
+## Numerical accuracy
 
-Both the MATLAB toolboxes and Contourlets.jl achieve perfect reconstruction (PR) in
-exact arithmetic.  In double precision (Float64) the residuals are:
+Both the MATLAB toolboxes and Contourlets.jl reach perfect reconstruction (PR) in
+exact arithmetic; in `Float64` the residuals sit at the round-off floor. The
+values below are from the cross-validation run described under
+[Benchmarks](@ref comparison-benchmarks), on random `n × n` inputs with `J = 2`,
+`L_array = [2, 3]`:
 
-| Operation | Contourlets.jl | MATLAB (reference) |
-|-----------|--------------|------------------|
-| LP one level | < 1e-14 | < 1e-14 |
-| DFB L=2 | < 1e-15 | < 1e-12 |
-| CT J=2 | < 1e-14 | ~1e-13 |
-| NSCT J=2 | < 1e-14 | ~1e-14 |
+| Check | Contourlets.jl | MATLAB reference |
+|---|---|---|
+| NSDFB, `L = 3` | 1.2e-14 … 1.4e-14 | 8.9e-15 … 1.1e-14 |
+| CT, `J = 2` | 5.6e-15 … 6.0e-15 | 6.8e-14 … 8.4e-14 |
+| NSCT, `J = 2` | 8.9e-15 … 1.1e-14 | 5.8e-15 … 7.5e-15 |
 
-The DFB stage uses the Phoong et al. (1995) two-step *ladder (lifting) network*,
-so perfect reconstruction is **structural** — it inverts step by step to machine
-precision for any lifting filter, independent of the boundary handling.  This is
-why the discrete DFB/CT residuals are at the floating-point round-off floor.
+The NSDFB is the one stage where the two implementations use the same filters,
+so its subbands can be compared directly rather than only through PR: they agree
+to 7.5e-15. The CT and NSCT use different pyramid filters by design — this
+package uses the JPEG 2000-normalised separable CDF 9/7 à trous pyramid, the
+toolboxes a differently scaled `'9-7'` and a non-separable diamond pyramid — so
+their coefficients differ and only PR is comparable.
+
+Perfect reconstruction in the directional stage is *structural*: the Phoong et
+al. (1995) two-step ladder network inverts step by step for any lifting filter,
+independent of boundary handling. That is why the residuals are at the
+floating-point floor rather than merely small.
 
 ---
 
-## Performance Benchmarks
+## [Benchmarks](@id comparison-benchmarks)
 
-Julia timings are measured with `BenchmarkTools.jl` (median of ≥5 samples, JIT
-warmup excluded) on this machine.  MATLAB reference timings are measured on the
-same machine using the `benchmark/matlab/run_matlab_benchmarks.m` script.
+All timings below were measured in a single run of `matlab/verify_vs_julia.m`,
+which drives both implementations on identical inputs. Medians of 7 runs,
+warm-up excluded on both sides.
 
-### CT Forward Pass (Float64, J=2, L=[2,3])
+!!! note "Measurement environment"
+    | | |
+    |---|---|
+    | CPU | 2 × AMD EPYC 7352 (24 cores each, 96 logical threads) |
+    | OS | Linux 4.18, x86_64 |
+    | Julia | 1.13.0, 1 thread, `Float64` |
+    | MATLAB | R2022a, with the toolboxes' MEX kernels compiled |
+    | Host | shared HPC login node — other users' load adds noise |
 
-| Image size | Contourlets.jl (allocating) | Contourlets.jl (workspace) | MATLAB `pdfbdec` |
-|------------|:---------------------------:|:--------------------------:|:----------------:|
-| 64 × 64    | 0.52 ms | 0.49 ms | 5.44 ms |
-| 128 × 128  | 1.84 ms | 1.75 ms | 7.83 ms |
-| 256 × 256  | 7.12 ms | 6.85 ms | 17.35 ms |
+    These are absolute wall-clock numbers from one machine. Re-run the script
+    on your own hardware before quoting them; the ratios travel better than the
+    milliseconds.
 
-### CT Inverse Pass (Float64, J=2, L=[2,3])
+### CT — `ct_forward` / `ct_inverse` against `pdfbdec` / `pdfbrec`
 
-| Image size | Contourlets.jl (allocating) | Contourlets.jl (workspace) | MATLAB `pdfbrec` |
-|------------|:---------------------------:|:--------------------------:|:----------------:|
-| 64 × 64    | 0.42 ms | 0.37 ms | 6.80 ms |
-| 128 × 128  | 1.40 ms | 1.30 ms | 7.97 ms |
-| 256 × 256  | 5.32 ms | 5.01 ms | 80.78 ms |
+| Size | Contourlets.jl fwd | MATLAB fwd | Contourlets.jl inv | MATLAB inv |
+|---|---:|---:|---:|---:|
+| 64 × 64 | 1.3 ms | 11.2 ms | 1.0 ms | 21.0 ms |
+| 128 × 128 | 3.4 ms | 6.9 ms | 3.2 ms | 6.7 ms |
+| 256 × 256 | 13.8 ms | 85.1 ms | 13.8 ms | 13.3 ms |
 
-### NSCT Forward / Inverse Pass (Float64, J=2, L=[2,3])
+### NSCT — `nsct_forward` / `nsct_inverse` against `nsctdec` / `nsctrec`
 
-| Image size | Contourlets.jl fwd | Contourlets.jl inv | MATLAB `nsctdec` | MATLAB `nsctrec` |
-|------------|:------------------:|:------------------:|:----------------:|:----------------:|
-| 64 × 64    |  13.87 ms |  18.74 ms |  289.54 ms |  282.64 ms |
-| 128 × 128  | 43.34 ms | 56.63 ms | 1132.12 ms | 1120.81 ms |
-| 256 × 256  | 114.79 ms | 140.04 ms | 4472.38 ms | 4684.56 ms |
+The workspace column is `nsct_forward!` with a prewarmed
+[`make_nsct_workspace`](@ref), which evaluates the directional stage as an FFT
+and pointwise multiplies instead of spatial convolutions. It is the form to use
+whenever the same size is transformed more than once; the MATLAB toolbox has no
+equivalent.
 
-### Laplacian Pyramid (Float64, one level)
+| Size | Contourlets.jl fwd | + workspace | MATLAB fwd | Contourlets.jl inv | MATLAB inv |
+|---|---:|---:|---:|---:|---:|
+| 64 × 64 | 118 ms | 0.6 ms | 194 ms | 84 ms | 192 ms |
+| 128 × 128 | 257 ms | 1.7 ms | 763 ms | 232 ms | 765 ms |
+| 256 × 256 | 960 ms | 7.2 ms | 3762 ms | 839 ms | 3092 ms |
 
-| Image size | `lp_decompose` | `lp_reconstruct` |
-|------------|:--------------:|:----------------:|
-| 64 × 64    | 0.18 ms | 0.08 ms |
-| 128 × 128  | 0.71 ms | 0.32 ms |
-| 256 × 256  | 2.90 ms | 1.31 ms |
+At 256² the workspace path is roughly 500× faster than the MATLAB reference and
+130× faster than this package's own allocating path — the gap the
+[Performance](@ref performance) page goes into.
 
-> **Methodology:** Parameters J=2, L_array=[2,3] for CT/NSCT.  Julia times are
-> medians of repeated samples using `BenchmarkTools.jl` with JIT warmup excluded; MATLAB
-> timings are from `benchmark/matlab/run_matlab_benchmarks.m` (R2022a, same
-> machine).  Absolute numbers are machine-dependent and meant only to show the
-> relative scaling — re-run both scripts on your hardware before quoting them.
-> The NSCT is markedly heavier than the CT because it is fully non-decimated;
-> Contourlets.jl is several× faster than the reference toolbox here largely
-> because the directional stage runs as tight column-major periodic
-> convolutions.  Key performance factors:
-> 1. Type-stable `Val{B}`-dispatched boundary conditions (zero dynamic dispatch)
-> 2. Column-major inner loops for cache efficiency
-> 3. A preallocated-buffer workspace API for iterative use
-> 4. **Hybrid Threading Architecture**: `LoopVectorization.@turbo` for zero-overhead SIMD acceleration on `Real` arrays, and `Polyester.@batch` to parallelize non-vectorizable `Complex` kernels seamlessly across all CPU cores.
->
-> *Note on GPU benchmarks*: GPU benchmarks (`ct_forward` and `nsct_forward` via CUDA.jl or AMDGPU.jl)
-> are excluded from this table because MATLAB does not have a native GPU Contourlet
-> implementation for comparison. On typical hardware, using `CuArray(img)` speeds up
-> the heavy multiscale pyramid stage by 10× to 30× depending on image size.
+### NSDFB — `nsdfb_decompose` / `nsdfb_reconstruct` against `nsdfbdec` / `nsdfbrec`
 
-To reproduce the Julia benchmarks:
+`L = 3` (8 directional subbands), the one stage where both implementations use
+the same filters:
 
-```julia
-using Pkg; Pkg.activate("benchmark")
-include("benchmark/benchmarks.jl")
-BenchmarkTools.run(SUITE; verbose=true)
+| Size | Contourlets.jl dec | MATLAB dec | Contourlets.jl rec | MATLAB rec |
+|---|---:|---:|---:|---:|
+| 64 × 64 | 43 ms | 256 ms | 43 ms | 251 ms |
+| 128 × 128 | 195 ms | 660 ms | 153 ms | 764 ms |
+| 256 × 256 | 491 ms | 2260 ms | 630 ms | 2274 ms |
+
+Where this package is faster, it is mostly for structural reasons: type-stable
+`Val{B}`-dispatched boundary handling with no dynamic dispatch, column-major
+inner loops, kernels that skip the structural zeros of the à trous filters, and
+the preallocated-buffer workspace. GPU execution is not in the table because the
+MATLAB toolboxes have no GPU path to compare against; see
+[Performance, threading and GPUs](@ref performance).
+
+### Reproducing
+
+Clone the two toolboxes into `matlab/` and compile their MEX kernels as
+described in [`matlab/README.md`](https://github.com/hakkelt/Contourlets.jl/blob/master/matlab/README.md),
+then from MATLAB:
+
+```matlab
+verify_vs_julia(2, [2 3], [64 128 256])   % J, L_array, sizes
 ```
 
-To reproduce the MATLAB benchmarks, run `benchmark/matlab/run_matlab_benchmarks.m`
-after adding the Contourlet Toolbox to the MATLAB path.
+The script writes shared inputs, runs the Julia side as a subprocess
+(`JULIA_BIN` selects the binary), and reports PR errors, cross-validation
+errors and timings for both. For Julia-only benchmarks use `benchmark/benchmarks.jl`.
 
 ---
 
-## Implementation Notes
+## Implementation notes
 
-### Differences from MATLAB CT Toolbox
+### Differences from the MATLAB CT toolbox
 
 1. **Filter convention**: The MATLAB toolbox names filters by string — `'9-7'`
    for the Laplacian-Pyramid CDF 9/7 pair (exposed here as [`CDF97`](@ref)) and
@@ -192,7 +214,7 @@ after adding the Contourlet Toolbox to the MATLAB path.
    preallocated buffers for the pyramid stage (the directional stage still
    allocates its subband tree when no workspace is supplied).
 
-### Differences from MATLAB NSCT Toolbox
+### Differences from the MATLAB NSCT toolbox
 
 1. **À trous implementation**: Both use zero-insertion filter upsampling
    (`upsample_filter`) for the à trous scheme.

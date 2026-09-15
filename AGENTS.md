@@ -146,11 +146,13 @@ Contourlets/
 │       ├── index.md
 │       ├── theory.md
 │       ├── theory3d.md        # 3-D constructions and where they leave the papers
+│       ├── comparison.md      # feature/accuracy/timing vs the MATLAB toolboxes
 │       ├── api.md
-│       └── examples/
-│           ├── ct_example.md
-│           ├── nsct_example.md
-│           └── nsct3d_example.md
+│       └── guide/             # user guide: one page per topic, not "examples"
+│           ├── transforms-2d.md
+│           ├── transforms-3d.md
+│           ├── denoising.md
+│           └── performance.md
 ├── .agents/skills/            # Vendor-neutral Julia skills (see table above)
 └── .github/workflows/         # CI.yml, documentation.yml, CompatHelper.yml, TagBot.yml
 ```

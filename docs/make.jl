@@ -11,17 +11,17 @@ makedocs(;
     ),
     pages = [
         "Home" => "index.md",
-        "Theory" => "theory.md",
-        "Theory (3-D)" => "theory3d.md",
-        "Examples" => [
-            "Showcase" => "examples/showcase.md",
-            "Contourlet Transform" => "examples/ct_example.md",
-            "Nonsubsampled Contourlet Transform" => "examples/nsct_example.md",
-            "Approximation & Denoising" => "examples/nla_denoising.md",
-            "3-D NSCT" => "examples/nsct3d_example.md",
-            "3-D Surfacelets" => "examples/surfacelet3d_example.md",
+        "Guide" => [
+            "2-D transforms" => "guide/transforms-2d.md",
+            "3-D transforms" => "guide/transforms-3d.md",
+            "Denoising and approximation" => "guide/denoising.md",
+            "Performance, threading and GPUs" => "guide/performance.md",
         ],
-        "Comparison with MATLAB" => "comparison.md",
+        "Background" => [
+            "Theory — 2-D" => "theory.md",
+            "Theory — 3-D" => "theory3d.md",
+            "Comparison with the MATLAB toolboxes" => "comparison.md",
+        ],
         "API Reference" => "api.md",
     ],
     checkdocs = :exports,

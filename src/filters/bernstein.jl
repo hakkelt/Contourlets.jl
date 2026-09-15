@@ -71,7 +71,7 @@ function _folded_frequencies(::Type{T}, n::Int; half::Bool = false) where {T}
     half && return dft_frequencies(T, n; half = true)
     return T[
         let w = 2 * T(π) * (k - 1) / n
-                w > T(π) ? w - 2 * T(π) : w
+            w > T(π) ? w - 2 * T(π) : w
         end for k in 1:n
     ]
 end

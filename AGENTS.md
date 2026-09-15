@@ -321,6 +321,23 @@ output.
   response **once**, not once per scale. JLArrays is excluded from the 3-D GPU
   tests: it has no FFT implementation, so `plan_rfft` falls back to a
   scalar-indexing generic. CUDA and OpenCL are verified.
+  `surfacelet3d` follows the same rule with one extra constraint of its own: its
+  masks are evaluated on the fly, so `_fill_surfacelet_mask!` is a *single
+  broadcast* over the per-axis frequency tables; and its support boxes are
+  symmetric about the origin, so a subband is extracted by copying the (at most
+  eight) contiguous blocks `1:reach+1` / `n-reach+1:n` per axis rather than by a
+  per-voxel index map. Both must stay that way. Its plan is built on the host —
+  planning scans every mask to find its support — and then adapted; a device
+  volume with no plan is an `ArgumentError`, not an implicit rebuild. Adapt the
+  plan to the *bare* array type (`Adapt.adapt(CuArray, pl)`), never
+  `typeof(x)`: it holds both real and complex buffers, and an element-typed
+  destination cannot fit both.
+- **3-D is deliberately not CUDA-graph-captured.** `ContourletsCUDAExt` wraps
+  only the 2-D workspace paths. The 3-D forward/inverse are streaming — they
+  hand each subband to a caller's callback, which is arbitrary host code, and
+  stream capture admits none — and there is nothing to win anyway: the 3-D stack
+  is a few full-volume FFTs, where launch overhead is noise, not the ~300 small
+  kernels that make capture pay in 2-D.
 - **The 3-D directional stages are validated against SurfBox.** SurfBox (Lu and
   Do's reference implementation, MATLAB File Exchange 14485) is available and
   runs under `module load matlab`. `test/reference/` holds golden data extracted

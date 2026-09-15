@@ -21,6 +21,23 @@ module ContourletsCUDAExt
 # Subsequent calls: if input/output device pointers match the cached ones,
 # replay with a single `CUDA.launch(exec)`.  On mismatch (different pre-allocated
 # buffers), re-capture.  CPU-image inputs skip graph capture entirely.
+#
+# The 3-D paths are deliberately *not* captured, and adding them would be a
+# regression rather than an omission.  Two independent reasons:
+#
+#   * `nsct3d_forward` / `nsct3d_inverse` are streaming — they hand each
+#     directional subband to a caller-supplied `f(j, k, band)` as it is produced,
+#     which is the only reason the transform fits in memory at working sizes.
+#     That callback is arbitrary host code (it commonly copies to the host or
+#     writes to disk), and stream capture admits no host work at all, so a
+#     captured graph would either be invalid or would have to drop the streaming
+#     API that makes the 3-D transform usable.
+#
+#   * There is nothing to win.  Graph capture pays off for the 2-D transform
+#     because it replaces ~300 launches of small kernels, where launch overhead
+#     dominates.  The 3-D stack is a handful of full-volume FFTs plus pointwise
+#     mask broadcasts; at 256³ a single cuFFT call runs for milliseconds, so the
+#     few microseconds of launch overhead per stage are noise.
 
 using Contourlets
 using CUDA

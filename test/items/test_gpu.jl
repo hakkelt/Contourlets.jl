@@ -489,3 +489,47 @@ end
         @test all(k -> host.subbands[1][k] == c.subbands[1][k], eachindex(c.subbands[1]))
     end
 end
+
+@testitem "GPU surfacelet3d matches CPU" tags = [:gpu, :surfacelet3d] setup = [GPUBackends] begin
+    using GPUEnv, Random
+    const Adapt = GPUBackends.Adapt
+    Random.seed!(204)
+    dims = (16, 16, 16)
+    x = randn(Float32, dims...)
+    p = SurfaceletParams3D(J = 2, L_array = [1, 1])
+    # Planning scans every mask, so it happens once on the host; the device plan
+    # is an adapt of it, never a rebuild.
+    pl_cpu = make_surfacelet3d(p, dims, Float32)
+    ref = surfacelet3d_forward(x, p; plan = pl_cpu)
+    for backend in GPUBackends.fft_backends
+        xg = to_gpu(backend, x)
+        # Adapt to the bare array type, not `typeof(xg)`: the plan holds both
+        # real and complex buffers, so an element-typed destination cannot fit.
+        pl = Adapt.adapt(backend.array_type, pl_cpu)
+        c = surfacelet3d_forward(xg, p; plan = pl)
+        @test size(c.coarse) == size(ref.coarse)
+        @test maximum(abs, Array(c.coarse) .- ref.coarse) < 1.0f-4
+        for j in 1:2, k in eachindex(c.subbands[j])
+            @test size(c.subbands[j][k]) == size(ref.subbands[j][k])
+            @test maximum(abs, Array(c.subbands[j][k]) .- ref.subbands[j][k]) < 1.0f-4
+        end
+        rec = surfacelet3d_inverse(c, p; plan = pl)
+        @test maximum(abs, Array(rec) .- x) < 1.0f-4
+        # Coefficients adapt back and forth.
+        host = Adapt.adapt(Array, c)
+        @test host.coarse == Array(c.coarse)
+        dev = Adapt.adapt(backend.array_type, ref)
+        @test Array(dev.subbands[1][1]) == ref.subbands[1][1]
+    end
+end
+
+@testitem "GPU surfacelet3d needs an explicit plan" tags = [:gpu, :surfacelet3d] setup = [GPUBackends] begin
+    using GPUEnv, Random
+    Random.seed!(205)
+    dims = (8, 8, 8)
+    p = SurfaceletParams3D(J = 1, L_array = [1])
+    for backend in GPUBackends.fft_backends
+        xg = to_gpu(backend, randn(Float32, dims...))
+        @test_throws ArgumentError surfacelet3d_forward(xg, p)
+    end
+end

@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>3-D NSCT · Contourlets.jl</title><meta name="title" content="3-D NSCT · Contourlets.jl"/><meta property="og:title" content="3-D NSCT · Contourlets.jl"/><meta property="twitter:title" content="3-D NSCT · Contourlets.jl"/><meta name="description" content="Documentation for Contourlets.jl."/><meta property="og:description" content="Documentation for Contourlets.jl."/><meta property="twitter:description" content="Documentation for Contourlets.jl."/><meta property="og:url" content="https://hakkelt.github.io/Contourlets.jl/examples/nsct3d_example/"/><meta property="twitter:url" content="https://hakkelt.github.io/Contourlets.jl/examples/nsct3d_example/"/><link rel="canonical" href="https://hakkelt.github.io/Contourlets.jl/examples/nsct3d_example/"/><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.63.2/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../search_index.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href="../../">Contourlets.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../../">Home</a></li><li><a class="tocitem" href="../../theory/">Theory</a></li><li><a class="tocitem" href="../../theory3d/">Theory (3-D)</a></li><li><span class="tocitem">Examples</span><ul><li><a class="tocitem" href="../showcase/">Showcase</a></li><li><a class="tocitem" href="../ct_example/">Contourlet Transform</a></li><li><a class="tocitem" href="../nsct_example/">Nonsubsampled Contourlet Transform</a></li><li><a class="tocitem" href="../nla_denoising/">Approximation &amp; Denoising</a></li><li class="is-active"><a class="tocitem" href>3-D NSCT</a><ul class="internal"><li><a class="tocitem" href="#Variant-1-—-Allocating"><span>Variant 1 — Allocating</span></a></li><li><a class="tocitem" href="#Variant-2-—-Workspace-(for-iterative-algorithms)"><span>Variant 2 — Workspace (for iterative algorithms)</span></a></li><li><a class="tocitem" href="#Variant-3-—-Streaming-(the-one-to-use-at-working-sizes)"><span>Variant 3 — Streaming (the one to use at working sizes)</span></a></li><li><a class="tocitem" href="#Shift-invariance"><span>Shift invariance</span></a></li><li><a class="tocitem" href="#Directional-selectivity"><span>Directional selectivity</span></a></li><li><a class="tocitem" href="#Complex-volumes"><span>Complex volumes</span></a></li><li><a class="tocitem" href="#Decimated:-the-surfacelet-transform"><span>Decimated: the surfacelet transform</span></a></li></ul></li><li><a class="tocitem" href="../surfacelet3d_example/">3-D Surfacelets</a></li></ul></li><li><a class="tocitem" href="../../comparison/">Comparison with MATLAB</a></li><li><a class="tocitem" href="../../api/">API Reference</a></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Examples</a></li><li class="is-active"><a href>3-D NSCT</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>3-D NSCT</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/hakkelt/Contourlets.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/hakkelt/Contourlets.jl/blob/master/docs/src/examples/nsct3d_example.md" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="3-D-NSCT-Example"><a class="docs-heading-anchor" href="#3-D-NSCT-Example">3-D NSCT Example</a><a id="3-D-NSCT-Example-1"></a><a class="docs-heading-anchor-permalink" href="#3-D-NSCT-Example" title="Permalink"></a></h1><p>The 3-D Nonsubsampled Contourlet Transform decomposes a volume into a coarse residual plus <code>3 * 2^L</code> directional subbands per scale, all at the input size. Like its 2-D counterpart it is exactly equivariant under circular shifts.</p><pre><code class="language-julia hljs">using Contourlets, Random
+
+vol    = randn(Xoshiro(1), 32, 32, 32)
+params = ContourletParams3D(J = 2, L_array = [1, 2])</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">ContourletParams3D(J=2, L_array=[1, 2], order=12, …)</code></pre><hr/><h2 id="Variant-1-—-Allocating"><a class="docs-heading-anchor" href="#Variant-1-—-Allocating">Variant 1 — Allocating</a><a id="Variant-1-—-Allocating-1"></a><a class="docs-heading-anchor-permalink" href="#Variant-1-—-Allocating" title="Permalink"></a></h2><pre><code class="language-julia hljs">c   = nsct3d_forward(vol, params)
+rec = nsct3d_inverse(c, params)
+
+println(&quot;PR error: &quot;, maximum(abs, rec .- vol))
+println(&quot;coarse: &quot;, size(c.coarse))
+for j in 1:params.J
+    println(&quot;scale $j: $(length(c.subbands[j])) subbands of $(size(c.subbands[j][1]))&quot;)
+end
+@assert maximum(abs, rec .- vol) &lt; 1e-12</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">PR error: 2.220446049250313e-15
+coarse: (32, 32, 32)
+scale 1: 6 subbands of (32, 32, 32)
+scale 2: 12 subbands of (32, 32, 32)</code></pre><p>Note how fast the coefficient count grows: <code>3 * 2^L</code> subbands per scale. That is the price of shift invariance, and it is why the streaming form below exists.</p><hr/><h2 id="Variant-2-—-Workspace-(for-iterative-algorithms)"><a class="docs-heading-anchor" href="#Variant-2-—-Workspace-(for-iterative-algorithms)">Variant 2 — Workspace (for iterative algorithms)</a><a id="Variant-2-—-Workspace-(for-iterative-algorithms)-1"></a><a class="docs-heading-anchor-permalink" href="#Variant-2-—-Workspace-(for-iterative-algorithms)" title="Permalink"></a></h2><p>Build the plans once and reuse them. This is the entry point for reconstruction loops, where the transform is applied hundreds of times to the same volume size.</p><pre><code class="language-julia hljs">ws  = make_nsct3d_workspace(params, size(vol), Float64)
+out = similar(vol)
+
+for _ in 1:3
+    coeffs = nsct3d_forward(vol, params; workspace = ws)
+    nsct3d_inverse!(out, coeffs, params; workspace = ws)
+end
+println(&quot;PR error with workspace: &quot;, maximum(abs, out .- vol))
+@assert maximum(abs, out .- vol) &lt; 1e-12</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">PR error with workspace: 2.220446049250313e-15</code></pre><hr/><h2 id="Variant-3-—-Streaming-(the-one-to-use-at-working-sizes)"><a class="docs-heading-anchor" href="#Variant-3-—-Streaming-(the-one-to-use-at-working-sizes)">Variant 3 — Streaming (the one to use at working sizes)</a><a id="Variant-3-—-Streaming-(the-one-to-use-at-working-sizes)-1"></a><a class="docs-heading-anchor-permalink" href="#Variant-3-—-Streaming-(the-one-to-use-at-working-sizes)" title="Permalink"></a></h2><p>At 256³ <code>Float32</code> a single subband is 64 MB, so <code>J = 3</code> with <code>L = [2, 2, 3]</code> would materialise 49 volumes — 3.1 GB — before you do anything with them. The streaming form calls back once per subband and reuses one buffer, so it holds two volumes plus the plans.</p><pre><code class="language-julia hljs">energy = Dict{Tuple{Int, Int}, Float64}()
+
+coarse = nsct3d_forward(vol, params) do j, k, band
+    # `band` is valid only until this callback returns — copy or reduce here.
+    energy[(j, k)] = sum(abs2, band)
+end
+
+println(&quot;coarse energy:      &quot;, round(sum(abs2, coarse), digits = 2))
+println(&quot;directional energy: &quot;, round(sum(values(energy)), digits = 2))</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">coarse energy:      495.32
+directional energy: 31442.44</code></pre><p>The inverse streams too: <code>f(j, k)</code> returns each subband on demand, so a caller that keeps coefficients on disk — or regenerates them — never holds the full set.</p><pre><code class="language-julia hljs">r = nsct3d_inverse(c.coarse, params) do j, k
+    c.subbands[j][k]
+end
+println(&quot;streaming inverse PR error: &quot;, maximum(abs, r .- vol))
+@assert maximum(abs, r .- vol) &lt; 1e-12</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">streaming inverse PR error: 2.220446049250313e-15</code></pre><hr/><h2 id="Shift-invariance"><a class="docs-heading-anchor" href="#Shift-invariance">Shift invariance</a><a id="Shift-invariance-1"></a><a class="docs-heading-anchor-permalink" href="#Shift-invariance" title="Permalink"></a></h2><pre><code class="language-julia hljs">s = (3, -2, 5)
+a = nsct3d_forward(vol, params)
+b = nsct3d_forward(circshift(vol, s), params)
+
+err = maximum(
+    maximum(abs, b.subbands[j][k] .- circshift(a.subbands[j][k], s))
+        for j in 1:params.J for k in eachindex(a.subbands[j])
+)
+println(&quot;shift equivariance error: &quot;, err)
+@assert err &lt; 1e-10</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">shift equivariance error: 8.881784197001252e-16</code></pre><hr/><h2 id="Directional-selectivity"><a class="docs-heading-anchor" href="#Directional-selectivity">Directional selectivity</a><a id="Directional-selectivity-1"></a><a class="docs-heading-anchor-permalink" href="#Directional-selectivity" title="Permalink"></a></h2><p>A plane wave lands in the subband whose wedge contains its frequency vector. Here the frequency is steepest along axis 3, so the winning subband belongs to the third hourglass.</p><pre><code class="language-julia hljs">n = 32
+k = (2, 5, 13)
+wave = [
+    cospi(2 * (k[1] * (i - 1) + k[2] * (j - 1) + k[3] * (l - 1)) / n)
+        for i in 1:n, j in 1:n, l in 1:n
+]
+
+fb = make_nsdfb3d((n, n, n), Float64; levels = 4, transition = 0.5)
+e  = zeros(nsdfb3d_nsubbands(fb))
+nsdfb3d_decompose(wave, fb) do idx, band
+    e[idx] = sum(abs2, band)
+end
+
+best = argmax(e)
+hourglass, p, q = nsdfb3d_subband_triple(fb, best)
+println(&quot;winning subband $best: hourglass $hourglass, wedge ($p, $q)&quot;)
+println(&quot;its share of the energy: &quot;, round(e[best] / sum(e), digits = 3))
+@assert hourglass == 3</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">winning subband 43: hourglass 3, wedge (3, 3)
+its share of the energy: 0.742</code></pre><hr/><h2 id="Complex-volumes"><a class="docs-heading-anchor" href="#Complex-volumes">Complex volumes</a><a id="Complex-volumes-1"></a><a class="docs-heading-anchor-permalink" href="#Complex-volumes" title="Permalink"></a></h2><p>Complex data is filtered as two real passes through the identical kernel, so the transform is exactly real-linear: <code>T(x + i·y) == T(x) + i·T(y)</code>, bit for bit. That makes it a usable correctness check on your own code built on top.</p><pre><code class="language-julia hljs">xr = randn(Xoshiro(2), 16, 16, 16)
+xi = randn(Xoshiro(3), 16, 16, 16)
+p  = ContourletParams3D(J = 1, L_array = [1])
+
+cc = nsct3d_forward(complex.(xr, xi), p)
+cr = nsct3d_forward(xr, p)
+ci = nsct3d_forward(xi, p)
+
+println(
+    &quot;linearity error: &quot;,
+    maximum(abs, cc.subbands[1][1] .- complex.(cr.subbands[1][1], ci.subbands[1][1]))
+)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">linearity error: 0.0</code></pre><hr/><h2 id="Decimated:-the-surfacelet-transform"><a class="docs-heading-anchor" href="#Decimated:-the-surfacelet-transform">Decimated: the surfacelet transform</a><a id="Decimated:-the-surfacelet-transform-1"></a><a class="docs-heading-anchor-permalink" href="#Decimated:-the-surfacelet-transform" title="Permalink"></a></h2><p>The NSCT3D keeps every subband at full size. The surfacelet transform stores each one at its own reduced resolution instead, giving up shift invariance for a smaller coefficient set. Reconstruction is still exact.</p><pre><code class="language-julia hljs">sp = SurfaceletParams3D(J = 2, L_array = [1, 1])
+pl = make_surfacelet3d(sp, size(vol), Float64)
+
+sc = surfacelet3d_forward(vol, sp; plan = pl)
+sr = surfacelet3d_inverse(sc, sp; plan = pl)
+
+println(&quot;PR error: &quot;, maximum(abs, sr .- vol))
+println(&quot;redundancy: &quot;, round(surfacelet3d_redundancy(pl), digits = 2))
+println(&quot;coarse subband: &quot;, size(sc.coarse), &quot; from a &quot;, size(vol), &quot; volume&quot;)
+println(&quot;scale 1 subband: &quot;, size(sc.subbands[1][1]))
+println(&quot;scale 2 subband: &quot;, size(sc.subbands[2][1]))
+@assert maximum(abs, sr .- vol) &lt; 1e-11</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">PR error: 1.7763568394002505e-15
+redundancy: 7.67
+coarse subband: (11, 11, 11) from a (32, 32, 32) volume
+scale 1 subband: (32, 31, 32)
+scale 2 subband: (21, 21, 21)</code></pre><p>Note the sizes: coarser scales cover smaller frequency shells and are stored on correspondingly smaller grids. See <a href="../surfacelet3d_example/#surfacelet3d-example">3-D Surfacelets</a> for the transform on its own — atoms, redundancy trade-offs, directional selectivity — and <a href="../../theory3d/#theory3d">Theory — 3-D</a> for how far this decimation goes and where it stops short of the reference construction.</p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../nla_denoising/">« Approximation &amp; Denoising</a><a class="docs-footer-nextpage" href="../surfacelet3d_example/">3-D Surfacelets »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.19.0 on <span class="colophon-date" title="Tuesday 15 September 2026 05:50">Tuesday 15 September 2026</span>. Using Julia version 1.13.0.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>

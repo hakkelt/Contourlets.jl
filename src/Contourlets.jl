@@ -42,11 +42,13 @@ using Polyester: @batch
 using MultiscaleFilterBanks: MultiscaleFilterBanks,
     FilterPair, CDF97, upsample_filter,
     ThreadingPolicy, Auto, Enabled, Disabled,
-    _data_eltype, _filter_eltype, _use_threading, _clamp_idx,
+    _data_eltype, _filter_eltype, _use_threading, _n_fft_tasks, _chunk, _clamp_idx,
     _nsp_atrous_filters, _NSP_SYNTH_SCALE
 
 # ── Types (must come before filters which use them) ──────────────────────────
-include("types.jl")
+include("types/quincunx_filter_pair.jl")
+include("types/params.jl")
+include("types/coefficients.jl")
 
 # ── Filter coefficients and utilities ────────────────────────────────────────
 include("filters/q2345.jl")
@@ -54,6 +56,7 @@ include("filters/filter_utils.jl")
 
 # ── DSP primitives ────────────────────────────────────────────────────────────
 include("primitives/conv2d.jl")
+include("primitives/conv2d_sep.jl")
 include("primitives/sampling.jl")
 include("primitives/quincunx.jl")
 include("primitives/shearing.jl")
@@ -65,17 +68,22 @@ include("pyramid/tilp.jl")
 
 # ── Directional filter bank ───────────────────────────────────────────────────
 include("directional/quincunx_fb.jl")
-include("directional/directional_bank.jl")
+include("directional/bank_design.jl")
+include("directional/bank.jl")
+include("directional/bank_runner.jl")
 include("directional/dfb.jl")
 include("directional/nsdfb.jl")
 
 # ── Workspace ─────────────────────────────────────────────────────────────────
-include("workspace.jl")
+include("workspace/scratch_arena.jl")
+include("workspace/contourlet_workspace.jl")
 
 # ── Top-level transforms ──────────────────────────────────────────────────────
 include("transforms/ct.jl")
 include("transforms/nsct.jl")
+include("transforms/tilp_transforms.jl")
 include("transforms/tict.jl")
+include("transforms/stict.jl")
 
 # ── Precompilation ────────────────────────────────────────────────────────────
 include("precompile.jl")

@@ -7,7 +7,7 @@
 # Example 3.2 the 2-D analysis filters have 23 × 23 and 45 × 45 support, hence the
 # name; these are the filters Do & Vetterli (2005) use in the contourlet transform.
 # The directional filter banks evaluate that 2-D pair in closed form (see
-# `directional/directional_bank.jl`); the ladder filter `f_ladder` is all they need.
+# `directional/bank_design.jl`); the ladder filter `f_ladder` is all they need.
 #
 # `h_q`/`g_q` hold the equivalent filters of the 1-D ladder, used by the
 # shear-based two-channel bank `qfb_decompose` / `qfb_reconstruct`:

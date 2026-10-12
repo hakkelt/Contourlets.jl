@@ -1,7 +1,7 @@
 # Directional filter banks on the device.
 #
 # The DFB and NSDFB are pointwise products with precomputed equivalent filters on
-# the DFT grid, alias folds and FFTs (see `directional/directional_bank.jl`), so a
+# the DFT grid, alias folds and FFTs (see `directional/bank*.jl`), so a
 # device run needs nothing beyond the bank's masks on the device and an FFT for the
 # array type (cuFFT, rocFFT, …).  The masks are built on the host once and moved
 # here; the buffers and plans of a `_BankRunner` are allocated with `similar` from a

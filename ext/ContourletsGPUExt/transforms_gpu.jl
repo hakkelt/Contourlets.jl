@@ -21,7 +21,7 @@ the directional filter-bank stages run on the device, and the returned
 coefficients keep their arrays on the device (matching the CPU `ct_forward` to
 Float32 precision).  `ct_inverse(coeffs, params)` then reconstructs on the device too.
 """
-function ct_forward(
+function Contourlets.ct_forward(
         image::_AbstractGPUMatrix, params::ContourletParams;
         workspace::Union{Contourlets.ContourletWorkspace, Nothing} = nothing,
         threading::Contourlets.ThreadingPolicy = Contourlets.Auto()
@@ -57,7 +57,7 @@ end
 
 GPU Discrete Contourlet Transform inverse pass.
 """
-function ct_inverse(
+function Contourlets.ct_inverse(
         coeffs::ContourletCoefficients{T, <:AbstractGPUMatrix{T}},
         params::ContourletParams;
         workspace::Union{Contourlets.ContourletWorkspace, Nothing} = nothing,
@@ -88,7 +88,7 @@ end
 
 GPU Nonsubsampled Contourlet Transform forward pass (GPU pyramid + GPU NSDFB).
 """
-function nsct_forward(
+function Contourlets.nsct_forward(
         image::_AbstractGPUMatrix, params::ContourletParams;
         workspace::Union{Contourlets.ContourletWorkspace, Nothing} = nothing,
         threading::Contourlets.ThreadingPolicy = Contourlets.Auto()

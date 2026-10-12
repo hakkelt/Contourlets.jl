@@ -1,6 +1,10 @@
 # ThreadingPolicy Dispatch
 
-## Type Definitions (`src/threading.jl`)
+## Type Definitions (MultiscaleFilterBanks.jl, `src/threading.jl`)
+
+The policy types, `_use_threading`, and the FFT-loop task split
+(`_n_fft_tasks`, `_chunk`) live in the shared core and are imported in
+`src/Contourlets.jl`.
 
 ```julia
 abstract type ThreadingPolicy end

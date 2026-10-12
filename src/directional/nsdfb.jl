@@ -4,7 +4,7 @@
 # downsamplers/upsamplers in each two-channel filter bank in the DFB tree structure
 # and upsampling the filters accordingly".  By the noble identities each channel is
 # then a single filtering with the DFB's equivalent filter, so the NSDFB is the bank
-# of `directional_bank.jl` without the decimation: subband k is hₖ ⊛ x, at the
+# of `bank_design.jl` without the decimation: subband k is hₖ ⊛ x, at the
 # input's size.  Each subband occupies an angular wedge of the frequency plane.
 #
 # Without samplers the per-channel delays of the DFB serve no purpose, so the

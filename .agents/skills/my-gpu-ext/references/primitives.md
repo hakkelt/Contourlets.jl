@@ -11,7 +11,7 @@ const _AbstractGPUMatrix{T} = Union{AbstractGPUMatrix{T}, GPUSubArray{T, 2}}
 
 CPU methods use `AbstractMatrix`; GPU overloads use `_AbstractGPUMatrix`. Julia dispatch picks the more specific GPU method when given device arrays.
 
-## Existing Overloads (ext/ContourletsGPUExt/primitives_gpu.jl)
+## Existing Overloads (ext/ContourletsGPUExt/primitives_gpu.jl, QFB in qfb_gpu.jl)
 
 | Primitive | CPU signature | GPU kernel |
 |---|---|---|
@@ -24,7 +24,7 @@ CPU methods use `AbstractMatrix`; GPU overloads use `_AbstractGPUMatrix`. Julia 
 
 ## Adding a New Primitive Overload
 
-1. Write the `@kernel` function in `primitives_gpu.jl`.
+1. Write the `@kernel` function in `primitives_gpu.jl` (or `qfb_gpu.jl` for filter-bank kernels).
 2. Write the dispatch function overloading the CPU method for `_AbstractGPUMatrix`.
 3. Add the symbol to the `import Contourlets: ...` list in `ContourletsGPUExt.jl`.
 4. Add a test in `test/items/test_gpu.jl` with tag `:gpu`.

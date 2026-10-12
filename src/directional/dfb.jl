@@ -7,7 +7,7 @@
 #    quincunx fan filters of Phoong et al. (1995).  It is computed as the
 #    multichannel bank of the thesis — each channel filters with its equivalent
 #    filter and downsamples by a diagonal matrix — in the frequency domain (see
-#    `directional_bank.jl`).  The 2ˡ subbands tile the frequency plane into
+#    `bank_design.jl`).  The 2ˡ subbands tile the frequency plane into
 #    directional wedges, perfect reconstruction is exact, and each subband is
 #    equivariant to circular shifts on its own sampling lattice.
 #
@@ -35,9 +35,6 @@ end
 # Move a host bank to the array family of `ref` (identity on the host; the GPU
 # extension adds methods).
 _adapt_bank(::AbstractArray, bank::_DirectionalBank) = bank
-
-# The runner a workspace holds for this size and depth, or `nothing`.
-_workspace_runner(::Nothing, dims, l, half) = nothing
 
 # Call `f(runner)` with the workspace's runner when it has one for `x`, otherwise
 # with a freshly built one.  Each branch calls `f` on its own concrete runner type,

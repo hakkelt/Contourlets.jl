@@ -101,14 +101,20 @@ The last three are project-specific and cover invariants that are unique to this
 Contourlets/
 ├── src/                       # Package source (Julia)
 │   ├── Contourlets.jl         # Main module — all exports here
-│   ├── types.jl               # 2-D types: QuincunxFilterPair, ContourletParams, …
-│   ├── workspace.jl           # ContourletWorkspace + make_workspace
 │   ├── precompile.jl          # PrecompileTools workload
+│   ├── types/
+│   │   ├── quincunx_filter_pair.jl # QuincunxFilterPair, is_ladder
+│   │   ├── params.jl          # ContourletParams, parabolic_levels
+│   │   └── coefficients.jl    # ContourletCoefficients, NSCTCoefficients, TICTCoefficients
+│   ├── workspace/
+│   │   ├── scratch_arena.jl   # ScratchArena + task-local arena/filter cache, _scratch_like
+│   │   └── contourlet_workspace.jl # ContourletWorkspace, make_workspace, make_nsct_workspace
 │   ├── filters/
 │   │   ├── q2345.jl           # "23-45" Phoong (pkva) ladder DFB filter constants
 │   │   └── filter_utils.jl    # upsample_filter, check_pr_condition
 │   ├── primitives/
-│   │   ├── conv2d.jl          # 2-D separable convolution (direct + FFTW)
+│   │   ├── conv2d.jl          # general 2-D convolution (direct + FFTW backends)
+│   │   ├── conv2d_sep.jl      # separable 2-D convolution (conv2d_sep!)
 │   │   ├── sampling.jl        # rect up/downsampling
 │   │   ├── quincunx.jl        # quincunx lattice up/downsampling
 │   │   └── shearing.jl        # shear! / inv_shear!
@@ -118,13 +124,26 @@ Contourlets/
 │   │   ├── tilp.jl                    # translation-invariant LP masks (Eslami & Radha §III-A)
 │   ├── directional/
 │   │   ├── quincunx_fb.jl     # 2-channel shear-based quincunx filter bank
-│   │   ├── directional_bank.jl # DFB equivalent filters on the DFT grid (Do's thesis §3.3)
+│   │   ├── bank_design.jl     # DFB equivalent filters in closed form (Do's thesis §3.3)
+│   │   ├── bank.jl            # _DirectionalBank on the DFT grid, quincunx storage
+│   │   ├── bank_runner.jl     # _BankRunner: FFT plans, alias fold, analyze/synthesize
 │   │   ├── dfb.jl             # L-level DFB (multichannel bank, eq. 3.23)
 │   │   ├── nsdfb.jl           # Non-subsampled DFB (same filters, no decimation)
 │   └── transforms/
 │       ├── ct.jl              # ct_forward / ct_inverse / ct_forward! / ct_inverse!
 │       ├── nsct.jl            # nsct_forward / nsct_inverse / ! variants
-│       ├── tict.jl            # tict_/stict_forward / inverse / ! variants, workspaces
+│       ├── tilp_transforms.jl # TICT/STICT shared: half trees, checks, coefficient containers
+│       ├── tict.jl            # TICTWorkspace, tict_forward / inverse / ! variants
+│       ├── stict.jl           # STICTWorkspace, stict_forward / inverse / ! variants
+├── ext/
+│   ├── ContourletsGPUExt.jl   # GPU extension module (KernelAbstractions / GPUArrays)
+│   ├── ContourletsGPUExt/
+│   │   ├── utils_gpu.jl       # backend lookup, host→device transfer
+│   │   ├── primitives_gpu.jl  # conv2d_sep!, shear, rect/quincunx sampling kernels
+│   │   ├── qfb_gpu.jl         # quincunx filter bank kernels, qfb_decompose/reconstruct
+│   │   ├── bank_gpu.jl        # moving directional banks to the device
+│   │   └── transforms_gpu.jl  # CT/NSCT entry points, Adapt for coefficient sets
+│   └── ContourletsCUDAExt.jl  # CUDA graph capture for the workspace paths
 ├── test/
 │   ├── runtests.jl            # TestItemRunner entry point
 │   └── items/
@@ -209,7 +228,7 @@ Conventions that are non-obvious or specific to this package's API contract:
   JULIA_LOAD_PATH="@relint:@stdlib" julia --startup-file=no scripts/relint.jl src/
   ```
   `scripts/relint.jl` suppresses rules that are false-positives for this library
-  (`@inbounds`, `return type annotation`, `in`/`tin`, `unsafe-logging`).
+  (`@inbounds`, `return type annotation`, `in`/`tin`, `haskey`/`thaskey`, `unsafe-logging`).
   See `scripts/README.md` for one-time setup instructions.
 
 ---

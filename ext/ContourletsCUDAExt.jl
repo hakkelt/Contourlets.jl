@@ -22,10 +22,19 @@ module ContourletsCUDAExt
 # replay with a single `CUDA.launch(exec)`.  On mismatch (different pre-allocated
 # buffers), re-capture.  CPU-image inputs skip graph capture entirely.
 #
-# Capture pays off here because it replaces ~300 launches of small kernels,
-# where launch overhead dominates.  (The volume transforms, now in
-# Surfacelets.jl, are deliberately not captured: they are a few full-volume
-# FFTs, and their streaming callbacks run host code.)
+# Capture pays off here because the DFB is many small FFTs and broadcasts, where
+# launch overhead dominates: on an A100 a J = 3–4 Float32 forward takes 0.84 ms
+# captured against 1.16 ms eager at 256², 1.44 against 2.59 ms at 512² and 1.97
+# against 2.67 ms at 1024² (the inverse alike).
+#
+# Nothing in the captured call may allocate: an allocation inside `CUDA.capture`
+# becomes graph memory, which the pool later fails to free
+# (`CUDA_ERROR_INVALID_VALUE` from `cuMemFreeAsync` at GC).  That is why the inverse
+# FFTs are unnormalised `plan_bfft!` plans (a normalised plan scales through a
+# device scalar) and the filters come from a prebuilt cache.
+#
+# (The volume transforms, now in Surfacelets.jl, are deliberately not captured:
+# they are a few full-volume FFTs, and their streaming callbacks run host code.)
 
 using Contourlets: Contourlets, ContourletWorkspace, ContourletCoefficients, ThreadingPolicy, Auto
 using CUDA: CUDA

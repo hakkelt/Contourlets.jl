@@ -105,12 +105,12 @@ end
 # 0, 2, 4, … of an even column and rows −1, 1, 3, … of an odd one (0-based), i.e.
 # y[r, c] = v[2r − (c mod 2), c].
 
-function _quincunx_pack!(y::AbstractMatrix, V::AbstractMatrix)
+function _quincunx_pack!(y::AbstractMatrix, V::AbstractMatrix, s::Real)
     n1 = size(V, 1)
     m = n1 ÷ 2
-    _store!(view(y, :, 1:2:size(y, 2)), view(V, 1:2:n1, 1:2:size(V, 2)))
-    _store!(view(y, 2:m, 2:2:size(y, 2)), view(V, 2:2:(n1 - 2), 2:2:size(V, 2)))
-    _store!(view(y, 1:1, 2:2:size(y, 2)), view(V, n1:n1, 2:2:size(V, 2)))
+    _store!(view(y, :, 1:2:size(y, 2)), view(V, 1:2:n1, 1:2:size(V, 2)), s)
+    _store!(view(y, 2:m, 2:2:size(y, 2)), view(V, 2:2:(n1 - 2), 2:2:size(V, 2)), s)
+    _store!(view(y, 1:1, 2:2:size(y, 2)), view(V, n1:n1, 2:2:size(V, 2)), s)
     return y
 end
 
@@ -124,6 +124,13 @@ function _quincunx_unpack!(V::AbstractMatrix, y::AbstractMatrix)
     return V
 end
 
-# Write a complex intermediate into a subband of the data type.
-_store!(y::AbstractArray{<:Real}, Y::AbstractArray) = (y .= real.(Y); y)
-_store!(y::AbstractArray, Y::AbstractArray) = (y .= Y; y)
+# Write a complex intermediate, scaled by `s`, into a subband of the data type.
+# The inverse FFTs are unnormalised (`plan_bfft!`) and `s` is their `1/N`: a scalar
+# argument of the broadcast, where a normalised plan would scale in a separate
+# pass through a device scalar — which CUDA graph capture turns into graph
+# memory that the pool then fails to free.
+_store!(y::AbstractArray{<:Real}, Y::AbstractArray, s::Real) = (y .= real.(Y) .* s; y)
+_store!(y::AbstractArray, Y::AbstractArray, s::Real) = (y .= Y .* s; y)
+
+# `1/N` of an unnormalised inverse FFT over the whole of `Y`.
+_bwd_scale(Y::AbstractArray) = inv(real(eltype(Y))(length(Y)))

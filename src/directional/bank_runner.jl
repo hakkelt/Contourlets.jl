@@ -16,10 +16,10 @@ struct _BankRunner{B <: _DirectionalBank, C <: AbstractMatrix, P, Q}
     X::C                     # full-size spectrum (or rfft half-plane, nonsubsampled real)
     Z::C                     # full-size per-channel scratch
     pfwd::P                  # in-place forward FFT on full-size buffers (decimated)
-    pinv::Q                  # in-place inverse FFT on full-size buffers (decimated)
+    pbwd::Q                  # in-place unnormalised inverse FFT on full-size buffers
     sub::Vector{C}           # one buffer per distinct decimated subband size
     psub_fwd::Vector{P}
-    psub_inv::Vector{Q}
+    psub_bwd::Vector{Q}
     subidx::Vector{Int}      # channel → index into `sub` (0: quincunx)
 end
 
@@ -42,19 +42,20 @@ function _bank_runner(bank::_DirectionalBank, ref::AbstractArray{<:Number}; flag
     Tc = complex(eltype(bank.ana[1]))
     X = fill!(similar(ref, Tc, bank.dims), zero(Tc))
     Z = similar(X)
-    pfwd, pinv = _inplace_plans(X, flags)
+    pfwd, pbwd = _inplace_plans(X, flags)
     sizes = _subband_sizes(bank)
     distinct = unique(s for (s, smp) in zip(sizes, bank.sampling) if smp != (0, 0))
     sub = [fill!(similar(ref, Tc, s), zero(Tc)) for s in distinct]
     plans = [_inplace_plans(S, flags) for S in sub]
     subidx = Int[smp == (0, 0) ? 0 : something(findfirst(==(s), distinct), 0) for (s, smp) in zip(sizes, bank.sampling)]
-    P, Q = typeof(pfwd), typeof(pinv)
-    return _BankRunner(bank, X, Z, pfwd, pinv, sub, P[first(p) for p in plans], Q[last(p) for p in plans], subidx)
+    P, Q = typeof(pfwd), typeof(pbwd)
+    return _BankRunner(bank, X, Z, pfwd, pbwd, sub, P[first(p) for p in plans], Q[last(p) for p in plans], subidx)
 end
 
-# In-place forward/inverse FFT plans for `A` (FFTW flags only apply to host arrays).
-_inplace_plans(A::Array, flags) = (plan_fft!(A; flags = flags), plan_ifft!(A; flags = flags))
-_inplace_plans(A::AbstractArray, flags) = (plan_fft!(A), plan_ifft!(A))
+# In-place forward and unnormalised inverse FFT plans for `A` (FFTW flags only
+# apply to host arrays).  The `1/N` goes to `_store!`.
+_inplace_plans(A::Array, flags) = (plan_fft!(A; flags = flags), plan_bfft!(A; flags = flags))
+_inplace_plans(A::AbstractArray, flags) = (plan_fft!(A), plan_bfft!(A))
 
 # The delay phase across the alias blocks.  On block (a, b) of the s₁ × s₂ tiling
 # of the full grid, with m = n/s rows and columns per block,
@@ -123,13 +124,13 @@ function _bank_analyze_spectrum!(out::AbstractVector{<:AbstractMatrix}, r::_Bank
         i = r.subidx[k]
         if i == 0
             r.Z .= b.ana[k] .* r.X .* b.phase_r[k] .* transpose(b.phase_c[k])
-            r.pinv * r.Z
-            _quincunx_pack!(out[k], r.Z)
+            r.pbwd * r.Z
+            _quincunx_pack!(out[k], r.Z, _bwd_scale(r.Z))
         else
             Y = r.sub[i]
             _fold!(Y, b.ana[k], r.X, b.phase_r[k], b.phase_c[k], b.delay[k], b.sampling[k])
-            r.psub_inv[i] * Y
-            _store!(out[k], Y)
+            r.psub_bwd[i] * Y
+            _store!(out[k], Y, _bwd_scale(Y))
         end
     end
     return out
@@ -142,8 +143,8 @@ Decimated directional synthesis: the inverse of [`_bank_analyze!`](@ref).
 """
 function _bank_synthesize!(x::AbstractMatrix, subbands::AbstractVector{<:AbstractMatrix}, r::_BankRunner)
     _bank_synthesize_spectrum!(subbands, r)
-    r.pinv * r.X
-    return _store!(x, r.X)
+    r.pbwd * r.X
+    return _store!(x, r.X, _bwd_scale(r.X))
 end
 
 # Synthesis up to the full spectrum, which is left in `r.X`.

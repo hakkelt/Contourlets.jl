@@ -19,7 +19,7 @@ struct STICTWorkspace{Td <: Number, Tf <: AbstractFloat, C <: AbstractMatrix{Com
     X::C                                        # full spectrum / synthesis accumulator
     Z::C                                        # scratch
     pfwd::P                                     # in-place FFT plans on X and Z
-    pinv::Q
+    pbwd::Q                                     # (inverse unnormalised)
 end
 
 Base.eltype(::STICTWorkspace{Td}) where {Td} = Td
@@ -51,9 +51,9 @@ function make_stict_workspace(
     end
     runners = [Union{Nothing, R}[l == 0 ? nothing : runner(l, h) for h in _TILP_HALVES] for l in p.L_array]
     X = fill!(similar(ref, Complex{Tf}, image_size), zero(Complex{Tf}))
-    pfwd, pinv = _inplace_plans(X, FFTW.ESTIMATE)
-    return STICTWorkspace{Td, Tf, typeof(X), R, typeof(pfwd), typeof(pinv)}(
-        p, image_size, masks, runners, X, similar(X), pfwd, pinv
+    pfwd, pbwd = _inplace_plans(X, FFTW.ESTIMATE)
+    return STICTWorkspace{Td, Tf, typeof(X), R, typeof(pfwd), typeof(pbwd)}(
+        p, image_size, masks, runners, X, similar(X), pfwd, pbwd
     )
 end
 
@@ -68,16 +68,16 @@ function _stict_forward_ws!(coeffs::TICTCoefficients, x::AbstractMatrix, ws::STI
         r = ws.runners[i][c]
         if r === nothing
             ws.Z .= m.ana[i][c] .* ws.X
-            ws.pinv * ws.Z
-            _store!(out[1], ws.Z)
+            ws.pbwd * ws.Z
+            _store!(out[1], ws.Z, _bwd_scale(ws.Z))
         else
             r.X .= m.ana[i][c] .* ws.X
             _bank_analyze_spectrum!(out, r)
         end
     end
     ws.Z .= m.coarse_ana .* ws.X
-    ws.pinv * ws.Z
-    _store!(coeffs.coarse, ws.Z)
+    ws.pbwd * ws.Z
+    _store!(coeffs.coarse, ws.Z, _bwd_scale(ws.Z))
     return coeffs
 end
 
@@ -99,8 +99,8 @@ function _stict_inverse_ws!(x::AbstractMatrix, coeffs::TICTCoefficients, ws::STI
     ws.Z .= coeffs.coarse
     ws.pfwd * ws.Z
     ws.X .+= m.coarse_syn .* ws.Z
-    ws.pinv * ws.X
-    return _store!(x, ws.X)
+    ws.pbwd * ws.X
+    return _store!(x, ws.X, _bwd_scale(ws.X))
 end
 
 """

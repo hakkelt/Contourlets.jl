@@ -1,7 +1,8 @@
 # Contourlets.jl
 
 *Directional multiresolution transforms for images in Julia: the Contourlet
-Transform and the Nonsubsampled Contourlet Transform.*
+Transform, the Nonsubsampled Contourlet Transform, and the translation-invariant
+and semi-translation-invariant contourlet transforms.*
 
 ## Installation
 
@@ -65,7 +66,7 @@ GPU when a KernelAbstractions backend is loaded. Both are covered in
 
 ## Where to go next
 
-- [2-D transforms](@ref guide2d) — CT, NSCT, the four API variants, and the
+- [2-D transforms](@ref guide2d) — CT, NSCT, TICT, STICT, the four API variants, and the
   pyramid and filter-bank stages on their own.
 - [Denoising and approximation](@ref denoising) — worked comparisons against a
   separable wavelet.

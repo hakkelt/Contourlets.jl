@@ -22,6 +22,14 @@ nsct_forward
 nsct_forward!
 nsct_inverse
 nsct_inverse!
+tict_forward
+tict_forward!
+tict_inverse
+tict_inverse!
+stict_forward
+stict_forward!
+stict_inverse
+stict_inverse!
 ```
 
 ## Types
@@ -30,7 +38,10 @@ nsct_inverse!
 ContourletParams
 ContourletCoefficients
 NSCTCoefficients
+TICTCoefficients
 ContourletWorkspace
+TICTWorkspace
+STICTWorkspace
 ```
 
 
@@ -50,6 +61,10 @@ make_workspace
 make_nsct_workspace
 similar_coefficients
 similar_nsct_coefficients
+make_tict_workspace
+make_stict_workspace
+similar_tict_coefficients
+similar_stict_coefficients
 estimate_workspace_size
 ```
 

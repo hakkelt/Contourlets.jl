@@ -7,6 +7,10 @@
 #
 # Reconstruction is always exact regardless of filter choice:
 #   rec = bandpass + prediction = (image − prediction) + prediction = image
+#
+# Reference: P. J. Burt & E. H. Adelson, "The Laplacian pyramid as a compact image
+# code", IEEE Trans. Commun. 31(4), 1983; its use as the multiscale stage of the
+# contourlet transform: Do & Vetterli, IEEE TIP 14(12), 2005.
 
 """
     lp_decompose(image, fp::FilterPair) -> (coarse, bandpass)

@@ -7,9 +7,10 @@
 [![JET](https://img.shields.io/badge/%F0%9F%9B%A9%EF%B8%8F_tested_with-JET.jl-233f9a)](https://github.com/aviatesk/JET.jl)
 [![Runic](https://img.shields.io/badge/code%20style-runic-blue.svg)](https://github.com/fredrikekre/Runic.jl)
 
-A Julia package implementing the Discrete Contourlet Transform (CT) and the
-Nonsubsampled Contourlet Transform (NSCT) via a Pyramid Directional Filter Bank
-(PDFB).
+A Julia package implementing the Discrete Contourlet Transform (CT), the
+Nonsubsampled Contourlet Transform (NSCT) and the translation-invariant (TICT)
+and semi-translation-invariant (STICT) contourlet transforms via a Pyramid
+Directional Filter Bank (PDFB).
 
 | Contourlet frequency tiling | NSCT denoising vs. wavelets |
 |:---:|:---:|
@@ -24,6 +25,9 @@ Nonsubsampled Contourlet Transform (NSCT) via a Pyramid Directional Filter Bank
 - **CT**: `ct_forward` / `ct_inverse` — nearly critically sampled, O(N) complexity
 - **NSCT**: `nsct_forward` / `nsct_inverse` — invariant under circular shifts via
   à trous upsampling
+- **TICT / STICT**: `tict_forward` / `stict_forward` (Eslami & Radha 2006) — a
+  translation-invariant Laplacian pyramid with nonsubsampled or critically
+  sampled directional filter banks
 - **Workspace API**: reuse preallocated buffers across iterations with
   `make_workspace` and the `workspace=ws` kwarg on both `ct_forward!` and `ct_forward`
 - Parabolic scaling utility `parabolic_levels` for optimal direction count per scale
@@ -84,13 +88,22 @@ run `julia --project=. dev/bootstrap.jl` once instead.
 
 ## Acknowledgments
 
-The directional filter bank and its "pkva" ladder filters are independent Julia
-reimplementations of algorithms from the BSD-licensed
-[MATLAB Contourlet Toolbox](https://www.mathworks.com/matlabcentral/fileexchange/8837-contourlet-toolbox)
-(© Minh N. Do) and
+The transforms are implemented from the papers that introduced them: the
+contourlet transform of Do and Vetterli (2005), the nonsubsampled contourlet
+transform of da Cunha, Zhou and Do (2006), the translation-invariant and
+semi-translation-invariant contourlet transforms of Eslami and Radha (2006), the
+directional filter bank of
+Bamberger and Smith (1992) as formulated in Do's thesis (2001), the quincunx
+filters of Phoong, Kim, Vaidyanathan and Ansari (1995), and the Laplacian pyramid
+of Burt and Adelson (1983).  The [Theory](https://hakkelt.github.io/Contourlets.jl/dev/theory/)
+page gives the full references.
+
+The authors' MATLAB toolboxes —
+[Contourlet Toolbox](https://www.mathworks.com/matlabcentral/fileexchange/8837-contourlet-toolbox)
+(GPL) and
 [Nonsubsampled Contourlet Toolbox](https://www.mathworks.com/matlabcentral/fileexchange/10049-nonsubsampled-contourlet-toolbox)
-(© A. L. da Cunha, J. Zhou & M. N. Do).  No source code from those toolboxes is
-vendored here; see [`LICENSE`](LICENSE) for the retained attribution.
+(no licence stated) — served as black-box references for validation and
+benchmarks only; no code is derived from them.  See [`LICENSE`](LICENSE).
 
 ## Disclaimer
 

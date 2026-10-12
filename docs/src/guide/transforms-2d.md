@@ -1,19 +1,20 @@
 # [2-D transforms](@id guide2d)
 
-Contourlets.jl offers two 2-D transforms over the same building blocks — a
-Laplacian pyramid followed by a directional filter bank:
+Contourlets.jl offers four 2-D transforms over the same building blocks — a
+multiscale pyramid followed by a directional filter bank:
 
-| | [`ct_forward`](@ref) (CT) | [`nsct_forward`](@ref) (NSCT) |
-|---|---|---|
-| Sampling | critically sampled | no downsampling anywhere |
-| Shift invariance | no | exact, under circular shifts |
-| Redundancy | ≈ 4/3 | `1 + Σ_j 2^{L_j}` |
-| Cost | `O(N)` | `O(N log N)` (FFT-based with a workspace) |
-| Typical use | compression, M-term approximation | denoising, feature extraction |
+| | [`ct_forward`](@ref) (CT) | [`nsct_forward`](@ref) (NSCT) | [`tict_forward`](@ref) (TICT) | [`stict_forward`](@ref) (STICT) |
+|---|---|---|---|---|
+| Pyramid | Laplacian | nonsubsampled | translation-invariant Laplacian | translation-invariant Laplacian |
+| Directional stage | decimated | nonsubsampled | nonsubsampled | decimated |
+| Shift invariance | no | exact | exact | pyramid only |
+| Redundancy | ≈ 4/3 | `1 + Σ_j 2^{L_j}` | `1 + 2J + 3 Σ_j 2^{L_j}` | `1 + 4J` |
+| Typical use | compression, M-term approximation | denoising, feature extraction | denoising | denoising at low redundancy |
 
-Both return a [`ContourletCoefficients`](@ref): a `coarse` low-pass residual
-plus `2^L_array[j]` directional subbands at every scale `j`, ordered by angle —
-subband `k` covers the frequency wedge centred at ``\pi(k-1)/2^{L_j}``. For
+The CT and NSCT return a [`ContourletCoefficients`](@ref) / [`NSCTCoefficients`](@ref):
+a `coarse` low-pass residual plus `2^L_array[j]` directional subbands at every
+scale `j`, ordered by angle.  The TICT and STICT, described [below](@ref guide2d-tict),
+return a [`TICTCoefficients`](@ref) with four channels per scale.  For
 volumes, see [Surfacelets.jl](https://github.com/hakkelt/Surfacelets.jl); for the underlying filter banks,
 [Theory](@ref theory).
 
@@ -49,9 +50,9 @@ println("PR error:           ", maximum(abs, rec .- img))
 @assert maximum(abs, rec .- img) < 1e-12
 ```
 
-Perfect reconstruction is *structural*: the directional stage is the Phoong et
-al. (1995) lifting ladder, which inverts step by step, so the residual sits at
-the round-off floor for any lifting filter and any boundary handling.
+Perfect reconstruction is *structural*: the quincunx filters of Phoong et al.
+(1995) satisfy the perfect-reconstruction conditions for any ladder filter, so
+the residual sits at the round-off floor at every directional depth.
 
 Every subband is critically sampled, so finer scales live on smaller grids. Each
 panel below is drawn on its own symmetric grey scale (mid-grey = 0, clipped at
@@ -125,6 +126,58 @@ savefig("nsct_coeffs.png"); nothing # hide
 
 ![](nsct_coeffs.png)
 
+## [Translation-invariant contourlets: TICT and STICT](@id guide2d-tict)
+
+Eslami & Radha (2006) make the contourlet transform translation invariant the
+other way round from the NSCT: they keep the Laplacian pyramid's filters and take
+*all shifts* of it, which gives the translation-invariant Laplacian pyramid
+(TILP).  Each TILP level has four full-size highpass channels — the four
+polyphase components of the pyramid's detail image, for every position of the
+sampling lattice — instead of the NSCT's one.  A directional filter bank then
+splits every channel:
+
+- [`tict_forward`](@ref) uses the nonsubsampled DFB: the whole transform is
+  translation invariant.
+- [`stict_forward`](@ref) uses the critically sampled DFB: only the pyramid is
+  translation invariant, and the redundancy drops to `4J + 1`.
+
+Channels 1 and 4 get the full directional tree; channels 2 and 3 pass mostly row
+and mostly column frequencies, so they get half trees that split only that fan
+(see [Theory](@ref theory-tict)).
+
+```@example guide2d
+ti_params = ContourletParams(J = 2, L_array = [3, 2])
+
+ti  = tict_forward(img, ti_params)
+sti = stict_forward(img, ti_params)
+
+subbands(c) = sum(length, c.subbands[j][ch] for j in 1:ti_params.J for ch in 1:4)
+redundancy(c) = (sum(length, Iterators.flatten(Iterators.flatten(c.subbands))) +
+                 length(c.coarse)) / length(img)
+
+println("TICT:  ", subbands(ti), " subbands, redundancy ", redundancy(ti))
+println("STICT: ", subbands(sti), " subbands, redundancy ", redundancy(sti))
+println("PR errors: ", maximum(abs, tict_inverse(ti, ti_params) .- img), ", ",
+    maximum(abs, stict_inverse(sti, ti_params) .- img))
+```
+
+The coefficients are indexed `c.subbands[scale][channel][direction]`.  Like the
+NSCT, the TICT commutes with circular shifts exactly:
+
+```@example guide2d
+ti_shifted = tict_forward(circshift(img, shift), ti_params)
+err = maximum(
+    maximum(abs, ti_shifted.subbands[j][ch][d] .- circshift(ti.subbands[j][ch][d], shift))
+        for j in 1:ti_params.J for ch in 1:4 for d in eachindex(ti.subbands[j][ch])
+)
+println("shift equivariance error: ", err)
+@assert err < 1e-10
+```
+
+Both transforms are FFT-based and have workspaces —
+[`make_tict_workspace`](@ref), [`make_stict_workspace`](@ref) — with which the
+`!` forms allocate nothing.
+
 ## Choosing an API variant
 
 Every transform comes in four forms. They compute the same thing; they differ
@@ -165,10 +218,11 @@ precomputed filter spectra, which turns each call into an FFT, a pointwise
 multiply and an inverse FFT. See [Performance](@ref performance) for what that
 buys.
 
-!!! note "FFT threading is fixed at construction"
-    The workspace's FFT plans are bound to the thread count chosen by the
-    `threading` kwarg of `make_nsct_workspace`. Passing a conflicting
-    `threading` at call time warns once; build a new workspace to change it.
+!!! note "Threading"
+    A host NSCT or TICT workspace keeps one FFT buffer per Julia thread, and with
+    threading on (`threading = Enabled()`, or the default for complex data) the
+    `!` transforms split their independent subband FFTs between the threads.  The
+    choice is made per call.
 
 ## Using the stages on their own
 

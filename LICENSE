@@ -22,27 +22,32 @@ SOFTWARE.
 
 --------------------------------------------------------------------------------
 
-THIRD-PARTY ATTRIBUTION
+THIRD-PARTY NOTICES
 
-Parts of this package are independent Julia reimplementations of algorithms from
-the following BSD-licensed MATLAB toolboxes.  No source code from these toolboxes
-is vendored into this repository; the directional filter bank (DFB) and
-nonsubsampled DFB, the "pkva" ladder filters, and the resampling / separable
-filtering helpers are ported from their published algorithms and function
-descriptions, so the original copyright and disclaimer are retained below as
-required by the BSD license.
+This package contains no source code from other software.  Its algorithms are
+implemented from the published literature; each source file names the papers it
+follows, and docs/src/theory.md lists them in full.  The principal ones are:
 
-* MATLAB Contourlet Toolbox
-  Copyright (c) Minh N. Do.
-  https://www.mathworks.com/matlabcentral/fileexchange/8837-contourlet-toolbox
+* Laplacian pyramid: P. J. Burt and E. H. Adelson, IEEE Trans. Commun. 31(4),
+  1983.
+* CDF 9/7 filters: A. Cohen, I. Daubechies and J.-C. Feauveau, Commun. Pure Appl.
+  Math. 45(5), 1992.
+* Directional filter bank: R. H. Bamberger and M. J. T. Smith, IEEE Trans. Signal
+  Process. 40(4), 1992; M. N. Do, PhD thesis, EPFL, 2001.
+* "23-45" (pkva) quincunx filters: S.-M. Phoong, C. W. Kim, P. P. Vaidyanathan
+  and R. Ansari, IEEE Trans. Signal Process. 43(3), 1995.
+* Contourlet transform: M. N. Do and M. Vetterli, IEEE Trans. Image Process.
+  14(12), 2005.
+* Nonsubsampled contourlet transform: A. L. da Cunha, J. Zhou and M. N. Do, IEEE
+  Trans. Image Process. 15(10), 2006.
+* Translation-invariant and semi-translation-invariant contourlet transforms:
+  R. Eslami and H. Radha, IEEE Trans. Image Process. 15(11), 2006; the
+  Laplacian pyramid as an oversampled filter bank: M. N. Do and M. Vetterli,
+  IEEE Trans. Signal Process. 51(9), 2003.
 
-* MATLAB Nonsubsampled Contourlet Toolbox
-  Copyright (c) Arthur L. da Cunha, Jianping Zhou, and Minh N. Do.
-  https://www.mathworks.com/matlabcentral/fileexchange/10049-nonsubsampled-contourlet-toolbox
-
-Both toolboxes are distributed under the BSD license:
-
-  Redistribution and use in source and binary forms, with or without
-  modification, are permitted provided that the above copyright notice and this
-  list of conditions are retained.  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT
-  HOLDERS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES ARE DISCLAIMED.
+The MATLAB Contourlet Toolbox (M. N. Do et al.; GNU General Public License) and
+the Nonsubsampled Contourlet Toolbox (A. L. da Cunha, J. Zhou and M. N. Do; no
+licence stated) are neither included in nor derived into this package.  They are
+used only as black-box reference programs: the scripts under matlab/ run them to
+compare outputs and timings, and test/reference/toolbox_dfb_l12.bin holds output
+produced by running the Contourlet Toolbox (see test/reference/README.md).

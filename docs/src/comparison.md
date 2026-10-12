@@ -2,11 +2,13 @@
 
 This page compares Contourlets.jl against the two reference implementations:
 
-- **MATLAB Contourlet Toolbox** (Do & Vetterli, 2005) — [FileExchange 8837](https://www.mathworks.com/matlabcentral/fileexchange/8837-contourlet-toolbox), BSD license
-- **MATLAB Nonsubsampled Contourlet Toolbox** (da Cunha et al., 2006) — [FileExchange 10049](https://www.mathworks.com/matlabcentral/fileexchange/10049-nonsubsampled-contourlet-toolbox), BSD license
+- **MATLAB Contourlet Toolbox** (Do & Vetterli, 2005) — [FileExchange 8837](https://www.mathworks.com/matlabcentral/fileexchange/8837-contourlet-toolbox), GNU GPL (per its `COPYING`)
+- **MATLAB Nonsubsampled Contourlet Toolbox** (da Cunha et al., 2006) — [FileExchange 10049](https://www.mathworks.com/matlabcentral/fileexchange/10049-nonsubsampled-contourlet-toolbox), no licence stated
 
-These toolboxes are BSD-licensed and are therefore **not** vendored into this
-MIT-licensed repository.  Clone them into `matlab/` as described in
+Neither toolbox is included in this MIT-licensed repository, and no code here is
+derived from them: the package implements the papers (see [Theory](@ref theory)),
+and the toolboxes are run only as black boxes, to compare outputs and timings.
+Clone them into `matlab/` as described in
 [`matlab/README.md`](https://github.com/hakkelt/Contourlets.jl/blob/master/matlab/README.md)
 to reproduce the validation and benchmarks below.
 
@@ -21,9 +23,10 @@ against SurfBox there.
 | Feature | Contourlets.jl | MATLAB CT Toolbox | MATLAB NSCT Toolbox |
 |---------|---------------|------------------|-------------------|
 | Language | Julia 1.10+ | MATLAB R2006+ | MATLAB R2007+ |
-| Licence | MIT | BSD | BSD |
+| Licence | MIT | GPL | none stated |
 | Discrete CT (`ct_forward/inverse`) | ✅ | ✅ (`pdfbdec/pdfbrec`) | ✅ |
 | Nonsubsampled CT (`nsct_forward/inverse`) | ✅ | ❌ | ✅ (`nsctdec/nsctrec`) |
+| Translation-invariant CT, TICT / STICT (Eslami & Radha 2006) | ✅ | ❌ | ❌ |
 | Laplacian Pyramid (standalone) | ✅ | ✅ (`lpdec/lprec`) | ✅ |
 | Directional Filter Bank (standalone) | ✅ | ✅ (`fbdec/fbrec`) | ✅ |
 | Preallocated-buffer workspace API | ✅ | ❌ | ❌ |
@@ -71,17 +74,29 @@ values below are from the cross-validation run described under
 | CT, `J = 2` | 5.6e-15 … 6.0e-15 | 6.8e-14 … 8.4e-14 |
 | NSCT, `J = 2` | 8.9e-15 … 1.1e-14 | 5.8e-15 … 7.5e-15 |
 
-The NSDFB is the one stage where the two implementations use the same filters,
-so its subbands can be compared directly rather than only through PR: they agree
-to 7.5e-15. The CT and NSCT use different pyramid filters by design — this
-package uses the JPEG 2000-normalised separable CDF 9/7 à trous pyramid, the
-toolboxes a differently scaled `'9-7'` and a non-separable diamond pyramid — so
-their coefficients differ and only PR is comparable.
+The DFB uses the same filters as the toolbox and agrees with its `dfbdec_l` to
+1e-15 for `L ≤ 2` (a regression test locks this in).  From `L = 3` the two
+differ.  This package computes the multichannel bank of Do's thesis
+(eq. 3.23), whose subbands commute with input shifts on their own sampling
+lattices; the toolbox's subbands do not, not even for an `(8, 8)` shift that lies
+on every lattice.  The NSDFB here is the DFB's equivalent filters without
+decimation, with the decimation delays dropped (da Cunha et al. 2006).  Its
+subbands match the DFB's subband for subband.  They differ from `nsdfbdec`'s by
+a shift and a sign for `L ≤ 2`, and in the wedges themselves from `L = 3`.
+`nsdfbdec` does not resolve every wedge from `L = 4` on: in a plane wave sweeping
+180°, 8 of its 16 subbands (16 of 32 at `L = 5`) never carry the most energy,
+while here every subband does, except the two at the fan boundary at `L = 5`
+(see [Theory](@ref theory)).  The CT
+and NSCT also use different pyramid filters by design: this package uses the
+JPEG 2000-normalised separable CDF 9/7 à trous pyramid, the toolboxes a
+differently scaled `'9-7'` and a non-separable diamond pyramid.  So only PR is
+comparable there.
 
-Perfect reconstruction in the directional stage is *structural*: the Phoong et
-al. (1995) two-step ladder network inverts step by step for any lifting filter,
-independent of boundary handling. That is why the residuals are at the
-floating-point floor rather than merely small.
+Perfect reconstruction in the directional stage is *structural*.  The quincunx
+pair of Phoong et al. (1995) satisfies the perfect-reconstruction conditions for
+any ladder filter, so the equivalent filters satisfy ``\sum_k G_k H_k = 2^L``
+identically.  That is why the residuals are at the floating-point floor rather
+than merely small.
 
 ---
 
@@ -177,23 +192,32 @@ errors and timings for both. For Julia-only benchmarks use `benchmark/benchmarks
    by the binary tree traversal.  Contourlets.jl uses the same ordering (`subbands[j][k]`
    where `k` runs left-to-right in the binary tree).
 
-3. **Boundary conditions**: Both use symmetric (reflect) boundary extension by default.
-   Contourlets.jl additionally supports `:periodic` and `:zero` via the `boundary` keyword.
+3. **Boundary conditions**: The Laplacian pyramid uses symmetric (reflect)
+   extension by default (`:periodic` and `:zero` are available through the
+   `boundary` keyword).  The DFB is periodic: it filters on the DFT grid.
 
-4. **Workspace API**: The MATLAB toolbox allocates on every call.  Contourlets.jl
-   provides `ct_forward!(coeffs, img, params; workspace=ws)` which reuses
-   preallocated buffers for the pyramid stage (the directional stage still
-   allocates its subband tree when no workspace is supplied).
+4. **DFB from `L = 3`**: the toolbox's deeper tree is not shift-equivariant on
+   its sampling lattices, while this package computes the thesis' multichannel
+   bank exactly, so the coefficients differ (see Numerical accuracy above).
+
+5. **Workspace API**: The MATLAB toolbox allocates on every call.  Contourlets.jl
+   provides `ct_forward!(coeffs, img, params; workspace=ws)`, which reuses the
+   pyramid buffers and the directional stage's precomputed filters, FFT buffers
+   and plans, allocating nothing per call.
 
 ### Differences from the MATLAB NSCT toolbox
 
 1. **À trous implementation**: Both use zero-insertion filter upsampling
    (`upsample_filter`) for the à trous scheme.
 
-2. **NSDFB tree level**: The `tree_level` argument in `nsdfb_decompose` corresponds to the
-   recursion depth in the MATLAB toolbox's internal `nsdfbdec` helper.
+2. **Coarse-scale directional filters**: at pyramid level `j ≥ 3` the NSDFB
+   filters are upsampled by ``2^{j-2} I`` (the `tree_level` argument of
+   `nsdfb_decompose`), following §II-A.3 of the NSCT paper, which leaves the
+   choice of factor open; this one was chosen by measuring directional leakage
+   (see [Theory](@ref theory)).
 
-3. **Synthesis**: Contourlets.jl realises the directional stage with the Phoong
-   ladder network, whose synthesis is the structural inverse of the analysis
-   ladder (exact PR by construction).  All NSP/NSDFB filtering is periodic, so
+3. **NSDFB construction**: Contourlets.jl filters with the DFB's equivalent
+   filters at full rate (the NSCT paper's "DFB with the samplers switched off"),
+   zero-phase, so every subband is registered with the input.  The filters
+   satisfy ``\sum_k G_k H_k = 1`` exactly.  All NSP/NSDFB filtering is periodic, so
    the transform is exactly invariant under circular shifts of the input.

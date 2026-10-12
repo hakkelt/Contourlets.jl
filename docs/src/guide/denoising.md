@@ -1,7 +1,7 @@
 # [Denoising and approximation](@id denoising)
 
 This page reproduces the two experiments that motivate the contourlet transform
-(Do & Vetterli 2005, §VI) and compares it against a separable 2-D "9/7" wavelet
+(Do & Vetterli 2005) and compares it against a separable 2-D "9/7" wavelet
 from [Wavelets.jl](https://github.com/JuliaDSP/Wavelets.jl):
 
 1. **M-term nonlinear approximation (NLA)** — keep only the `M` most significant

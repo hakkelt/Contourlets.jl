@@ -2,16 +2,16 @@
 
 This file guides AI agents (and human contributors) through the repository
 structure and the conventions that are *specific to this package*. General
-Julia best practices live in the skills under `.agents/skills/` and are not
-repeated here. The package-specific skills are `my-gpu-ext`, `my-threading` and
-`my-localcoverage`.
+Julia practice is not repeated here. The package-specific skills, under
+`.agents/skills/`, are `my-gpu-ext` and `my-threading`.
 
 ## Package family
 
 ```
-MultiscaleFilterBanks.jl   (shared core: FilterPair, CDF97, à trous filters, threading)
+MultiscaleFilterBanks.jl   (shared core: FilterPair, CDF97, à trous filters, threading, mask-bank engine)
         ├── Contourlets.jl   (this package — 2-D CT / NSCT)
-        └── Surfacelets.jl   (the surfacelet transform, for volumes)
+        ├── Surfacelets.jl   (the surfacelet transform, for volumes)
+        └── Shearlets.jl     (2-D and 3-D shearlets)
 ```
 
 This package is planar throughout. Volumes live in
@@ -26,9 +26,12 @@ The shared surface with the core is small and explicit: `FilterPair`, `CDF97`,
 `_filter_eltype`, `_use_threading`, the threaded FFT loop (`_n_tasks`,
 `_foreach_chunk`, `_chunked_sum!`), the scoped FFTW thread count
 (`_with_fftw_threads`), `_clamp_idx`, `_nsp_atrous_filters`, and the
-pyramid's frequency responses (`_nsp_responses`, `_centred_dtft`). All are
-re-exported (public names) or imported (internals)
-in `src/Contourlets.jl`.
+pyramid's frequency responses (`_nsp_responses`, `_centred_dtft`), and the
+mask-bank engine that runs the NSCT and TICT workspaces (`_MaskBankEngine`,
+`_MaskItem`, `_mask_bank_forward!`, `_mask_bank_inverse!`; this package adds
+`_subband` methods for its coefficient sets in `src/workspace/mask_bank.jl`).
+All are re-exported (public names) or imported (internals) in
+`src/Contourlets.jl`.
 
 **First checkout**: `MultiscaleFilterBanks.jl` is unregistered and expected as a
 sibling directory, wired in through `[sources]`. On Julia 1.10, which does not
@@ -37,8 +40,8 @@ read `[sources]`, run `julia --project=. dev/bootstrap.jl` once instead.
 ## Quick Start
 
 1. **Read this file** for project-specific invariants.
-2. **Load the matching skill** from `.agents/skills/` for the kind of work you
-   are doing (performance, benchmarking, JET, packaging, docs, GPU, threading).
+2. **Load the matching skill** for GPU or threading work (`my-gpu-ext`,
+   `my-threading`).
 3. **Honour the invariants** below — every change must keep them.
 
 ## Commit Rules
@@ -125,9 +128,7 @@ Conventions that are non-obvious or specific to this package's API contract:
 
 ## Long-Running Commands
 
-Run from the package root. For general benchmarking/JET workflow see the
-`julia-bench` / `julia-jet` skills; the commands below are the project entry
-points.
+Run from the package root; the commands below are the project entry points.
 
 **Tests**:
 Run tests through `test/runtests.jl`. It supports filtering by name and tag using a comma-separated argument.

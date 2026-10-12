@@ -36,13 +36,13 @@ module ContourletsCUDAExt
 # (The volume transforms, now in Surfacelets.jl, are deliberately not captured:
 # they are a few full-volume FFTs, and their streaming callbacks run host code.)
 
-using Contourlets: Contourlets, ContourletWorkspace, ContourletCoefficients
+using Contourlets: Contourlets, CTWorkspace, ContourletCoefficients
 using CUDA: CUDA
 
 function Contourlets._ct_forward_ws!(
         coeffs::ContourletCoefficients{T},
         image::AbstractMatrix,
-        ws::ContourletWorkspace{T, Tf, M}
+        ws::CTWorkspace{T, Tf, M}
     ) where {T, Tf <: AbstractFloat, M <: CUDA.CuMatrix{T}}
     # Only capture when the image is device-resident (same stream domain).
     if !(image isa CUDA.CuArray)
@@ -91,7 +91,7 @@ end
 function Contourlets._ct_inverse_ws!(
         image::AbstractMatrix{T},
         coeffs::ContourletCoefficients{T},
-        ws::ContourletWorkspace{T, Tf, M}
+        ws::CTWorkspace{T, Tf, M}
     ) where {T, Tf <: AbstractFloat, M <: CUDA.CuMatrix{T}}
     if !(image isa CUDA.CuArray)
         Contourlets._ct_inverse_inner!(image, coeffs, ws)

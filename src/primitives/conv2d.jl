@@ -247,7 +247,7 @@ end
 
 # ────────────────────────────────────────────────────────────────────────────────
 # Internal FFT workspace builder — used only by `conv2d!` for large kernels.
-# The contourlet transforms and `ContourletWorkspace` never reach this path
+# The contourlet transforms and their workspaces never reach this path
 # (they convolve with small separable filters via `conv2d_sep!`).
 # ────────────────────────────────────────────────────────────────────────────────
 

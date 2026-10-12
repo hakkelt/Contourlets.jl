@@ -20,7 +20,7 @@
 
 Discrete Contourlet Transform forward pass.
 
-Pass a preallocated `ContourletWorkspace` via `workspace` to reuse scratch
+Pass a preallocated `CTWorkspace` via `workspace` to reuse scratch
 buffers across calls (allocation-free pyramid stage).
 
 # Examples
@@ -39,7 +39,7 @@ julia> length(coeffs.subbands[2])
 """
 function ct_forward(
         image::AbstractMatrix, params::ContourletParams;
-        workspace::Union{ContourletWorkspace, Nothing} = nothing
+        workspace::Union{CTWorkspace, Nothing} = nothing
     )
     if workspace !== nothing
         Tw = eltype(workspace)
@@ -70,7 +70,7 @@ end
 
 In-place CT forward pass writing into the preallocated `coeffs`.
 
-Pass a `ContourletWorkspace` via `workspace` for an allocation-free pyramid
+Pass a `CTWorkspace` via `workspace` for an allocation-free pyramid
 stage (the directional stage still allocates its tree when no workspace is
 given).  Allocate `coeffs` with [`similar_coefficients`](@ref).
 """
@@ -78,7 +78,7 @@ function ct_forward!(
         coeffs::ContourletCoefficients,
         image::AbstractMatrix,
         params::ContourletParams;
-        workspace::Union{ContourletWorkspace, Nothing} = nothing
+        workspace::Union{CTWorkspace, Nothing} = nothing
     )
     workspace === nothing && return _ct_forward_noworkspace!(coeffs, image, params)
     return _ct_forward_ws_barrier!(coeffs, image, workspace)
@@ -89,7 +89,7 @@ end
 function _ct_forward_ws_barrier!(
         coeffs::ContourletCoefficients,
         image::AbstractMatrix,
-        ws::ContourletWorkspace
+        ws::CTWorkspace
     )
     T = eltype(ws)
     img = T === eltype(image) ? image : T.(image)
@@ -100,7 +100,7 @@ end
 function _ct_forward_ws!(
         coeffs::ContourletCoefficients{T},
         image::AbstractMatrix,
-        ws::ContourletWorkspace{T}
+        ws::CTWorkspace{T}
     ) where {T}
     _ct_forward_inner!(coeffs, image, ws)
     return coeffs
@@ -135,7 +135,7 @@ end
 function _ct_forward_inner!(
         coeffs::ContourletCoefficients{T},
         image::AbstractMatrix,
-        ws::ContourletWorkspace{T}
+        ws::CTWorkspace{T}
     ) where {T}
     params = ws.params
     J = params.J
@@ -168,7 +168,7 @@ end
 
 Discrete Contourlet Transform inverse pass.
 
-Pass a preallocated `ContourletWorkspace` via `workspace` to reuse scratch
+Pass a preallocated `CTWorkspace` via `workspace` to reuse scratch
 buffers across calls.
 
 # Examples
@@ -188,7 +188,7 @@ true
 function ct_inverse(
         coeffs::ContourletCoefficients,
         params::ContourletParams;
-        workspace::Union{ContourletWorkspace, Nothing} = nothing
+        workspace::Union{CTWorkspace, Nothing} = nothing
     )
     if workspace !== nothing
         Tw = eltype(workspace)
@@ -204,7 +204,7 @@ end
 
 In-place CT inverse pass writing the reconstruction into `image`.
 
-Pass a `ContourletWorkspace` via `workspace` for an allocation-free pyramid
+Pass a `CTWorkspace` via `workspace` for an allocation-free pyramid
 stage.  The `image` array must match the size and element type of the original
 input image (use `similar(original_image)` or `similar_coefficients` helpers).
 """
@@ -212,7 +212,7 @@ function ct_inverse!(
         image::AbstractMatrix,
         coeffs::ContourletCoefficients,
         params::ContourletParams;
-        workspace::Union{ContourletWorkspace, Nothing} = nothing
+        workspace::Union{CTWorkspace, Nothing} = nothing
     )
     workspace === nothing && return (copyto!(image, _ct_inverse_alloc(coeffs, params)); image)
     return _ct_inverse_ws_barrier!(image, coeffs, workspace)
@@ -222,7 +222,7 @@ end
 function _ct_inverse_ws_barrier!(
         image::AbstractMatrix,
         coeffs::ContourletCoefficients,
-        ws::ContourletWorkspace
+        ws::CTWorkspace
     )
     return _ct_inverse_ws!(image, coeffs, ws)
 end
@@ -231,7 +231,7 @@ end
 function _ct_inverse_ws!(
         image::AbstractMatrix{T},
         coeffs::ContourletCoefficients{T},
-        ws::ContourletWorkspace{T}
+        ws::CTWorkspace{T}
     ) where {T}
     _ct_inverse_inner!(image, coeffs, ws)
     return image
@@ -260,7 +260,7 @@ end
 function _ct_inverse_inner!(
         image::AbstractMatrix{T},
         coeffs::ContourletCoefficients{T},
-        ws::ContourletWorkspace{T}
+        ws::CTWorkspace{T}
     ) where {T}
     params = ws.params
     J = params.J
@@ -290,13 +290,10 @@ function _ct_inverse_inner!(
     return image
 end
 
-# Extract the matrix storage type M from a ContourletWorkspace{Td,Tf,M,...}.
-_ws_matrix_type(::ContourletWorkspace{Td, Tf, M}) where {Td, Tf, M} = M
-
 # Grow the workspace scratch arena to its steady-state size by running one forward
 # + inverse pass on zeros, so the first real call allocates nothing.  Called from
 # `make_workspace(...; prewarm=true)`.
-function _prewarm_ct!(ws::ContourletWorkspace{Td, Tf, M}) where {Td, Tf, M}
+function _prewarm_ct!(ws::CTWorkspace{Td, Tf, M}) where {Td, Tf, M}
     img = _allocate_zeros(M, Td, ws.image_size)
     coeffs = similar_coefficients(ws.params, ws.image_size; Td = Td, M = M)
     ct_forward!(coeffs, img, ws.params; workspace = ws)

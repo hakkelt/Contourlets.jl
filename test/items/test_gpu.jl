@@ -331,12 +331,12 @@ end
         # make_nsct_workspace(image, params) infers M from image → dispatches
         # the _adapt_bank GPU overload and moves the pyramid masks with `_like`
         ws = make_nsct_workspace(xg, p; prewarm = false)
-        @test ws isa ContourletWorkspace
+        @test ws isa NSCTWorkspace
         # NSDFB equivalent filters should now be on the device
-        @test !(ws.nsdfb_banks[1].ana[1] isa Array)
+        @test !(ws.engine.banks[1].ana[1] isa Array)
         # the pyramid masks should also be on the device
-        @test !(ws.nsp_ana[1] isa Array)
-        @test !(ws.nsp_syn[end] isa Array)
+        @test !(ws.engine.pyramid_ana[1] isa Array)
+        @test !(ws.engine.coarse_syn isa Array)
     end
 end
 
@@ -414,7 +414,7 @@ end
         DT = typeof(xg)
         # The device workspace plans its FFTs on the device.
         ws = make_nsct_workspace(xg, p)
-        @test ws.fft_plan_fwd !== nothing
+        @test !(ws.engine.X isa Array)
         ng = nsct_forward(xg, p; workspace = ws)
         @test ng.coarse isa DT
         @test maximum(abs, Array(ng.coarse) .- ncpu.coarse) < 1.0f-5

@@ -1,18 +1,22 @@
 @testitem "make_workspace allocates correct sizes" tags = [:ct] begin
     p = ContourletParams(J = 2, L_array = [2, 3])
     ws = make_workspace(Float64, (32, 32), p)
-    @test ws isa ContourletWorkspace
+    @test ws isa CTWorkspace
     @test ws.image_size == (32, 32)
+    @test ws.bp_dims == [(32, 32), (16, 16)]
+    @test [r.bank.levels for r in ws.dfb_runners] == [2, 3]
 end
 
 @testitem "make_nsct_workspace all same size" tags = [:nsct] begin
     p = ContourletParams(J = 2, L_array = [2, 3])
     ws = make_nsct_workspace(Float64, (32, 32), p)
-    @test ws isa ContourletWorkspace
-    @test length(ws.nsdfb_banks) == 2
-    @test ws.bp_dims == [(32, 32), (32, 32)]
+    @test ws isa NSCTWorkspace
+    e = ws.engine
+    @test length(e.banks) == 2
+    @test length(e.items) == 4 + 8
     # rfft half-plane masks for real data
-    @test all(size(m) == (17, 32) for b in ws.nsdfb_banks for m in b.ana)
+    @test all(size(m) == (17, 32) for b in e.banks for m in b.ana)
+    @test all(size(m) == (17, 32) for m in e.pyramid_ana)
 end
 
 @testitem "CT with workspace gives same result as without" tags = [:ct] begin
@@ -31,7 +35,7 @@ end
     p = ContourletParams(J = 2, L_array = [1, 2])
     # Float64 params + Float32 request → promotes to Float64
     ws = make_workspace(Float32, (32, 32), p)
-    @test ws isa ContourletWorkspace{Float64}
+    @test ws isa CTWorkspace{Float64}
     @test ws.image_size == (32, 32)
 end
 
@@ -39,13 +43,13 @@ end
     p = ContourletParams(J = 2, L_array = [2, 3])
     # Float64 params + Float32 request → promotes to Float64
     ws = make_nsct_workspace(p, (32, 32); T = Float32)
-    @test ws isa ContourletWorkspace{Float64}
+    @test ws isa NSCTWorkspace{Float64}
 end
 
 @testitem "make_nsct_workspace (type-first positional API)" tags = [:nsct] begin
     p = ContourletParams(J = 2, L_array = [1, 2])
     ws = make_nsct_workspace(Float32, (32, 32), p)
-    @test ws isa ContourletWorkspace{Float64}
+    @test ws isa NSCTWorkspace{Float64}
 end
 
 @testitem "NSCT workspace path is allocation-free" tags = [:nsct] begin
@@ -98,7 +102,7 @@ end
     p = ContourletParams(J = 2, L_array = [1, 2])
     img = randn(32, 32)
     ws = make_workspace(img, p)
-    @test ws isa ContourletWorkspace
+    @test ws isa CTWorkspace
     @test ws.image_size == (32, 32)
     coeffs = similar_coefficients(p, (32, 32))
     ct_forward!(coeffs, img, p; workspace = ws)
@@ -111,7 +115,7 @@ end
     p = ContourletParams(J = 2, L_array = [1, 2])
     img = randn(32, 32)
     ws = make_nsct_workspace(img, p)
-    @test ws isa ContourletWorkspace
+    @test ws isa NSCTWorkspace
     @test ws.image_size == (32, 32)
     coeffs = similar_nsct_coefficients(p, (32, 32))
     nsct_forward!(coeffs, img, p; workspace = ws)
@@ -126,7 +130,7 @@ end
     p = ContourletParams(J = 2, L_array = [1, 2])
     img = complex.(randn(32, 32), randn(32, 32))
     ws = make_nsct_workspace(img, p)
-    @test ws isa ContourletWorkspace{ComplexF64, Float64}
+    @test ws isa NSCTWorkspace{ComplexF64, Float64}
 end
 
 @testitem "_base_array_type on SubArray type" tags = [:ct] begin
@@ -143,7 +147,7 @@ end
     x = randn(32, 32)
     p = ContourletParams(J = 3, L_array = [0, 2, 3])
     ws = make_nsct_workspace(p, (32, 32))
-    @test length(ws.fft_tasks) == min(Threads.nthreads(), length(ws.nsct_items))
+    @test length(ws.engine.buffers) == min(Threads.nthreads(), length(ws.engine.items))
     c_ser = nsct_forward!(similar_nsct_coefficients(p, (32, 32)), x, p; workspace = ws, threading = Disabled())
     c_par = nsct_forward!(similar_nsct_coefficients(p, (32, 32)), x, p; workspace = ws, threading = Enabled())
     @test all(c_ser.subbands[j][k] == c_par.subbands[j][k] for j in 1:3 for k in eachindex(c_ser.subbands[j]))
@@ -200,7 +204,10 @@ end
     x = randn(32, 32)
     p = ContourletParams(J = 2, L_array = [2, 0])
     ws = make_nsct_workspace(p, size(x))
-    @test ws.nsdfb_banks[2] === nothing
+    # Depth 0 is the identity bank: one channel with all-ones masks.
+    b = ws.engine.banks[2]
+    @test b.levels == 0 && length(b.ana) == 1
+    @test all(isone, b.ana[1]) && all(isone, b.syn[1])
     c = similar_nsct_coefficients(p, size(x))
     nsct_forward!(c, x, p; workspace = ws)
     ref = nsct_forward(x, p)

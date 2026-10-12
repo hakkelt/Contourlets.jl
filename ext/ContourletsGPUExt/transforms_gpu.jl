@@ -24,7 +24,7 @@ Float32 precision).  `ct_inverse(coeffs, params)` then reconstructs on the devic
 """
 function Contourlets.ct_forward(
         image::_AbstractGPUMatrix, params::ContourletParams;
-        workspace::Union{Contourlets.ContourletWorkspace, Nothing} = nothing
+        workspace::Union{Contourlets.CTWorkspace, Nothing} = nothing
     )
     if workspace !== nothing
         Tw = eltype(workspace)
@@ -60,7 +60,7 @@ GPU Discrete Contourlet Transform inverse pass.
 function Contourlets.ct_inverse(
         coeffs::ContourletCoefficients{T, <:AbstractGPUMatrix{T}},
         params::ContourletParams;
-        workspace::Union{Contourlets.ContourletWorkspace, Nothing} = nothing
+        workspace::Union{Contourlets.CTWorkspace, Nothing} = nothing
     ) where {T <: Number}
     if workspace !== nothing
         Tw = eltype(workspace)
@@ -89,7 +89,7 @@ GPU Nonsubsampled Contourlet Transform forward pass (GPU pyramid + GPU NSDFB).
 """
 function Contourlets.nsct_forward(
         image::_AbstractGPUMatrix, params::ContourletParams;
-        workspace::Union{Contourlets.ContourletWorkspace, Nothing} = nothing,
+        workspace::Union{Contourlets.NSCTWorkspace, Nothing} = nothing,
         threading::Contourlets.ThreadingPolicy = Contourlets.Auto()
     )
     if workspace !== nothing

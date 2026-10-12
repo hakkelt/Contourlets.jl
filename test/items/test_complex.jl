@@ -71,7 +71,7 @@ end
     z = complex.(randn(64, 64), randn(64, 64))
 
     ws = make_workspace(ComplexF64, (64, 64), p)
-    @test ws isa ContourletWorkspace{ComplexF64, Float64}
+    @test ws isa CTWorkspace{ComplexF64, Float64}
     cw = ct_forward(z, p; workspace = ws)
     @test cw.coarse ≈ ct_forward(z, p).coarse
     @test maximum(abs, ct_inverse(cw, p) .- z) < 1.0e-12

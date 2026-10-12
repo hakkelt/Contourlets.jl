@@ -63,6 +63,10 @@ Build the equivalent filters of an `l`-level DFB (`decimated = true`) or NSDFB o
 `real_data` crops nonsubsampled masks to the `rfft` half-plane.  `upsample = m`
 replaces every nonsubsampled filter Hₖ(z) by Hₖ(z^(2^m I)) (da Cunha et al. 2006,
 §II-A.3), which keeps the perfect-reconstruction identity Σₖ GₖHₖ = 1.
+
+`l = 0` gives the identity bank (`_identity_bank`): one channel whose masks are all
+ones, so a level without a directional split runs through the same code as any
+other.
 """
 function _directional_bank(
         ::Type{Tf}, dims::NTuple{2, Int}, l::Int, f_ladder::AbstractVector;
@@ -72,6 +76,8 @@ function _directional_bank(
     upsample >= 0 || throw(ArgumentError("upsample must be ≥ 0 (got $(upsample))"))
     decimated && upsample > 0 &&
         throw(ArgumentError("only the nonsubsampled bank takes upsampled filters"))
+    l >= 0 || throw(ArgumentError("l must be ≥ 0 (got $(l))"))
+    l == 0 && return _identity_bank(Tf, dims; decimated = decimated, real_data = real_data)
     _check_bank_dims(dims, l, decimated)
     n1, n2 = dims
     chs = _bank_channels(n1, n2, l, f_ladder; half = half)
@@ -96,6 +102,24 @@ function _directional_bank(
         samp = fill((1, 1), length(chs))
     end
     return _DirectionalBank(ana, syn, pr, pc, delay, samp, dims, l)
+end
+
+# The depth-0 bank: a single channel with all-ones masks.  Decimated, it samples
+# by (1, 1) with zero delay (unit phases), so a runner treats it as one undecimated
+# channel; nonsubsampled, the mask covers the rfft half-plane for real data.
+# Multiplying by these ones is exact, so the bank changes no bit of its input.
+function _identity_bank(::Type{Tf}, dims::NTuple{2, Int}; decimated::Bool, real_data::Bool = false) where {Tf}
+    n1, n2 = dims
+    if decimated
+        m = ones(Tf, n1, n2)
+        return _DirectionalBank(
+            [m], [m], [ones(Complex{Tf}, n1)], [ones(Complex{Tf}, n2)], [(0, 0)], [(1, 1)], dims, 0
+        )
+    end
+    m = ones(Tf, real_data ? n1 ÷ 2 + 1 : n1, n2)
+    return _DirectionalBank(
+        [m], [m], Vector{Complex{Tf}}[], Vector{Complex{Tf}}[], NTuple{2, Int}[], [(1, 1)], dims, 0
+    )
 end
 
 """

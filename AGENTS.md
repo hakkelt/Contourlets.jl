@@ -111,7 +111,8 @@ Contourlets/
 │   ├── workspace/
 │   │   ├── scratch_arena.jl   # ScratchArena + task-local arena/filter cache, _scratch_like
 │   │   ├── fft_tasks.jl       # @batch runner of the threaded subband loop
-│   │   └── contourlet_workspace.jl # ContourletWorkspace, make_workspace, make_nsct_workspace
+│   │   ├── mask_bank.jl       # _MaskBankEngine: the NSCT/TICT subband loops on the DFT grid
+│   │   └── contourlet_workspace.jl # CTWorkspace, NSCTWorkspace, make_workspace, make_nsct_workspace
 │   ├── filters/
 │   │   ├── q2345.jl           # "23-45" Phoong (pkva) ladder DFB filter constants
 │   │   └── filter_utils.jl    # upsample_filter, check_pr_condition
@@ -206,8 +207,8 @@ Conventions that are non-obvious or specific to this package's API contract:
   transforms that thread (NSCT, TICT) also take `threading=Auto()` on both
   variants; the CT and the STICT have nothing to thread and take no `threading`
   keyword.  Both
-  variants accept the same optional `workspace` kwarg for reusing scratch buffers; pass a `ContourletWorkspace` from
-  `make_workspace`/`make_nsct_workspace` to eliminate per-call allocation in the
+  variants accept the same optional `workspace` kwarg for reusing scratch buffers; pass a `CTWorkspace` from
+  `make_workspace` (or an `NSCTWorkspace` from `make_nsct_workspace`) to eliminate per-call allocation in the
   pyramid stage.  Do not allocate inside the `_ct_forward_ws!` /
   `_ct_inverse_ws!` / `_nsct_forward_ws!` / `_nsct_inverse_ws!` workspace paths.
 - **Duck-typed public API.** Functions accept `AbstractMatrix` with no

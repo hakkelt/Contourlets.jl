@@ -39,7 +39,8 @@ ContourletParams
 ContourletCoefficients
 NSCTCoefficients
 TICTCoefficients
-ContourletWorkspace
+CTWorkspace
+NSCTWorkspace
 TICTWorkspace
 STICTWorkspace
 ```

@@ -15,7 +15,7 @@ struct STICTWorkspace{Td <: Number, Tf <: AbstractFloat, C <: AbstractMatrix{Com
     params::ContourletParams{Tf}
     image_size::NTuple{2, Int}
     masks::_TILPMasks{C}
-    runners::Vector{Vector{Union{Nothing, R}}}  # [level][channel]; nothing when L = 0
+    runners::Vector{Vector{R}}                  # [level][channel]; the identity bank when L = 0
     X::C                                        # full spectrum / synthesis accumulator
     Z::C                                        # scratch
     pfwd::P                                     # in-place FFT plans on X and Z
@@ -52,15 +52,20 @@ function make_stict_workspace(
     full(l) = get!(banks, l) do
         _adapt_bank(ref, _directional_bank(Tf, image_size, l, p.dfb_filters.f_ladder; decimated = true))
     end
+    # A level with L = 0 runs its channels through the identity bank: one
+    # undecimated channel with unit masks and phases, so the same FFT count as
+    # storing the channel directly, plus a few elementwise passes and one extra
+    # full-size buffer.
     pool = _runner_pool(ref, Tf)
     built = Dict{Tuple{Int, Symbol}, R}()
-    runner(l, half) = get!(built, (l, half)) do
-        _bank_runner(_half_bank(full(l), full(1), half), ref; flags = flags, pool = pool)
+    runner(l, half) = get!(built, (l, l == 0 ? :both : half)) do
+        bank = l == 0 ? full(0) : _half_bank(full(l), full(1), half)
+        _bank_runner(bank, ref; flags = flags, pool = pool)
     end
-    runners = [Union{Nothing, R}[l == 0 ? nothing : runner(l, h) for h in _TILP_HALVES] for l in p.L_array]
+    runners = [R[runner(l, h) for h in _TILP_HALVES] for l in p.L_array]
     X = fill!(similar(ref, Complex{Tf}, image_size), zero(Complex{Tf}))
     pfwd, pbwd = _inplace_plans(X, flags)
-    Z = isempty(pool) ? similar(X) : first(pool[(:Z, image_size)])
+    Z = first(pool[(:Z, image_size)])
     return STICTWorkspace{Td, Tf, typeof(X), R, typeof(pfwd), typeof(pbwd)}(
         p, image_size, masks, runners, X, Z, pfwd, pbwd
     )
@@ -75,14 +80,8 @@ function _stict_forward_ws!(coeffs::TICTCoefficients, x::AbstractMatrix, ws::STI
     for i in eachindex(m.ana), c in 1:4
         out = coeffs.subbands[i][c]
         r = ws.runners[i][c]
-        if r === nothing
-            ws.Z .= m.ana[i][c] .* ws.X
-            ws.pbwd * ws.Z
-            _store!(out[1], ws.Z, _bwd_scale(ws.Z))
-        else
-            r.X .= m.ana[i][c] .* ws.X
-            _bank_analyze_spectrum!(out, r)
-        end
+        r.X .= m.ana[i][c] .* ws.X
+        _bank_analyze_spectrum!(out, r)
     end
     ws.Z .= m.coarse_ana .* ws.X
     ws.pbwd * ws.Z
@@ -96,14 +95,8 @@ function _stict_inverse_ws!(x::AbstractMatrix, coeffs::TICTCoefficients, ws::STI
     for i in eachindex(m.syn), c in 1:4
         sbs = coeffs.subbands[i][c]
         r = ws.runners[i][c]
-        if r === nothing
-            ws.Z .= sbs[1]
-            ws.pfwd * ws.Z
-            ws.X .+= m.syn[i][c] .* ws.Z
-        else
-            _bank_synthesize_spectrum!(sbs, r)
-            ws.X .+= m.syn[i][c] .* r.X
-        end
+        _bank_synthesize_spectrum!(sbs, r)
+        ws.X .+= m.syn[i][c] .* r.X
     end
     ws.Z .= coeffs.coarse
     ws.pfwd * ws.Z

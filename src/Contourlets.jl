@@ -14,7 +14,7 @@ implemented as a standalone Julia package.
 | `stict_forward` / `stict_inverse` | Semi-translation-invariant CT (TI pyramid, decimated DFB) |
 | `ct_forward!` / `ct_inverse!` | In-place CT using a preallocated workspace |
 | `nsct_forward!` / `nsct_inverse!` | In-place NSCT |
-| `make_workspace` | Allocate a reusable `ContourletWorkspace` |
+| `make_workspace` / `make_nsct_workspace` | Allocate a reusable `CTWorkspace` / `NSCTWorkspace` |
 | `parabolic_levels` | Compute optimal per-scale DFB depth array |
 
 ### Default filters
@@ -77,6 +77,7 @@ include("directional/nsdfb.jl")
 # ── Workspace ─────────────────────────────────────────────────────────────────
 include("workspace/scratch_arena.jl")
 include("workspace/fft_tasks.jl")
+include("workspace/mask_bank.jl")
 include("workspace/contourlet_workspace.jl")
 
 # ── Top-level transforms ──────────────────────────────────────────────────────
@@ -98,7 +99,7 @@ export
     # Types
     QuincunxFilterPair,
     ContourletParams, ContourletCoefficients, NSCTCoefficients, TICTCoefficients,
-    ContourletWorkspace, TICTWorkspace, STICTWorkspace,
+    CTWorkspace, NSCTWorkspace, TICTWorkspace, STICTWorkspace,
 
     # Default filters
     Q2345,

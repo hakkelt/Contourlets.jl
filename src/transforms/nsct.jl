@@ -33,7 +33,7 @@ true
 """
 function nsct_forward(
         image::AbstractMatrix, params::ContourletParams;
-        workspace::Union{ContourletWorkspace, Nothing} = nothing,
+        workspace::Union{NSCTWorkspace, Nothing} = nothing,
         threading::ThreadingPolicy = Auto()
     )
     if workspace !== nothing
@@ -65,7 +65,7 @@ end
 
 In-place NSCT forward pass writing into the preallocated `coeffs`.
 
-Pass a `ContourletWorkspace` via `workspace` for an allocation-free pyramid
+Pass a `NSCTWorkspace` via `workspace` for an allocation-free pyramid
 stage.  Allocate `coeffs` with [`similar_nsct_coefficients`](@ref).
 
 !!! note "Threading"
@@ -76,7 +76,7 @@ function nsct_forward!(
         coeffs::NSCTCoefficients,
         image::AbstractMatrix,
         params::ContourletParams;
-        workspace::Union{ContourletWorkspace, Nothing} = nothing,
+        workspace::Union{NSCTWorkspace, Nothing} = nothing,
         threading::ThreadingPolicy = Auto()
     )
     workspace === nothing && return _nsct_forward_noworkspace!(coeffs, image, params)
@@ -88,7 +88,7 @@ end
 function _nsct_forward_ws_barrier!(
         coeffs::NSCTCoefficients,
         image::AbstractMatrix,
-        ws::ContourletWorkspace,
+        ws::NSCTWorkspace,
         threading::ThreadingPolicy
     )
     T = eltype(ws)
@@ -100,7 +100,7 @@ end
 function _nsct_forward_ws!(
         coeffs::NSCTCoefficients{T},
         image::AbstractMatrix,
-        ws::ContourletWorkspace{T, Tf};
+        ws::NSCTWorkspace{T, Tf};
         threading::ThreadingPolicy = Auto()
     ) where {T, Tf}
     _nsct_forward_inner!(coeffs, image, ws; threading = threading)
@@ -139,59 +139,20 @@ function _staging(a::ScratchArena, x::AbstractMatrix)
     _arena_reset!(a)
     return _arena_take!(a, x, size(x)...)
 end
-_dense_input(ws::ContourletWorkspace, x::AbstractMatrix) =
+_dense_input(ws::NSCTWorkspace, x::AbstractMatrix) =
     x isa _ws_matrix_type(ws) ? x : copyto!(_staging(ws.fwd_scratch, x), x)
 
 function _nsct_forward_inner!(
         coeffs::NSCTCoefficients{T},
         image::AbstractMatrix,
-        ws::ContourletWorkspace{T, Tf};
+        ws::NSCTWorkspace{T, Tf};
         threading::ThreadingPolicy = Auto()
     ) where {T, Tf}
-    J = ws.params.J
     img = _dense_input(ws, T === eltype(image) ? image : T.(image))
     # One FFT of the input; subband k of level j is ifft(Hₖ · Bⱼ · X) with the
-    # precomputed directional filter Hₖ and pyramid mask Bⱼ (`_nsp_masks`).  The
-    # subbands are independent, so with threading their FFTs run in one task per
-    # FFT buffer of the workspace.
-    mul!(ws.fft_spectrum_bp, ws.fft_plan_fwd, img)
-    _batch_chunks(length(ws.nsct_items), length(ws.fft_tasks), _use_threading(threading, T)) do range, t
-        _nsct_forward_items!(coeffs, ws, range, ws.fft_tasks[t])
-    end
-    Z = ws.fft_tasks[1]
-    Z .= ws.nsp_ana[J + 1] .* ws.fft_spectrum_bp
-    mul!(coeffs.coarse, ws.fft_plan_inv, Z)
-    return coeffs
-end
-
-function _nsct_forward_items!(coeffs::NSCTCoefficients, ws::ContourletWorkspace, range, Z)
-    X = ws.fft_spectrum_bp
-    for n in range
-        j, k = ws.nsct_items[n]
-        bank = ws.nsdfb_banks[j]
-        if bank === nothing
-            Z .= ws.nsp_ana[j] .* X
-        else
-            Z .= bank.ana[k] .* ws.nsp_ana[j] .* X
-        end
-        mul!(coeffs.subbands[j][k], ws.fft_plan_inv, Z)
-    end
-    return coeffs
-end
-
-# acc += the synthesis of the subbands `ws.nsct_items[range]`, with FFT buffer F.
-function _nsct_inverse_items!(acc, coeffs::NSCTCoefficients, ws::ContourletWorkspace, range, F)
-    for n in range
-        j, k = ws.nsct_items[n]
-        bank = ws.nsdfb_banks[j]
-        mul!(F, ws.fft_plan_fwd, coeffs.subbands[j][k])
-        if bank === nothing
-            acc .+= ws.nsp_syn[j] .* F
-        else
-            acc .+= bank.syn[k] .* ws.nsp_syn[j] .* F
-        end
-    end
-    return acc
+    # precomputed directional filter Hₖ and pyramid mask Bⱼ (`_nsp_masks`), run by
+    # the mask-bank engine (`mask_bank.jl`), threaded over the subbands.
+    return _mask_bank_forward!(coeffs, img, ws.engine, _use_threading(threading, T))
 end
 
 """
@@ -216,7 +177,7 @@ true
 function nsct_inverse(
         coeffs::NSCTCoefficients,
         params::ContourletParams;
-        workspace::Union{ContourletWorkspace, Nothing} = nothing,
+        workspace::Union{NSCTWorkspace, Nothing} = nothing,
         threading::ThreadingPolicy = Auto()
     )
     if workspace !== nothing
@@ -233,7 +194,7 @@ end
 
 In-place NSCT inverse pass writing the reconstruction into `image`.
 
-Pass a `ContourletWorkspace` via `workspace` for an allocation-free pyramid
+Pass a `NSCTWorkspace` via `workspace` for an allocation-free pyramid
 stage.
 
 !!! note "Threading"
@@ -243,7 +204,7 @@ function nsct_inverse!(
         image::AbstractMatrix,
         coeffs::NSCTCoefficients,
         params::ContourletParams;
-        workspace::Union{ContourletWorkspace, Nothing} = nothing,
+        workspace::Union{NSCTWorkspace, Nothing} = nothing,
         threading::ThreadingPolicy = Auto()
     )
     workspace === nothing && return (copyto!(image, _nsct_inverse_alloc(coeffs, params)); image)
@@ -254,7 +215,7 @@ end
 function _nsct_inverse_ws_barrier!(
         image::AbstractMatrix,
         coeffs::NSCTCoefficients,
-        ws::ContourletWorkspace,
+        ws::NSCTWorkspace,
         threading::ThreadingPolicy
     )
     return _nsct_inverse_ws!(image, coeffs, ws; threading = threading)
@@ -264,7 +225,7 @@ end
 function _nsct_inverse_ws!(
         image::AbstractMatrix{T},
         coeffs::NSCTCoefficients{T},
-        ws::ContourletWorkspace{T, Tf};
+        ws::NSCTWorkspace{T, Tf};
         threading::ThreadingPolicy = Auto()
     ) where {T, Tf}
     _nsct_inverse_inner!(image, coeffs, ws; threading = threading)
@@ -292,31 +253,23 @@ end
 function _nsct_inverse_inner!(
         image::AbstractMatrix{T},
         coeffs::NSCTCoefficients{T},
-        ws::ContourletWorkspace{T, Tf};
+        ws::NSCTWorkspace{T, Tf};
         threading::ThreadingPolicy = Auto()
     ) where {T, Tf}
-    J = ws.params.J
     # image = ifft(Σⱼ Sⱼ Σₖ Gₖ · fft(subband k of level j) + S_{J+1} · fft(lowpass)),
     # with threading summed in one partial accumulator per task.
-    acc = ws.fft_spectrum_bp
-    fill!(acc, zero(eltype(acc)))
-    _chunked_sum!(acc, ws.fft_acc, length(ws.nsct_items), _use_threading(threading, T); foreach = _batch_chunks) do a, range, t
-        _nsct_inverse_items!(a, coeffs, ws, range, ws.fft_tasks[t])
-    end
-    F = ws.fft_tasks[1]
-    mul!(F, ws.fft_plan_fwd, coeffs.coarse)
-    acc .+= ws.nsp_syn[J + 1] .* F
+    threaded = _use_threading(threading, T)
     if image isa _ws_matrix_type(ws)
-        mul!(image, ws.fft_plan_inv, acc)
+        _mask_bank_inverse!(image, coeffs, ws.engine, threaded)
     else
-        copyto!(image, mul!(_staging(ws.inv_scratch, image), ws.fft_plan_inv, acc))
+        copyto!(image, _mask_bank_inverse!(_staging(ws.inv_scratch, image), coeffs, ws.engine, threaded))
     end
     return image
 end
 
 # Run one forward + inverse pass on zeros, so the first real call is compiled and
 # allocates nothing.  Called from `make_nsct_workspace(...; prewarm=true)`.
-function _prewarm_nsct!(ws::ContourletWorkspace{Td, Tf, M}; threading::ThreadingPolicy = Auto()) where {Td, Tf, M}
+function _prewarm_nsct!(ws::NSCTWorkspace{Td, Tf, M}; threading::ThreadingPolicy = Auto()) where {Td, Tf, M}
     img = _allocate_zeros(M, Td, ws.image_size)
     coeffs = similar_nsct_coefficients(ws.params, ws.image_size; Td = Td, M = M)
     nsct_forward!(coeffs, img, ws.params; workspace = ws, threading = threading)

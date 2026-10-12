@@ -42,7 +42,7 @@ Always convert before uploading: `Tf.(fp.h)` produces a CPU `Vector{Tf}`, then `
 
 ## Workspace and Workspaces on GPU
 
-A `ContourletWorkspace` built from a GPU image is GPU-resident:
+A `CTWorkspace` (or `NSCTWorkspace`, `TICTWorkspace`, `STICTWorkspace`) built from a GPU image is GPU-resident:
 
 ```julia
 ws = make_workspace(cu_image, params)   # scratch buffers are CuMatrix

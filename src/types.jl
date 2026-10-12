@@ -21,11 +21,12 @@ Two operating modes exist:
 - **Modulation mode** (`f_ladder` empty): the high-pass filters are derived by
   modulation, `H₁(z) = H₀(-z)` and `G₁(z) = G₀(-z)`.  Perfect reconstruction is
   the user's responsibility (it holds e.g. for the Haar pair).
-- **Ladder (lifting) mode** (`f_ladder` non-empty): the filter bank is realised as
-  a two-step ladder network with the 1-D lifting filter `f_ladder` (Phoong et al.
-  1995).  Perfect reconstruction is structural — exact for any `f_ladder`.  In
-  this mode `h_q`/`g_q` hold the *equivalent* analysis/synthesis low-pass filters
-  for reference (e.g. the 23/45-tap "pkva" filters of [`Q2345`](@ref)).
+- **Ladder (lifting) mode** (`f_ladder` non-empty): the filter bank is the
+  quincunx ladder bank of Phoong et al. (1995) built from the symmetric,
+  even-length 1-D filter `f_ladder` (their β).  Perfect reconstruction is
+  structural — exact for any `f_ladder`.  The DFB and NSDFB use this mode; in it
+  `h_q`/`g_q` hold the equivalent low-pass filters of the 1-D ladder, used by the
+  shear-based [`qfb_decompose`](@ref) (see [`Q2345`](@ref)).
 
 # Examples
 ```jldoctest
@@ -71,8 +72,11 @@ Return `true` if `qfp` operates in ladder (lifting) mode.
 is_ladder(qfp::QuincunxFilterPair) = !isempty(qfp.f_ladder)
 
 # Convert a QuincunxFilterPair to element type T (no-op when already T).
-_convert_qfp(::Type{T}, qfp::QuincunxFilterPair{T}) where {T} = qfp
-_convert_qfp(::Type{T}, qfp::QuincunxFilterPair) where {T} =
+# Both methods bound `T <: AbstractFloat`: with an unbounded `T` the diagonal
+# identity method is *less* specific than the converting one, so it never ran and
+# every call built a fresh copy.
+_convert_qfp(::Type{T}, qfp::QuincunxFilterPair{T}) where {T <: AbstractFloat} = qfp
+_convert_qfp(::Type{T}, qfp::QuincunxFilterPair) where {T <: AbstractFloat} =
     QuincunxFilterPair{T}(T.(qfp.h_q), T.(qfp.g_q), qfp.c_h, qfp.c_g, T.(qfp.f_ladder))
 
 """
@@ -119,7 +123,9 @@ function Base.show(io::IO, p::ContourletParams)
 end
 
 # Convert a ContourletParams to real filter precision `Tf` (no-op when already Tf).
-_convert_params(::Type{Tf}, p::ContourletParams{Tf}) where {Tf} = p
+# `Tf <: AbstractFloat` on the identity method too, or it loses specificity to the
+# converting method below (see `_convert_qfp`).
+_convert_params(::Type{Tf}, p::ContourletParams{Tf}) where {Tf <: AbstractFloat} = p
 _convert_params(::Type{Tf}, p::ContourletParams) where {Tf <: AbstractFloat} =
     ContourletParams{Tf}(
     p.J, p.L_array,
@@ -163,13 +169,34 @@ NSCTCoefficients(coarse::A, subbands::Vector{Vector{A}}) where {A <: AbstractMat
     NSCTCoefficients{eltype(A), A}(coarse, subbands)
 
 """
+    TICTCoefficients{Td, A}
+
+Output of [`tict_forward`](@ref) and [`stict_forward`](@ref).  `coarse` is the
+lowpass image and `subbands[i][c][d]` the `d`-th directional subband of the `c`-th
+of the four highpass channels at pyramid level `i` (`i = 1` finest) — Eslami &
+Radha's `ρ_{i,k}^{(d)}` / `η_{i,k}^{(d)}`.  Channels 1 and 4 carry a full
+directional filter bank (`2^L_array[i]` subbands), channels 2 and 3 a half tree
+(`2^(L_array[i]-1) + 1` subbands; see [`tict_forward`](@ref)).  TICT subbands all
+have the input's size; STICT subbands are critically sampled from full-size
+channels.
+"""
+struct TICTCoefficients{Td <: Number, A <: AbstractMatrix{Td}}
+    coarse::A
+    subbands::Vector{Vector{Vector{A}}}    # [level][channel 1..4][direction]
+end
+
+TICTCoefficients(coarse::A, subbands::Vector{Vector{Vector{A}}}) where {A <: AbstractMatrix} =
+    TICTCoefficients{eltype(A), A}(coarse, subbands)
+
+"""
     parabolic_levels(J, l_j0=1) -> Vector{Int}
 
 Compute the per-scale DFB depth array following the parabolic scaling law
 
     l_j = l_j0 + ⌊(j0 - j) / 2⌋,    j0 = J,
 
-so that the number of directions doubles every other scale.  Index `j` matches
+so that the number of directions doubles every other scale — the discrete
+counterpart of parabolic scaling, width ∝ length², in Do & Vetterli (2005).  Index `j` matches
 the scale ordering of [`ct_forward`](@ref) and [`nsct_forward`](@ref): `j = 1`
 is the *finest* scale (first pyramid split) and `j = J` the coarsest, hence
 finer scales receive more directional subbands.  `l_j0` is the DFB depth at the

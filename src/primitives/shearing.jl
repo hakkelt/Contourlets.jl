@@ -11,7 +11,11 @@
 #   inv_shear!(:h)   (i, j) → (i,  j − i  mod  n2)
 #   inv_shear!(:v)   (i, j) → (i − j  mod  n1,  j)
 #
-# Reference: Do & Vetterli (2005), Section V, "Simplification Using Shearing".
+# These are the resamplings by the unimodular matrices R₀ … R₃ of Do's thesis
+# (eq. 3.5), applied circularly.
+#
+# Reference: M. N. Do, "Directional multiresolution image representations", PhD
+# thesis, EPFL, 2001, §3.2.1.
 
 """
     shear!(dst, src, dir::Symbol) -> dst

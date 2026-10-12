@@ -114,19 +114,13 @@ end
 end
 
 @testitem "DFB is directionally selective" tags = [:directional] begin
-    # An l=3 DFB has 8 directional wedges.  Sweeping the orientation of a
-    # near-Nyquist 2-D sinusoid must light up several *different* dominant
-    # subbands — a degenerate (non-directional) DFB would always pick the same
-    # one.  Guards against the old shear-tree collapse.
+    # An oriented sinusoid concentrates its energy in one of the 8 wedges.
     n = 128
     wave(θ, f) = [cos(2π * f * (cos(θ) * j + sin(θ) * i)) for i in 1:n, j in 1:n]
-    doms = Int[]
     for deg in 0:15:179
-        e = [sum(abs2, s) for s in dfb_decompose(wave(deg * π / 180, 0.45), 3, Q2345)]
-        push!(doms, argmax(e))
-        @test maximum(e) > 0.4 * sum(e)   # energy concentrates in a wedge
+        e = [sum(abs2, s) for s in dfb_decompose(wave(deg * π / 180, 0.3), 3, Q2345)]
+        @test maximum(e) > 0.4 * sum(e)
     end
-    @test length(unique(doms)) >= 4       # many distinct directions resolved
 end
 
 @testitem "DFB level 0 returns single subband" tags = [:directional] begin
@@ -140,13 +134,44 @@ end
     using Random
     Random.seed!(23)
     x = randn(32, 32)
-    for l in 1:3, tl in 1:3
+    for l in 1:3, tl in 1:5
         sbs = nsdfb_decompose(x, l, Q2345, tl)
         @test length(sbs) == 2^l
         @test all(s -> size(s) == (32, 32), sbs)
         rec = nsdfb_reconstruct(sbs, Q2345, tl)
         @test maximum(abs, rec .- x) < 1.0e-12
     end
+end
+
+@testitem "NSDFB upsamples its filters at coarse pyramid levels" tags = [:directional] begin
+    # At tree_level j the filters are Uₖ(z^(2^m I)), m = max(0, j - 2): their
+    # response at ω is the base filter's at 2^m ω.  The subbands are zero-phase
+    # filterings, so a plane wave of frequency k comes out scaled by Uₖ(2^m k),
+    # exactly as the plane wave of frequency 2^m k does at tree_level 1.
+    n = 64
+    wave(k) = [cos(2π * (k[1] * a + k[2] * b) / n) for a in 0:(n - 1), b in 0:(n - 1)]
+    gain(x, s) = sum(s .* x) / sum(abs2, x)
+    for (j, m) in ((1, 0), (2, 0), (3, 1), (4, 2), (5, 3)), k in ((1, 2), (3, -1), (2, 2))
+        x, xm = wave(k), wave((2^m) .* k)
+        coarse = nsdfb_decompose(x, 3, Q2345, j)
+        fine = nsdfb_decompose(xm, 3, Q2345, 1)
+        @test [gain(x, s) for s in coarse] ≈ [gain(xm, s) for s in fine] atol = 1.0e-12
+    end
+
+    # The point of the upsampling: at the coarsest of five pyramid levels the
+    # directional subbands separate orientations again.  A sweep of plane waves in
+    # that band (radius ≈ n/48 cycles) makes all 8 subbands dominant in turn with
+    # the upsampled filters; with the unmodified ones a single subband wins at
+    # every angle.
+    n = 384
+    dominant(j) = Set(
+        begin
+            x = wave((round(Int, 8 * cos(θ)), round(Int, 8 * sin(θ))))
+            argmax([sum(abs2, s) for s in nsdfb_decompose(x, 3, Q2345, j)])
+        end for θ in range(0, π; length = 73)[1:(end - 1)]
+    )
+    @test length(dominant(5)) == 8
+    @test length(dominant(1)) <= 2
 end
 
 @testitem "NSDFB subbands are directionally selective" tags = [:directional] begin
@@ -176,16 +201,106 @@ end
     @test length(unique(doms)) == 8
 end
 
-@testitem "NSDFB matches the MATLAB reference (resampling-matrix fan filters)" tags = [:directional] begin
-    # Locks the wedge construction to the da Cunha–Zhou–Do reference: the fan and
-    # parallelogram filters built from the pkva ladder must equal dfilters('pkva')
-    # + parafilters from the MATLAB toolbox.  Reference values precomputed.
-    F = Contourlets._nsdfb_filters(Q2345, Float64)
-    @test size(F.k1) == (23, 23)        # fan filter from the 23-tap diamond low-pass
-    @test size(F.k2) == (45, 45)        # fan filter from the 45-tap diamond high-pass
-    @test length(F.f1) == 4 && length(F.f2) == 4
-    @test all(==((23, 23)), size.(F.f1))
-    @test isodd(size(F.k2, 1))
+@testitem "DFB matches the Contourlet Toolbox at l ≤ 2" tags = [:directional] begin
+    # Output of the MATLAB toolbox's dfbdec_l, run as a black box (see
+    # test/reference/README.md).  The toolbox differs from l = 3 on, where it is not
+    # the multichannel bank of Do's thesis on a periodic image.
+    ref = reinterpret(Float64, read(joinpath(@__DIR__, "..", "reference", "toolbox_dfb_l12.bin")))
+    x = [mod(73i^2 + 179j^2 + 31i * j, 1031) / 1031 - 0.5 for i in 1:32, j in 1:32]
+    ours = reduce(vcat, [vec(s) for l in 1:2 for s in dfb_decompose(x, l, Q2345)])
+    @test length(ours) == length(ref)
+    @test maximum(abs, ours .- ref) < 1.0e-13
+end
+
+@testitem "DFB channels are filter-then-downsample on a diagonal lattice (Do, eq. 3.23)" tags = [:directional] begin
+    # Channel k is yₖ[n] = (hₖ ⊛ x)[Sₖn]: shifting the input by a step of Sₖ's
+    # lattice shifts the subband by one sample, exactly, at every depth.
+    using Random
+    Random.seed!(5)
+    x = randn(64, 64)
+    for l in 2:5
+        sbs = dfb_decompose(x, l, Q2345)
+        szs = dfb_subband_sizes(64, 64, l)
+        for k in eachindex(sbs)
+            S = (64 ÷ szs[k][1], 64 ÷ szs[k][2])
+            for step in ((1, 0), (0, 1), (1, 1))
+                ys = dfb_decompose(circshift(x, S .* step), l, Q2345)[k]
+                @test maximum(abs, ys .- circshift(sbs[k], step)) < 1.0e-12
+            end
+        end
+    end
+end
+
+@testitem "NSDFB subbands are the DFB's equivalent filters without decimation" tags = [:directional] begin
+    # da Cunha, Zhou & Do: the NSDFB is the DFB with the samplers switched off.  So
+    # each DFB subband is its NSDFB subband (scaled by 2^(l/2), up to the channel's
+    # delay) sampled on the channel's lattice.
+    using Random
+    Random.seed!(6)
+    x = randn(32, 32)
+    for l in 2:4
+        d = dfb_decompose(x, l, Q2345)
+        ns = nsdfb_decompose(x, l, Q2345)
+        szs = dfb_subband_sizes(32, 32, l)
+        for k in eachindex(d)
+            S = (32 ÷ szs[k][1], 32 ÷ szs[k][2])
+            hits = [
+                maximum(abs, 2.0^(l / 2) .* sgn .* circshift(ns[k], .-t)[1:S[1]:end, 1:S[2]:end] .- d[k])
+                    for t in Iterators.product(-16:16, -16:16), sgn in (1, -1)
+            ]
+            @test minimum(hits) < 1.0e-12
+        end
+    end
+end
+
+@testitem "DFB and NSDFB resolve every wedge at every depth" tags = [:directional] begin
+    # A plane wave sweeping 180° must make each of the 2ˡ subbands dominant in
+    # turn.  Perfect reconstruction proves nothing about the partition; this does.
+    # (The previous NSDFB, like the NSCT Toolbox's nsdfbdec run as a black box on
+    # the same sweep, merged sibling wedges from l = 4 on: 8 of 16 and 16 of 32
+    # subbands never dominate.)  Integer frequencies keep the waves periodic on
+    # the grid, so no spectral leakage blurs the wedge boundaries.
+    #
+    # At l = 5 the two 3.6°-wide wedges that border the ±45° fan boundary
+    # (subbands 1 and 16) are narrower than the 12-tap fan filters' transition, so
+    # a neighbour always outweighs them.  The Contourlet Toolbox's dfbdec_l, run as
+    # a black box on the same sweep, misses exactly the same two subbands.
+    n = 256
+    R = 0.3n
+    function wave(θ)
+        a, b = round(Int, R * cos(θ)), round(Int, R * sin(θ))
+        return [cos(2π * (a * j + b * i) / n) for i in 0:(n - 1), j in 0:(n - 1)]
+    end
+    for l in 2:5
+        angles = range(0, π; length = 8 * 2^l + 1)[1:(end - 1)]
+        expected = l == 5 ? setdiff(1:32, (1, 16)) : 1:(2^l)
+        for dec in (x -> dfb_decompose(x, l, Q2345), x -> nsdfb_decompose(x, l, Q2345))
+            doms = [argmax([sum(abs2, s) for s in dec(wave(θ))]) for θ in angles]
+            @test setdiff(expected, doms) == Int[]
+        end
+    end
+end
+
+@testitem "half trees keep the full tree's wedges and reconstruct" tags = [:directional] begin
+    # Eslami & Radha's modified banks: one level-1 fan is split, the other kept.
+    using Random
+    Random.seed!(7)
+    x = randn(32, 32)
+    for l in 1:4
+        m = 2^(l - 1)
+        full, nsfull = dfb_decompose(x, l, Q2345), nsdfb_decompose(x, l, Q2345)
+        for (h, keep, from) in ((:first, 1:m, 1:m), (:second, 2:(m + 1), (m + 1):(2m)))
+            sbs, ns = dfb_decompose(x, l, Q2345; half = h), nsdfb_decompose(x, l, Q2345; half = h)
+            @test length(sbs) == length(ns) == m + 1
+            @test size.(sbs) == dfb_subband_sizes(32, 32, l; half = h)
+            if l > 1
+                @test all(sbs[i] ≈ full[j] for (i, j) in zip(keep, from))
+                @test all(ns[i] ≈ nsfull[j] for (i, j) in zip(keep, from))
+            end
+            @test maximum(abs, dfb_reconstruct(sbs, Q2345; half = h) .- x) < 1.0e-12
+            @test maximum(abs, nsdfb_reconstruct(ns, Q2345; half = h) .- x) < 1.0e-12
+        end
+    end
 end
 
 @testitem "NSCT is directionally selective for oriented inputs" tags = [:nsct, :directional] begin
@@ -401,101 +516,20 @@ end
     @test_throws ArgumentError nsdfb_reconstruct(sbs, Q2345, 1)
 end
 
-@testitem "_sparse_to_dense round-trips SparseFilter2D" tags = [:directional] begin
-    F = Contourlets._nsdfb_filters(Q2345, Float64)
-    sf = F.k1
-    dense = Contourlets._sparse_to_dense(sf)
-    @test size(dense) == size(sf)
-    sf2 = Contourlets.SparseFilter2D(dense)
-    @test sort(sf2.vals) ≈ sort(sf.vals)
-    @test length(sf2.vals) == length(sf.vals)
-end
-
-@testitem "_efilter2! dense AbstractMatrix fallback" tags = [:directional] begin
-    using Random
-    Random.seed!(80)
-    x = randn(8, 8)
-    F = Contourlets._nsdfb_filters(Q2345, Float64)
-    k1_dense = Contourlets._sparse_to_dense(F.k1)
-    out_dense = similar(x)
-    Contourlets._efilter2!(out_dense, x, k1_dense)
-    out_sparse = similar(x)
-    Contourlets._efilter2!(out_sparse, x, F.k1)
-    @test maximum(abs, out_dense .- out_sparse) < 1.0e-12
-end
-
-@testitem "_zconv2! dense AbstractMatrix fallback" tags = [:directional] begin
-    using Random
-    Random.seed!(81)
-    x = randn(8, 8)
-    F = Contourlets._nsdfb_filters(Q2345, Float64)
-    M = Contourlets._Q1
-    f1_dense = Contourlets._sparse_to_dense(F.f1[1])
-    out_dense = similar(x)
-    Contourlets._zconv2!(out_dense, x, f1_dense, M)
-    out_sparse = similar(x)
-    Contourlets._zconv2!(out_sparse, x, F.f1[1], M)
-    @test maximum(abs, out_dense .- out_sparse) < 1.0e-12
-end
-
-@testitem "_sefilter2 symmetric filter path" tags = [:directional] begin
-    f_sym = [1.0, 2.0, 1.0]
-    qfp_sym = QuincunxFilterPair{Float64}(
-        reshape([1.0], 1, 1), reshape([1.0], 1, 1),
-        (1, 1), (1, 1), f_sym
-    )
+@testitem "the ladder filter must be Phoong's symmetric even-length β" tags = [:directional] begin
     x = randn(32, 32)
-    sbs = dfb_decompose(x, 2, qfp_sym)
-    @test length(sbs) == 4
-    rec = dfb_reconstruct(sbs, qfp_sym)
-    @test size(rec) == size(x)
-    @test maximum(abs, rec .- x) < 1.0e-10
+    odd = QuincunxFilterPair{Float64}(reshape([1.0], 1, 1), reshape([1.0], 1, 1), (1, 1), (1, 1), [0.25, 0.5, 0.25])
+    asym = QuincunxFilterPair{Float64}(reshape([1.0], 1, 1), reshape([1.0], 1, 1), (1, 1), (1, 1), [0.1, 0.4, 0.5, 0.3])
+    for qfp in (odd, asym)
+        @test_throws ArgumentError dfb_decompose(x, 2, qfp)
+        @test_throws ArgumentError nsdfb_decompose(x, 2, qfp)
+    end
 end
 
-@testitem "_sefilter2 symmetric filter path threaded" tags = [:directional] begin
-    using Random
-    Random.seed!(100)
-    f_sym = [1.0, 2.0, 1.0]
-    qfp_sym = QuincunxFilterPair{Float64}(
-        reshape([1.0], 1, 1), reshape([1.0], 1, 1),
-        (1, 1), (1, 1), f_sym
-    )
-    x = randn(32, 32)
-    sbs = dfb_decompose(x, 2, qfp_sym; threading = Enabled())
-    @test length(sbs) == 4
-    rec = dfb_reconstruct(sbs, qfp_sym; threading = Enabled())
-    @test size(rec) == size(x)
-    @test maximum(abs, rec .- x) < 1.0e-10
-end
-
-@testitem "_resamp invalid type throws" tags = [:directional] begin
-    x = randn(8, 8)
-    @test_throws ArgumentError Contourlets._resamp(x, 5)
-end
-
-@testitem "_qpdec unsupported type throws" tags = [:directional] begin
-    x = randn(8, 8)
-    @test_throws ArgumentError Contourlets._qpdec(x, :bad)
-end
-
-@testitem "_qprec unsupported type throws" tags = [:directional] begin
-    p0 = randn(4, 8); p1 = randn(4, 8)
-    @test_throws ArgumentError Contourlets._qprec(p0, p1, :bad)
-end
-
-@testitem "_ppdec invalid type throws" tags = [:directional] begin
-    x = randn(8, 8)
-    @test_throws ArgumentError Contourlets._ppdec(x, 5)
-end
-
-@testitem "_pprec invalid type throws" tags = [:directional] begin
-    p0 = randn(4, 8); p1 = randn(4, 8)
-    @test_throws ArgumentError Contourlets._pprec(p0, p1, 5)
-end
-
-@testitem "_resampz invalid type throws" tags = [:directional] begin
-    x = randn(8, 8)
-    @test_throws ArgumentError Contourlets._resampz(x, 5)
+@testitem "DFB rejects image sizes its sampling lattices do not divide" tags = [:directional] begin
+    @test_throws ArgumentError dfb_decompose(randn(30, 32), 3, Q2345)   # 30 not divisible by 4
+    @test_throws ArgumentError dfb_decompose(randn(31, 32), 1, Q2345)
+    @test_throws ArgumentError dfb_decompose(randn(32, 32), 2, Q2345; half = :neither)
 end
 
 @testitem "nsdfb_decompose threading kwarg is accepted" tags = [:directional] begin
@@ -505,17 +539,25 @@ end
     @test maximum(abs, sbs_e[1] .- sbs_d[1]) < 1.0e-14
 end
 
-@testitem "_extend2 unsupported extmod throws" tags = [:directional] begin
-    x = randn(8, 8)
-    @test_throws ArgumentError Contourlets._extend2(x, 1, 1, 1, 1, :bad)
-    # :qper_row was removed as dead code (never called in the DFB tree)
-    @test_throws ArgumentError Contourlets._extend2(x, 1, 1, 1, 1, :qper_row)
-end
-
 @testitem "dfb_reconstruct single subband returns copy" tags = [:directional] begin
     x = randn(16, 16)
     sbs = [x]
     rec = dfb_reconstruct(sbs, Q2345)
     @test rec == x
     @test rec !== x   # must be a copy, not the same object
+end
+
+@testitem "DFB and NSDFB on complex data are real-linear" tags = [:directional] begin
+    using Random
+    Random.seed!(42)
+    a, b = randn(32, 32), randn(32, 32)
+    z = complex.(a, b)
+    for l in 1:3
+        dz, da, db = dfb_decompose(z, l, Q2345), dfb_decompose(a, l, Q2345), dfb_decompose(b, l, Q2345)
+        @test all(maximum(abs, dz[k] .- complex.(da[k], db[k])) < 1.0e-12 for k in eachindex(dz))
+        @test maximum(abs, dfb_reconstruct(dz, Q2345) .- z) < 1.0e-12
+        nz, na, nb = nsdfb_decompose(z, l, Q2345), nsdfb_decompose(a, l, Q2345), nsdfb_decompose(b, l, Q2345)
+        @test all(maximum(abs, nz[k] .- complex.(na[k], nb[k])) < 1.0e-12 for k in eachindex(nz))
+        @test maximum(abs, nsdfb_reconstruct(nz, Q2345) .- z) < 1.0e-12
+    end
 end

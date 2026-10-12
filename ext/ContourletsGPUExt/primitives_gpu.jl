@@ -265,20 +265,7 @@ end
     hp_val = zero(T)
     @inbounds for l in 1:K
         dc = l - c_h
-        jj = j - dc
-        # symmetric boundary
-        if jj < 1
-            jj = 2 - jj
-        end
-        if jj > n2
-            jj = 2 * n2 - jj
-        end
-        if jj < 1
-            jj = 1
-        end
-        if jj > n2
-            jj = n2
-        end
+        jj = mod1(j - dc, n2)   # periodic boundary, as the CPU kernel
         xval = img[i, jj]
         lp_val += h[l] * xval
         hp_val += (iseven(dc) ? h[l] : -h[l]) * xval
@@ -302,10 +289,8 @@ end
         s1 = sb1[i, k2]
         for l in 1:K
             dc = l - c_g
-            j_out = j_src + dc
-            if 1 <= j_out <= n2
-                out[i, j_out] += g[l] * s0 + (iseven(dc) ? g[l] : -g[l]) * s1
-            end
+            j_out = mod1(j_src + dc, n2)   # periodic scatter, as the CPU kernel
+            out[i, j_out] += g[l] * s0 + (iseven(dc) ? g[l] : -g[l]) * s1
         end
     end
 end
@@ -323,19 +308,7 @@ end
     hp_val = zero(T)
     @inbounds for l in 1:K
         dc = l - c_h
-        ii = i - dc
-        if ii < 1
-            ii = 2 - ii
-        end
-        if ii > n1
-            ii = 2 * n1 - ii
-        end
-        if ii < 1
-            ii = 1
-        end
-        if ii > n1
-            ii = n1
-        end
+        ii = mod1(i - dc, n1)   # periodic boundary, as the CPU kernel
         xval = img[ii, j]
         lp_val += h[l] * xval
         hp_val += (iseven(dc) ? h[l] : -h[l]) * xval
@@ -358,10 +331,8 @@ end
         s1 = sb1[k1, j]
         for l in 1:K
             dc = l - c_g
-            i_out = i_src + dc
-            if 1 <= i_out <= n1
-                out[i_out, j] += g[l] * s0 + (iseven(dc) ? g[l] : -g[l]) * s1
-            end
+            i_out = mod1(i_src + dc, n1)   # periodic scatter, as the CPU kernel
+            out[i_out, j] += g[l] * s0 + (iseven(dc) ? g[l] : -g[l]) * s1
         end
     end
 end

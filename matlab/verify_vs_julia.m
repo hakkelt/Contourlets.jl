@@ -8,7 +8,10 @@ function verify_vs_julia(J, L_array, sizes)
 %
 % Checks three transforms for each size:
 %   1. NSDFB  — nsdfbdec/nsdfbrec  vs Julia nsdfb_decompose/reconstruct
-%              Cross-validates subbands (same pkva diamond filters → should match ~1e-12)
+%              PR-only check: Julia computes the NSDFB as the DFB's equivalent
+%              filters without decimation (da Cunha et al. 2006) and drops the
+%              per-channel delays, so subbands differ from the toolbox's by a
+%              shift and sign at L <= 2, and in the wedges themselves from L = 3.
 %   2. CT     — pdfbdec/pdfbrec    vs Julia ct_forward/ct_inverse
 %              PR-only check: Julia uses JPEG2000-normalised CDF97; MATLAB pdfbdec
 %              uses a different '9-7' scaling, so subbands differ but both give PR≈0.
@@ -115,24 +118,17 @@ for n = sizes
     pr_nsdfb_m = max(abs(rec_m(:) - x(:)));
 
     nsb = numel(y_nsdfb);
-    sb_err_nsdfb = 0;
-    for k = 1:nsb
-        jl_sb = readmatrix(fullfile(iodir, sprintf('jl_nsdfb_%d_sb%02d.csv', n, k)));
-        sb_err_nsdfb = max(sb_err_nsdfb, max(abs(jl_sb(:) - y_nsdfb{k}(:))));
-    end
     jl_rec_nsdfb = readmatrix(fullfile(iodir, sprintf('jl_nsdfb_%d_rec.csv', n)));
-    rec_err_nsdfb = max(abs(jl_rec_nsdfb(:) - rec_m(:)));
-    pr_nsdfb_jl   = max(abs(jl_rec_nsdfb(:) - x(:)));
+    pr_nsdfb_jl  = max(abs(jl_rec_nsdfb(:) - x(:)));
 
     row_m = jl_t(strcmp(jl_t.transform,'nsdfb') & jl_t.size == n, :);
     td_jl = row_m.decompose_s; tr_jl = row_m.reconstruct_s;
 
-    pass_nsdfb = sb_err_nsdfb < 1e-9 && rec_err_nsdfb < 1e-9;
+    pass_nsdfb = pr_nsdfb_jl < 1e-9 && pr_nsdfb_m < 1e-9;
     all_pass = all_pass && pass_nsdfb;
 
-    fprintf('  NSDFB  (L=%d, %d sbs):  MATLAB PR=%.1e | Julia PR=%.1e | cross=%.1e  [%s]\n', ...
-            L_nsdfb, nsb, pr_nsdfb_m, pr_nsdfb_jl, max(sb_err_nsdfb, rec_err_nsdfb), ...
-            yesno(pass_nsdfb));
+    fprintf('  NSDFB  (L=%d, %d sbs):  MATLAB PR=%.1e | Julia PR=%.1e  [%s]\n', ...
+            L_nsdfb, nsb, pr_nsdfb_m, pr_nsdfb_jl, yesno(pass_nsdfb));
     fprintf('    timing dec:  MATLAB %.4f s | Julia %.4f s | %.2fx\n', ...
             median(td_m), td_jl, median(td_m)/td_jl);
     fprintf('    timing rec:  MATLAB %.4f s | Julia %.4f s | %.2fx\n', ...

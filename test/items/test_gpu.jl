@@ -11,7 +11,7 @@
 @testmodule GPUBackends begin
     using GPUEnv
     using Adapt
-    export backends, Adapt
+    export backends, fft_backends, Adapt
 
     # `test/runtests.jl` activates the GPU overlay before the runner starts, but a
     # test item can also be run on its own — an IDE test runner, or a language
@@ -29,6 +29,11 @@
     # All test data below is Float32 (Metal does not support Float64), so every
     # backend — including Metal — can run the same test bodies.
     const backends = gpu_backends(; include_jlarrays = true)
+
+    # The directional filter banks filter on the DFT grid, so the transforms need a
+    # backend with an FFT (cuFFT, rocFFT, …, or FFTW on JLArrays' host memory);
+    # OpenCL has none.
+    const fft_backends = gpu_backends(; include_jlarrays = true, supports_fftw = true)
 end
 
 @testitem "GPU at least one backend (JLArrays)" tags = [:gpu] setup = [GPUBackends] begin
@@ -104,7 +109,7 @@ end
     x = randn(Float32, 64, 64)
     p = ContourletParams(J = 2, L_array = [2, 3])
     ccpu = ct_forward(x, p)
-    for backend in GPUBackends.backends
+    for backend in GPUBackends.fft_backends
         xg = to_gpu(backend, x)
         cgpu = ct_forward(xg, p)
         # Coefficients stay on the device; bring them back to compare to the CPU path.
@@ -123,7 +128,7 @@ end
     x = randn(Float32, 32, 32)
     p = ContourletParams(J = 2, L_array = [2, 3])
     ncpu = nsct_forward(x, p)
-    for backend in GPUBackends.backends
+    for backend in GPUBackends.fft_backends
         xg = to_gpu(backend, x)
         ngpu = nsct_forward(xg, p)
         @test maximum(abs, Array(ngpu.coarse) .- ncpu.coarse) < 1.0f-5
@@ -146,7 +151,7 @@ end
     p = ContourletParams(J = 2, L_array = [2, 3])
     ccpu = ct_forward(z, p)
     ncpu = nsct_forward(z, p)
-    for backend in GPUBackends.backends
+    for backend in GPUBackends.fft_backends
         zg = to_gpu(backend, z)
 
         cgpu = ct_forward(zg, p)
@@ -166,7 +171,7 @@ end
     Random.seed!(56)
     x = randn(Float32, 32, 32)
     p = ContourletParams(J = 2, L_array = [2, 3])
-    for backend in GPUBackends.backends
+    for backend in GPUBackends.fft_backends
         xg = to_gpu(backend, x)
         DT = typeof(xg)
 
@@ -197,8 +202,6 @@ end
         @test_throws ArgumentError Contourlets.conv2d_sep!(dg, xg, h, h; boundary = :bad)
         @test_throws ArgumentError Contourlets.shear!(dg, xg, :bad)
         @test_throws ArgumentError Contourlets.inv_shear!(dg, xg, :bad)
-        @test_throws ArgumentError Contourlets._resamp(xg, 5)
-        @test_throws ArgumentError Contourlets._sefilter2(xg, h, 0, 0, :bad)
     end
 end
 
@@ -222,7 +225,7 @@ end
     Random.seed!(58)
     x = randn(Float32, 16, 16)
     p = ContourletParams(J = 1, L_array = [2])
-    for backend in GPUBackends.backends
+    for backend in GPUBackends.fft_backends
         xg = to_gpu(backend, x)
         # l_levels == 0 → [copy(bandpass)]
         sbs0 = nsdfb_decompose(xg, 0, Q2345)
@@ -318,21 +321,38 @@ end
     end
 end
 
-@testitem "GPU qfb_decompose boundary clamping" tags = [:gpu] setup = [GPUBackends] begin
+@testitem "GPU TICT/STICT match CPU, reconstruct, stay on the device" tags = [:gpu] setup = [GPUBackends] begin
     using GPUEnv, Random
     Random.seed!(74)
-    x = randn(Float32, 8, 8)
-    # 5-tap filter centred at position 3: for the first output column (j=2),
-    # tap l=5 gives jj = 2-2 = 0 < 1; for the last column (j=8), tap l=1
-    # gives jj = 8+2 = 10 > 8.  Both clamping branches are reached.
-    h5 = Float64[1 / 16 1 / 4 3 / 8 1 / 4 1 / 16]   # 1×5
-    wide_qfp = QuincunxFilterPair(h5, h5, (1, 3), (1, 3))
-    for backend in GPUBackends.backends
-        xg = to_gpu(backend, x)
-        sb0, sb1 = qfb_decompose(xg, wide_qfp; dir = :col)
-        @test !(sb0 isa Array)
-        @test size(sb0) == (8, 4)
-        @test all(isfinite, Array(sb0))
+    p = ContourletParams(J = 2, L_array = [3, 2])
+    for x in (randn(Float32, 32, 32), complex.(randn(Float32, 32, 32), randn(Float32, 32, 32)))
+        flat(c) = collect(Iterators.flatten(Iterators.flatten(c.subbands)))
+        for (fwd, inv, mk, sim) in (
+                (tict_forward, tict_inverse, make_tict_workspace, similar_tict_coefficients),
+                (stict_forward, stict_inverse, make_stict_workspace, similar_stict_coefficients),
+            )
+            ccpu = fwd(x, p)
+            for backend in GPUBackends.fft_backends
+                xg = to_gpu(backend, x)
+                cg = fwd(xg, p)
+                @test !(cg.coarse isa Array)
+                @test all(s -> !(s isa Array), flat(cg))
+                @test maximum(abs, Array(cg.coarse) .- ccpu.coarse) < 1.0f-4
+                @test all(maximum(abs, Array(a) .- b) < 1.0f-4 for (a, b) in zip(flat(cg), flat(ccpu)))
+                @test maximum(abs, Array(inv(cg, p)) .- x) < 1.0f-4
+                # Workspace path on the device.
+                # Float64 params: the workspace promotes the data to Float64.
+                ws = mk(xg, p)
+                @test eltype(ws) == promote_type(Float64, eltype(x))
+                cw = sim(p, size(x); Td = eltype(ws), M = typeof(similar(xg, eltype(ws))))
+                out = similar(xg, eltype(ws))
+                (fwd === tict_forward ? tict_forward! : stict_forward!)(cw, xg, p; workspace = ws)
+                (fwd === tict_forward ? tict_inverse! : stict_inverse!)(out, cw, p; workspace = ws)
+                @test maximum(abs, Array(out) .- x) < 1.0f-4
+                # Coefficients move between host and device.
+                @test Adapt.adapt(Array, cg).coarse isa Array
+            end
+        end
     end
 end
 
@@ -351,17 +371,17 @@ end
         )
     )
     x = randn(Float32, 32, 32)
-    for backend in GPUBackends.backends
+    for backend in GPUBackends.fft_backends
         xg = to_gpu(backend, x)
         # make_nsct_workspace(image, params) infers M from image → dispatches
-        # _device_qup_cache and _device_lp_cache GPU overloads
+        # the _adapt_bank GPU overload and moves the pyramid masks with `_like`
         ws = make_nsct_workspace(xg, p; prewarm = false)
         @test ws isa ContourletWorkspace
-        # NSDFB filter bundles should now be on the device
-        @test !(ws.qup_cache[1].k1 isa Array)
-        # à-trous LP filter vectors should also be on the device
-        @test !(ws.lp_h_cache[1] isa Array)
-        @test !(ws.lp_g_cache[1] isa Array)
+        # NSDFB equivalent filters should now be on the device
+        @test !(ws.nsdfb_banks[1].ana[1] isa Array)
+        # the pyramid masks should also be on the device
+        @test !(ws.nsp_ana[1] isa Array)
+        @test !(ws.nsp_syn[end] isa Array)
     end
 end
 
@@ -387,5 +407,130 @@ end
         nc_host = Adapt.adapt(Array, nc_dev)
         @test nc_host.coarse isa Array
         @test maximum(abs, nc_host.coarse .- nc.coarse) < 1.0f-6
+    end
+end
+
+@testitem "GPU CT workspace path matches CPU" tags = [:gpu] setup = [GPUBackends] begin
+    using GPUEnv, Random
+    Random.seed!(42)
+    # Float32 filters so the device workspace stays Float32 (Metal has no Float64).
+    p = ContourletParams(
+        J = 2, L_array = [2, 3],
+        lp_filters = FilterPair{Float32}(Float32.(CDF97.h), Float32.(CDF97.g)),
+        dfb_filters = QuincunxFilterPair{Float32}(
+            Float32.(Q2345.h_q), Float32.(Q2345.g_q),
+            Q2345.c_h, Q2345.c_g, Float32.(Q2345.f_ladder)
+        )
+    )
+    x = randn(Float32, 64, 64)
+    ccpu = ct_forward(x, p)
+    for backend in GPUBackends.fft_backends
+        xg = to_gpu(backend, x)
+        DT = typeof(xg)
+        ws = make_workspace(xg, p)               # DFB equivalent filters on the device
+        @test !(ws.dfb_runners[1].bank.ana[1] isa Array)
+        cg = ct_forward(xg, p; workspace = ws)   # GPU allocating forward with workspace
+        @test cg.coarse isa DT
+        @test maximum(abs, Array(cg.coarse) .- ccpu.coarse) < 1.0f-5
+        for j in 1:2, k in eachindex(ccpu.subbands[j])
+            @test maximum(abs, Array(cg.subbands[j][k]) .- ccpu.subbands[j][k]) < 1.0f-5
+        end
+        rec = ct_inverse(cg, p; workspace = ws)  # GPU allocating inverse with workspace
+        @test rec isa DT
+        @test maximum(abs, Array(rec) .- Array(ct_inverse(cg, p))) < 1.0f-5
+        @test maximum(abs, Array(rec) .- x) < 1.0f-4
+        # Generic `_allocate_zeros` path for a non-Array matrix type.
+        z = Contourlets._allocate_zeros(DT, Float32, (3, 5))
+        @test z isa DT
+        @test size(z) == (3, 5)
+        @test all(iszero, Array(z))
+    end
+end
+
+@testitem "GPU NSCT workspace path matches CPU" tags = [:gpu] setup = [GPUBackends] begin
+    using GPUEnv, Random
+    Random.seed!(42)
+    p = ContourletParams(
+        J = 2, L_array = [2, 3],
+        lp_filters = FilterPair{Float32}(Float32.(CDF97.h), Float32.(CDF97.g)),
+        dfb_filters = QuincunxFilterPair{Float32}(
+            Float32.(Q2345.h_q), Float32.(Q2345.g_q),
+            Q2345.c_h, Q2345.c_g, Float32.(Q2345.f_ladder)
+        )
+    )
+    x = randn(Float32, 32, 32)
+    ncpu = nsct_forward(x, p)
+    for backend in GPUBackends.fft_backends
+        xg = to_gpu(backend, x)
+        DT = typeof(xg)
+        # The device workspace plans its FFTs on the device.
+        ws = make_nsct_workspace(xg, p)
+        @test ws.fft_plan_fwd !== nothing
+        ng = nsct_forward(xg, p; workspace = ws)
+        @test ng.coarse isa DT
+        @test maximum(abs, Array(ng.coarse) .- ncpu.coarse) < 1.0f-5
+        for j in 1:2, k in eachindex(ncpu.subbands[j])
+            @test maximum(abs, Array(ng.subbands[j][k]) .- ncpu.subbands[j][k]) < 1.0f-5
+        end
+        rec = nsct_inverse(ng, p; workspace = ws)
+        @test rec isa DT
+        @test maximum(abs, Array(rec) .- Array(nsct_inverse(ng, p))) < 1.0f-5
+        @test maximum(abs, Array(rec) .- x) < 1.0f-4
+        # In-place variants reuse the same buffers.
+        nsct_forward!(ng, xg, p; workspace = ws)
+        @test maximum(abs, Array(ng.subbands[1][1]) .- ncpu.subbands[1][1]) < 1.0f-5
+        nsct_inverse!(rec, ng, p; workspace = ws)
+        @test maximum(abs, Array(rec) .- x) < 1.0f-4
+    end
+end
+
+@testitem "GPU non-ladder QFB periodic boundary matches CPU (both directions)" tags = [:gpu] setup = [GPUBackends] begin
+    using GPUEnv, Random
+    Random.seed!(42)
+    x = randn(Float32, 8, 8)
+    # 5-tap filter centred at 3: the first/last kept sample reads one sample past
+    # the edge, which the CPU kernel wraps periodically; the device kernels must
+    # wrap the same way (they used to fold symmetrically / drop out-of-range taps).
+    h5 = Float64[1 / 16 1 / 4 3 / 8 1 / 4 1 / 16]
+    wide_qfp = QuincunxFilterPair(h5, h5, (1, 3), (1, 3))
+    # Haar pair with c_h = 2: PR holds only with periodic wrap (see test_dfb.jl).
+    qfp_wrap = QuincunxFilterPair(
+        reshape([0.5, 0.5], 1, 2), reshape([1.0, 1.0], 1, 2), (1, 2), (1, 1)
+    )
+    for dir in (:row, :col), qfp in (wide_qfp, qfp_wrap)
+        sb0c, sb1c = qfb_decompose(x, qfp; dir = dir)
+        recc = qfb_reconstruct(sb0c, sb1c, qfp; dir = dir)
+        for backend in GPUBackends.backends
+            sb0g, sb1g = qfb_decompose(to_gpu(backend, x), qfp; dir = dir)
+            @test size(sb0g) == size(sb0c)
+            @test maximum(abs, Array(sb0g) .- sb0c) < 1.0f-5
+            @test maximum(abs, Array(sb1g) .- sb1c) < 1.0f-5
+            recg = qfb_reconstruct(sb0g, sb1g, qfp; dir = dir)
+            @test maximum(abs, Array(recg) .- recc) < 1.0f-5
+            qfp === qfp_wrap && @test maximum(abs, Array(recg) .- x) < 1.0f-5
+        end
+    end
+end
+
+@testitem "GPU _to_device/_ensure_gpu are no-ops on device arrays" tags = [:gpu] setup = [GPUBackends] begin
+    using GPUEnv
+    ext = Base.get_extension(Contourlets, :ContourletsGPUExt)
+    @test ext !== nothing
+    x = randn(Float32, 4, 4)
+    for backend in GPUBackends.backends
+        xg = to_gpu(backend, x)
+        be = ext._gpu_backend(xg)
+        @test ext._to_device(be, xg) === xg
+        v = view(xg, :, 1:2)
+        @test ext._to_device(be, v) === v
+        @test ext._ensure_gpu(be, xg) === xg
+        @test ext._ensure_gpu(be, v) === v
+        # Host inputs are uploaded.
+        m = ext._ensure_gpu(be, x)
+        @test !(m isa Array)
+        @test Array(m) == x
+        vh = ext._ensure_gpu(be, x[:, 1])
+        @test !(vh isa Array)
+        @test Array(vh) == x[:, 1]
     end
 end

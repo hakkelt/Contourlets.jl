@@ -1,7 +1,9 @@
 # Two-channel quincunx filter bank (QFB).
 #
-# After a shear operation the quincunx FB reduces to a 1-D two-channel
-# filter bank in one spatial direction (Do & Vetterli 2005, §V):
+# Quincunx sampling factors into a shear (a unimodular resampling) and a
+# rectangular downsampling by 2 along one axis (Do 2001, thesis §3.2.1), so after
+# the shear the quincunx FB (§3.2.2) reduces to a 1-D two-channel filter bank in
+# one spatial direction:
 #
 #   dir=:col  →  filter along columns, keep even columns  (used after :h shear)
 #   dir=:row  →  filter along rows,    keep even rows     (used after :v shear)
@@ -179,8 +181,7 @@ end
             for l in 1:K
                 dc = l - c_h          # column offset (may be negative)
                 jj = j - dc           # column to read from image
-                # symmetric boundary extension (shared helper from conv2d.jl)
-                jj = mod1(jj, n2)
+                jj = mod1(jj, n2)     # periodic boundary extension
                 xval = img[i, jj]
                 lp_val += h[l] * xval
                 # HP = LP modulated by (-1)^dc

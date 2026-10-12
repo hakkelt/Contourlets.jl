@@ -10,6 +10,10 @@
 # Inverse (runs j = J … 1):
 #       bandpass_j = dfb_reconstruct(subbands[j], dfb_filters)
 #       coarse = lp_reconstruct(coarse, bandpass_j, lp_filters)
+#
+# Reference: M. N. Do & M. Vetterli, "The contourlet transform: an efficient
+# directional multiresolution image representation", IEEE TIP 14(12), 2005 (the
+# pyramidal directional filter bank).
 
 """
     ct_forward(image, params::ContourletParams; workspace=nothing, threading=Auto()) -> ContourletCoefficients
@@ -157,10 +161,8 @@ function _ct_forward_inner!(
             tmp2_j = _scratch_like(current, n1, n2)
 
             lp_decompose!(coarse_j, bp_j, current, fp; tmp = tmp_j, tmp2 = tmp2_j)
-            sbs = dfb_decompose(bp_j, L[j], qfp; filter = ws.dfb_f_cache, threading = threading)   # DFB transients use the arena
-            for (k, sb) in enumerate(sbs)
-                copyto!(coeffs.subbands[j][k], sb)
-            end
+            # The workspace runner holds this level's filters, buffers and plans.
+            dfb_decompose!(coeffs.subbands[j], bp_j, L[j], qfp; workspace = ws, threading = threading)
             current = coarse_j
         end
         copyto!(coeffs.coarse, current)
@@ -283,8 +285,9 @@ function _ct_inverse_inner!(
         copyto!(current, coeffs.coarse)
 
         for j in J:-1:1
-            bp = dfb_reconstruct(coeffs.subbands[j], qfp; filter = ws.dfb_f_cache, threading = threading)   # DFB transients use the arena
-            n1, n2 = size(bp)
+            n1, n2 = ws.bp_dims[j]
+            bp = _scratch_like(current, n1, n2)
+            dfb_reconstruct!(bp, coeffs.subbands[j], qfp; workspace = ws, threading = threading)
             tmp_j = _scratch_like(current, n1, n2)
             tmp2_j = _scratch_like(current, n1, n2)
             if j > 1
@@ -311,28 +314,6 @@ function _prewarm_ct!(ws::ContourletWorkspace{Td, Tf, M}) where {Td, Tf, M}
     ct_forward!(coeffs, img, ws.params; workspace = ws)
     ct_inverse!(img, coeffs, ws.params; workspace = ws)
     return ws
-end
-
-"""
-    dfb_subband_sizes(n1, n2, l; ladder=true) -> Vector{Tuple{Int,Int}}
-
-Per-subband `(rows, cols)` sizes produced by an `l`-level DFB applied to an
-`n1 × n2` bandpass image.  For the ladder (default) DFB the first `2^(l-1)`
-subbands form the horizontal mosaic and the remaining `2^(l-1)` the vertical
-mosaic; for the modulation-mode DFB all subbands are equal-sized.
-"""
-function dfb_subband_sizes(n1::Int, n2::Int, l::Int; ladder::Bool = true)
-    l <= 0 && return [(n1, n2)]
-    if !ladder
-        sub_n1 = n1 >> (l ÷ 2)
-        sub_n2 = n2 >> cld(l, 2)
-        return fill((sub_n1, sub_n2), 2^l)
-    end
-    l == 1 && return fill((n1 >> 1, n2), 2)
-    half = 2^(l - 1)
-    first_sz = (n1 >> (l - 1), n2 >> 1)   # horizontal mosaic
-    second_sz = (n1 >> 1, n2 >> (l - 1))  # vertical mosaic
-    return vcat(fill(first_sz, half), fill(second_sz, half))
 end
 
 """

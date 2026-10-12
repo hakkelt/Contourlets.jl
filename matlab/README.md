@@ -9,9 +9,12 @@ required to use it.
 | `Contourlet-transform/` | [aliibraheemshash/Contourlet-transform](https://github.com/aliibraheemshash/Contourlet-transform) (`master` branch) | Do & Vetterli critically-sampled Contourlet Toolbox (`pdfbdec`, `dfbdec`, `dfilters`, …). |
 | `Nonsubsampled-Contourlet-Toolbox/` | [ssalili/Nonsubsampled-Contourlet-Toolbox](https://github.com/ssalili/Nonsubsampled-Contourlet-Toolbox) | da Cunha–Zhou–Do Nonsubsampled Contourlet Toolbox (`nsctdec`, `nsdfbdec`, `nssfbdec`, `parafilters`, …). |
 
-The NSCT toolbox is the reference for the resampling-matrix NSDFB construction
-(fan + parallelogram filters convolved with upsampling matrices), which is the
-shift-invariant directional filter bank `Contourlets.jl` implements.
+Both are used as black boxes only: the scripts here run them and compare their
+outputs and timings, and nothing in the package is derived from their source.
+The Contourlet Toolbox is distributed under the GNU General Public License (its
+`COPYING`); the Nonsubsampled Contourlet Toolbox states no licence.  The package
+implements the papers instead — see the references in
+[`docs/src/theory.md`](../docs/src/theory.md).
 
 ## Getting the sources
 

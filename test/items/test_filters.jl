@@ -35,22 +35,27 @@ end
     @test_throws ArgumentError nsdfb_decompose(x, 2, haar, 2)
 end
 
-@testitem "Q2345 NSDFB equivalent-filter PR identity" tags = [:filters] begin
-    # The equivalent leaf filters reproduce a delta on round-trip: summing the
-    # analysis⊛synthesis equivalent filters per leaf must give the identity (the
-    # nonsubsampled PR identity, here verified through the FFT equivalent filters).
-    using FFTW
-    n1, n2, L = 16, 16, 2
-    F = Contourlets._nsdfb_filters(Q2345, Float64)
-    H, G = Contourlets._build_equivalent_filters(Float64, n1, n2, F, L, true)
-    acc = zeros(ComplexF64, n1 ÷ 2 + 1, n2)
-    for k in eachindex(H)
-        acc .+= H[k] .* G[k]
+@testitem "Phoong quincunx pair satisfies the quincunx PR conditions" tags = [:filters] begin
+    # Do's thesis eqs. 3.9–3.10 for the closed-form pair built from Q2345's β:
+    #   ½(G₀H₀ + G₁H₁) = 1 and H₀(ω+π)G₀(ω) + H₁(ω+π)G₁(ω) = 0, π = (π, π).
+    v = Contourlets._ladder_half(Q2345.f_ladder)
+    b(θ) = Contourlets._ladder_amplitude(v, θ)
+    p(w) = b(w[1] + w[2]) * b(w[1] - w[2])
+    H(i, w) = i == 0 ? (1 + p(w)) / sqrt(2) : cis(w[1]) * (2 - p(w) - p(w)^2) / sqrt(2)
+    G(i, w) = i == 0 ? (2 + p(w) - p(w)^2) / sqrt(2) : cis(-w[1]) * (1 - p(w)) / sqrt(2)
+    for w in ([0.3, -1.1], [2.0, 0.7], [-2.9, 3.1], [0.0, 0.0])
+        wπ = w .+ π
+        @test abs((G(0, w) * H(0, w) + G(1, w) * H(1, w)) / 2 - 1) < 1.0e-12
+        @test abs(H(0, wπ) * G(0, w) + H(1, wπ) * G(1, w)) < 1.0e-12
     end
-    delta = irfft(acc, n1)
-    @test abs(delta[1, 1] - 1) < 1.0e-12
-    delta[1, 1] = 0
-    @test maximum(abs, delta) < 1.0e-12
+end
+
+@testitem "NSDFB equivalent filters sum to the identity" tags = [:filters] begin
+    # Σₖ GₖHₖ = 1 on the whole grid, for full and half trees.
+    for l in 1:4, half in (:both, :first, :second)
+        b = Contourlets._directional_bank(Float64, (16, 24), l, Q2345.f_ladder; decimated = false, half = half)
+        @test maximum(abs, sum(a .* g for (a, g) in zip(b.ana, b.syn)) .- 1) < 1.0e-12
+    end
 end
 
 @testitem "upsample_filter" tags = [:filters] begin
@@ -123,4 +128,68 @@ end
     @test length(f) == 12
     @test f == reverse(f)   # symmetric
     @test f[6] == 0.63       # pkva12 tap check (f[6] = _PKVA12_HALF[1])
+end
+
+@testitem "QuincunxFilterPair{T} 4-arg modulation-mode constructor" tags = [:filters] begin
+    qfp = QuincunxFilterPair{Float32}([0.5 0.5], [1.0 1.0], (1, 1), (1, 2))
+    @test qfp isa QuincunxFilterPair{Float32}
+    @test eltype(qfp) == Float32
+    @test qfp.h_q == Float32[0.5 0.5]
+    @test qfp.g_q == Float32[1.0 1.0]
+    @test isempty(qfp.f_ladder)
+    @test eltype(qfp.f_ladder) == Float32
+    @test !Contourlets.is_ladder(qfp)
+end
+
+@testitem "ContourletParams eltype and same-type conversions are identities" tags = [:filters] begin
+    using Random
+    p = ContourletParams(J = 2, L_array = [1, 2])
+    @test eltype(p) == Float64
+    @test Contourlets._convert_params(Float64, p) === p
+    @test Contourlets._convert_qfp(Float64, Q2345) === Q2345
+    p32 = Contourlets._convert_params(Float32, p)
+    @test eltype(p32) == Float32
+    @test eltype(p32.dfb_filters) == Float32
+    @test Contourlets._convert_params(Float32, p32) === p32
+end
+
+@testitem "Coefficient containers infer type parameters from 2-arg constructors" tags = [:filters] begin
+    c = zeros(4, 4)
+    sbs = [[zeros(4, 4), zeros(4, 4)]]
+    cc = ContourletCoefficients(c, sbs)
+    @test cc isa ContourletCoefficients{Float64, Matrix{Float64}}
+    @test cc.coarse === c
+    @test cc.subbands === sbs
+    zc = zeros(ComplexF32, 2, 2)
+    nc = NSCTCoefficients(zc, [[zeros(ComplexF32, 2, 2)]])
+    @test nc isa NSCTCoefficients{ComplexF32, Matrix{ComplexF32}}
+end
+
+@testitem "_ladder_equivalent_filters reproduces Q2345 and satisfies PR" tags = [:filters] begin
+    f = Contourlets._ladder_modulate(Contourlets.pkva_ladder_filter())
+    eq = Contourlets._ladder_equivalent_filters(f)
+    # Stored Q2345 equivalent filters are exactly these (computed at load time).
+    @test eq.h0 == vec(Q2345.h_q)
+    @test eq.g0 == vec(Q2345.g_q)
+    @test (1, eq.c0) == Q2345.c_h
+    @test (1, eq.cg0) == Q2345.c_g
+    @test length(eq.h0) == 23
+    @test length(eq.g0) == 45
+    # PR identity (g0 ⊛ h0 + g1 ⊛ h1) / 2 = δ at zero lag.
+    conv(a, ca, b, cb) = Contourlets._lag_conv(a, ca, b, cb)
+    p0, c_p0 = conv(eq.g0, eq.cg0, eq.h0, eq.c0)
+    p1, c_p1 = conv(eq.g1, eq.cg1, eq.h1, eq.c1)
+    lo = min(1 - c_p0, 1 - c_p1)
+    hi = max(length(p0) - c_p0, length(p1) - c_p1)
+    acc = zeros(hi - lo + 1)
+    for (p, c) in ((p0, c_p0), (p1, c_p1)), m in eachindex(p)
+        acc[m - c - lo + 1] += p[m] / 2
+    end
+    δ = zeros(length(acc))
+    δ[1 - lo] = 1
+    @test maximum(abs, acc .- δ) < 1.0e-12
+    # Works for any element type / lifting filter (PR is structural).
+    eq32 = Contourlets._ladder_equivalent_filters(Float32[0.25, -0.5, 0.25])
+    @test eltype(eq32.h0) == Float32
+    @test eltype(eq32.g1) == Float32
 end

@@ -82,6 +82,17 @@
     nsc = similar_nsct_coefficients(p, (16, 16))
     @test_call target_modules = (Contourlets,) nsct_forward!(nsc, x, p; workspace = nsws)
     @test_call target_modules = (Contourlets,) nsct_inverse!(rec, nsc, p; workspace = nsws)
+
+    # ── TICT / STICT ─────────────────────────────────────────────────────────
+    @test_call target_modules = (Contourlets,) tict_forward(x, p)
+    @test_call target_modules = (Contourlets,) stict_forward(x, p)
+    tc, sc2 = tict_forward(x, p), stict_forward(x, p)
+    @test_call target_modules = (Contourlets,) tict_inverse(tc, p)
+    @test_call target_modules = (Contourlets,) stict_inverse(sc2, p)
+    @test_call target_modules = (Contourlets,) make_tict_workspace(p, (16, 16))
+    @test_call target_modules = (Contourlets,) make_stict_workspace(p, (16, 16))
+    @test_call target_modules = (Contourlets,) similar_tict_coefficients(p, (16, 16))
+    @test_call target_modules = (Contourlets,) similar_stict_coefficients(p, (16, 16))
 end
 
 @testitem "@test_opt Contourlets core functions" tags = [:jet] begin
@@ -126,4 +137,12 @@ end
     @test_opt target_modules = (Contourlets,) ct_forward!(sc, x, p; workspace = ws)
     rec = similar(x)
     @test_opt target_modules = (Contourlets,) ct_inverse!(rec, sc, p; workspace = ws)
+
+    # The TICT/STICT workspace paths are the hot loops: no dynamic dispatch.
+    tws, sws = make_tict_workspace(p, (16, 16)), make_stict_workspace(p, (16, 16))
+    tc, stc = similar_tict_coefficients(p, (16, 16)), similar_stict_coefficients(p, (16, 16))
+    @test_opt target_modules = (Contourlets,) tict_forward!(tc, x, p; workspace = tws)
+    @test_opt target_modules = (Contourlets,) tict_inverse!(rec, tc, p; workspace = tws)
+    @test_opt target_modules = (Contourlets,) stict_forward!(stc, x, p; workspace = sws)
+    @test_opt target_modules = (Contourlets,) stict_inverse!(rec, stc, p; workspace = sws)
 end

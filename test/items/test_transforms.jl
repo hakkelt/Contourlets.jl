@@ -250,3 +250,73 @@ end
         @test coeffs.subbands[j][k] == coeffs_ref.subbands[j][k]
     end
 end
+
+@testitem "CT in-place forward without workspace matches allocating" tags = [:ct] begin
+    using Random
+    Random.seed!(42)
+    x = randn(32, 32)
+    p = ContourletParams(J = 2, L_array = [2, 3])
+    ref = ct_forward(x, p)
+    coeffs = similar_coefficients(p, (32, 32))
+    @test ct_forward!(coeffs, x, p) === coeffs
+    @test coeffs.coarse == ref.coarse
+    for j in 1:2, k in eachindex(ref.subbands[j])
+        @test coeffs.subbands[j][k] == ref.subbands[j][k]
+    end
+    # Integer image is coerced to the coefficient eltype.
+    xi = rand(Xoshiro(42), 0:9, 32, 32)
+    ct_forward!(coeffs, xi, p)
+    @test coeffs.coarse == ct_forward(Float64.(xi), p).coarse
+    # Complex coefficients, real-filtered.
+    z = complex.(randn(32, 32), randn(32, 32))
+    cz = similar_coefficients(p, (32, 32); Td = ComplexF64)
+    ct_forward!(cz, z, p)
+    @test cz.coarse == ct_forward(z, p).coarse
+end
+
+@testitem "NSCT in-place forward without workspace matches allocating" tags = [:nsct] begin
+    using Random
+    Random.seed!(42)
+    x = randn(32, 32)
+    p = ContourletParams(J = 2, L_array = [2, 3])
+    ref = nsct_forward(x, p)
+    coeffs = similar_nsct_coefficients(p, (32, 32))
+    @test nsct_forward!(coeffs, x, p) === coeffs
+    @test coeffs.coarse == ref.coarse
+    for j in 1:2, k in eachindex(ref.subbands[j])
+        @test coeffs.subbands[j][k] == ref.subbands[j][k]
+    end
+    xi = rand(Xoshiro(42), 0:9, 32, 32)
+    nsct_forward!(coeffs, xi, p)
+    @test coeffs.coarse == nsct_forward(Float64.(xi), p).coarse
+end
+
+@testitem "CT allocating inverse with workspace matches non-workspace inverse" tags = [:ct] begin
+    using Random
+    Random.seed!(42)
+    x = randn(32, 32)
+    p = ContourletParams(J = 2, L_array = [2, 3])
+    ws = make_workspace(p, (32, 32))
+    c = ct_forward(x, p)
+    rec_ws = ct_inverse(c, p; workspace = ws)
+    rec = ct_inverse(c, p)
+    @test rec_ws isa Matrix{Float64}
+    @test size(rec_ws) == size(x)
+    @test maximum(abs, rec_ws .- rec) < 1.0e-12
+    @test maximum(abs, rec_ws .- x) < 1.0e-12
+end
+
+@testitem "NSCT allocating inverse with workspace matches non-workspace inverse" tags = [:nsct] begin
+    using Random
+    Random.seed!(42)
+    x = randn(32, 32)
+    p = ContourletParams(J = 2, L_array = [2, 3])
+    ws = make_nsct_workspace(p, (32, 32))
+    c = nsct_forward(x, p)
+    rec_ws = nsct_inverse(c, p; workspace = ws)
+    rec = nsct_inverse(c, p)
+    @test rec_ws isa Matrix{Float64}
+    @test size(rec_ws) == size(x)
+    @test maximum(abs, rec_ws .- rec) < 1.0e-10
+    @test maximum(abs, rec_ws .- x) < 1.0e-10
+end

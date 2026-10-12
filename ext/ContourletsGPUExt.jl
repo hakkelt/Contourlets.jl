@@ -20,13 +20,12 @@ import Contourlets:
     qx_downsample, qx_downsample!, qx_upsample, qx_upsample!,
     qfb_decompose, qfb_reconstruct,
     dfb_decompose, dfb_reconstruct,
-    nsdfb_decompose, nsdfb_reconstruct,
+    nsdfb_decompose,
     ct_forward, ct_inverse, nsct_forward, nsct_inverse
 
 include("ContourletsGPUExt/utils_gpu.jl")
 include("ContourletsGPUExt/primitives_gpu.jl")
-include("ContourletsGPUExt/dfb_gpu.jl")
-include("ContourletsGPUExt/nsdfb_gpu.jl")
+include("ContourletsGPUExt/bank_gpu.jl")
 include("ContourletsGPUExt/transforms_gpu.jl")
 
 end # module ContourletsGPUExt

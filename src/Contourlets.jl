@@ -10,6 +10,8 @@ implemented as a standalone Julia package.
 |----------|-------------|
 | `ct_forward` / `ct_inverse` | Discrete CT (nearly critically sampled) |
 | `nsct_forward` / `nsct_inverse` | NSCT (fully shift-invariant) |
+| `tict_forward` / `tict_inverse` | Translation-invariant CT (Eslami & Radha) |
+| `stict_forward` / `stict_inverse` | Semi-translation-invariant CT (TI pyramid, decimated DFB) |
 | `ct_forward!` / `ct_inverse!` | In-place CT using a preallocated workspace |
 | `nsct_forward!` / `nsct_inverse!` | In-place NSCT |
 | `make_workspace` | Allocate a reusable `ContourletWorkspace` |
@@ -32,7 +34,7 @@ and is re-exported here.
 """
 module Contourlets
 
-using FFTW: FFTW, plan_rfft, plan_fft, plan_fft!, plan_irfft, plan_ifft, plan_ifft!, rfft, fft
+using FFTW: FFTW, plan_rfft, plan_fft, plan_fft!, plan_irfft, plan_ifft, plan_ifft!, rfft, irfft, fft, ifft
 using LinearAlgebra: mul!, adjoint
 using LoopVectorization: @turbo
 using Polyester: @batch
@@ -59,9 +61,11 @@ include("primitives/shearing.jl")
 # ── Pyramid stages ────────────────────────────────────────────────────────────
 include("pyramid/laplacian_pyramid.jl")
 include("pyramid/nonsubsampled_pyramid.jl")
+include("pyramid/tilp.jl")
 
 # ── Directional filter bank ───────────────────────────────────────────────────
 include("directional/quincunx_fb.jl")
+include("directional/directional_bank.jl")
 include("directional/dfb.jl")
 include("directional/nsdfb.jl")
 
@@ -71,6 +75,7 @@ include("workspace.jl")
 # ── Top-level transforms ──────────────────────────────────────────────────────
 include("transforms/ct.jl")
 include("transforms/nsct.jl")
+include("transforms/tict.jl")
 
 # ── Precompilation ────────────────────────────────────────────────────────────
 include("precompile.jl")
@@ -83,8 +88,8 @@ export
 
     # Types
     QuincunxFilterPair,
-    ContourletParams, ContourletCoefficients, NSCTCoefficients,
-    ContourletWorkspace,
+    ContourletParams, ContourletCoefficients, NSCTCoefficients, TICTCoefficients,
+    ContourletWorkspace, TICTWorkspace, STICTWorkspace,
 
     # Default filters
     Q2345,
@@ -109,10 +114,13 @@ export
     # Top-level transforms
     ct_forward, ct_forward!, ct_inverse, ct_inverse!,
     nsct_forward, nsct_forward!, nsct_inverse, nsct_inverse!,
+    tict_forward, tict_forward!, tict_inverse, tict_inverse!,
+    stict_forward, stict_forward!, stict_inverse, stict_inverse!,
     similar_coefficients, similar_nsct_coefficients,
+    similar_tict_coefficients, similar_stict_coefficients,
 
     # Workspace
-    make_workspace, make_nsct_workspace,
+    make_workspace, make_nsct_workspace, make_tict_workspace, make_stict_workspace,
     estimate_workspace_size
 
 end # module

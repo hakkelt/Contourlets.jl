@@ -43,17 +43,13 @@ _nsdfb_upsampling(tree_level::Int) = max(0, tree_level - 2)
 #
 # A workspace passes `measured = true`: host plans are then measured and
 # single-threaded, because the workspace threads over its independent subband FFTs
-# instead (`_batch_chunks`), which at these sizes scales far better than FFTW's
+# instead (`_foreach_chunk`), which at these sizes scales far better than FFTW's
 # threads splitting one FFT.
 function _ns_plans(x::AbstractMatrix; measured::Bool = false)
     X = _ns_spectrum(x)
     (measured && x isa Array) || return (X, _ns_plan_pair(x, X)...)
-    nthreads_before = FFTW.get_num_threads()
-    FFTW.set_num_threads(1)
-    try
-        return (X, _ns_plan_pair(x, X; flags = FFTW.MEASURE)...)
-    finally
-        FFTW.set_num_threads(nthreads_before)
+    return _with_fftw_threads(1) do
+        (X, _ns_plan_pair(x, X; flags = FFTW.MEASURE)...)
     end
 end
 

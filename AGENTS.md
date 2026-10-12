@@ -23,8 +23,9 @@ packages share only the pyramid filter machinery.
 
 The shared surface with the core is small and explicit: `FilterPair`, `CDF97`,
 `upsample_filter`, the threading policy types, and the internals `_data_eltype`,
-`_filter_eltype`, `_use_threading`, the threaded FFT loop (`_n_tasks`, `_chunk`,
-`_chunked_sum!`), `_clamp_idx`, `_nsp_atrous_filters`, and the
+`_filter_eltype`, `_use_threading`, the threaded FFT loop (`_n_tasks`,
+`_foreach_chunk`, `_chunked_sum!`), the scoped FFTW thread count
+(`_with_fftw_threads`), `_clamp_idx`, `_nsp_atrous_filters`, and the
 pyramid's frequency responses (`_nsp_responses`, `_centred_dtft`). All are
 re-exported (public names) or imported (internals)
 in `src/Contourlets.jl`.
@@ -201,9 +202,14 @@ output.
   `Auto` enables threading for complex types only. Load the `my-threading` skill
   before adding or modifying threaded loops.  The FFT-bound workspace paths
   (NSCT, TICT) thread differently: one `@batch` task per thread
-  (`_batch_chunks`, with MultiscaleFilterBanks' `_chunk`/`_chunked_sum!`; Polyester
-  because `Threads.@threads` allocates ~4.5 KB per call) runs a
+  (MultiscaleFilterBanks' `_foreach_chunk`/`_chunked_sum!`) runs a
   contiguous chunk of the independent subband FFTs with its own buffer (and,
   for the inverse, its own partial sum).  FFTW's own threads split one FFT and
   gain ~nothing at 256²; this gains ~3.5× on 4 threads.  Plans stay
-  single-threaded, and the choice is per call.
+  single-threaded, and the choice is per call.  Never call
+  `FFTW.set_num_threads` directly: plan inside `_with_fftw_threads`, which
+  restores the count and yields to a caller's NestedThreading budget.
+- **Same-size products use FastBroadcast's `@..`.** Base's broadcast checks every
+  axis for a singleton at run time, which keeps the mask products of the
+  workspace paths from vectorising (~2× slower).  `@..` fails on singleton axes
+  and falls back to Base's broadcast for device arrays.

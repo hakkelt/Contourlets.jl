@@ -131,9 +131,12 @@ end
         run(Disabled())
         @test (@allocated run(Disabled())) == 0
         @test maximum(abs, out .- x) < 1.0e-12
-        # Threaded, `@batch` boxes the captured workspace: a few hundred bytes per call.
+        # Threaded, `@batch` boxes the captured workspace: a few hundred bytes per
+        # call.  Where it may not run (a second interactive thread, as in some test
+        # runners) the loops fall back to `Threads.@threads`: a few KB.
         run(Enabled())
-        @test (@allocated run(Enabled())) < 1000
+        bound = Contourlets.MultiscaleFilterBanks._batch_safe() ? 1000 : 8192
+        @test (@allocated run(Enabled())) < bound
         @test maximum(abs, out .- x) < 1.0e-12
         ref = tict_forward(x, p)
         tict_forward!(ct, x, p; workspace = wt)

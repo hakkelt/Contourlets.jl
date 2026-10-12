@@ -114,9 +114,10 @@ function _build_fft_plan(
     p2 = nextprod([2, 3, 5], n2 + k2 - 1)
     buf = zeros(T, p1, p2)
     threaded = _use_threading(threading, T)
-    FFTW.set_num_threads(threaded ? Threads.nthreads() : 1)
-    fwd = plan_rfft(buf; flags = FFTW.MEASURE)
-    inv = plan_irfft(fwd * buf, p1; flags = FFTW.MEASURE)
+    fwd, inv = _with_fftw_threads(threaded ? Threads.nthreads() : 1) do
+        f = plan_rfft(buf; flags = FFTW.MEASURE)
+        f, plan_irfft(f * buf, p1; flags = FFTW.MEASURE)
+    end
     return fwd, inv, (p1, p2)
 end
 

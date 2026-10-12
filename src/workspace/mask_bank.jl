@@ -18,9 +18,10 @@
 # elementwise work is ~35% (analysis) and ~45% (synthesis) cheaper than the
 # fused per-item product for 16 items per group, and equal for 2.
 #
-# The outputs are independent, so both loops run in the threaded chunks of
-# `fft_tasks.jl`: per task an FFT buffer and a group buffer and, for the synthesis
-# from the second task on, a partial sum.  A chunk that starts inside a group
+# The outputs are independent, so both loops run in MultiscaleFilterBanks'
+# threaded chunks (`_foreach_chunk`, `_chunked_sum!`, on Polyester's `@batch`): per
+# task an FFT buffer and a group buffer and, for the synthesis from the second
+# task on, a partial sum.  Plans stay single-threaded (`_ns_plans`).  A chunk that starts inside a group
 # forms that group's bandpass again, so the analysis gives the same bits whatever
 # the chunking.
 
@@ -78,27 +79,37 @@ _subband(c::TICTCoefficients, i::NTuple{3, Int}) = c.subbands[i[1]][i[2]][i[3]]
 
 # Analysis of the dense input `x` into `coeffs` (subbands and lowpass).
 function _mask_bank_forward!(coeffs, x::AbstractMatrix, e::_MaskBankEngine, threaded::Bool)
-    mul!(e.X, e.pfwd, x)
-    _batch_chunks(length(e.items), _n_engine_tasks(e), threaded) do range, t
+    threaded = _loop_threaded(threaded)     # serial under a caller's NestedThreading budget
+    X = e.X
+    mul!(X, e.pfwd, x)
+    _foreach_chunk(length(e.items), _n_engine_tasks(e), threaded) do range, t
         _mask_bank_forward_items!(coeffs, e, range, e.groups[t], e.buffers[t])
     end
-    Z = e.buffers[1]
-    Z .= e.coarse_ana .* e.X
+    Z, K = e.buffers[1], e.coarse_ana
+    @.. Z = K * X
     mul!(coeffs.coarse, e.pinv, Z)
     return coeffs
 end
 
 # The outputs `e.items[range]`, with the task's group buffer Y (the bandpass
 # spectrum, formed when the group changes) and FFT buffer Z.
+#
+# The products are `@..` (FastBroadcast): Base's broadcast checks every axis for
+# a singleton at run time, which keeps these same-size products from vectorising
+# and makes them ~2× slower (8–13% of a single-threaded NSCT or TICT at 256²).
+# Device arrays fall back to Base's broadcast.
 function _mask_bank_forward_items!(coeffs, e::_MaskBankEngine, range, Y, Z)
+    X = e.X
     g = 0
     for n in range
         it = e.items[n]
         if it.pyramid != g
             g = it.pyramid
-            Y .= e.pyramid_ana[g] .* e.X
+            P = e.pyramid_ana[g]
+            @.. Y = P * X
         end
-        Z .= e.banks[it.bank].ana[it.channel] .* Y
+        H = e.banks[it.bank].ana[it.channel]
+        @.. Z = H * Y
         mul!(_subband(coeffs, it.index), e.pinv, Z)
     end
     return coeffs
@@ -106,14 +117,15 @@ end
 
 # Synthesis of `coeffs` into the dense output `x`.
 function _mask_bank_inverse!(x::AbstractMatrix, coeffs, e::_MaskBankEngine, threaded::Bool)
+    threaded = _loop_threaded(threaded)
     acc = e.X
     fill!(acc, zero(eltype(acc)))
-    _chunked_sum!(acc, e.partials, length(e.items), threaded; foreach = _batch_chunks) do a, range, t
+    _chunked_sum!(acc, e.partials, length(e.items), threaded) do a, range, t
         _mask_bank_inverse_items!(a, coeffs, e, range, e.buffers[t], e.groups[t])
     end
-    F = e.buffers[1]
+    F, K = e.buffers[1], e.coarse_syn
     mul!(F, e.pfwd, coeffs.coarse)
-    acc .+= e.coarse_syn .* F
+    @.. acc += K * F
     mul!(x, e.pinv, acc)
     return x
 end
@@ -126,13 +138,16 @@ function _mask_bank_inverse_items!(acc, coeffs, e::_MaskBankEngine, range, F, Y)
     for n in range
         it = e.items[n]
         if it.pyramid != g
-            g == 0 || (acc .+= e.pyramid_syn[g] .* Y)
+            g == 0 || _add_masked!(acc, e.pyramid_syn[g], Y)
             fill!(Y, zero(eltype(Y)))
             g = it.pyramid
         end
         mul!(F, e.pfwd, _subband(coeffs, it.index))
-        Y .+= e.banks[it.bank].syn[it.channel] .* F
+        H = e.banks[it.bank].syn[it.channel]
+        @.. Y += H * F
     end
-    g == 0 || (acc .+= e.pyramid_syn[g] .* Y)
+    g == 0 || _add_masked!(acc, e.pyramid_syn[g], Y)
     return acc
 end
+
+_add_masked!(acc, P, Y) = @.. acc += P * Y

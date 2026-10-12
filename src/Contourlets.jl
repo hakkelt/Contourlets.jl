@@ -37,13 +37,13 @@ module Contourlets
 using FFTW: FFTW, plan_rfft, plan_fft, plan_fft!, plan_irfft, plan_ifft, plan_bfft!, rfft, irfft, fft, ifft
 using LinearAlgebra: mul!, adjoint
 using LoopVectorization: @turbo
-using Polyester: @batch
+using FastBroadcast: @..
 
 using MultiscaleFilterBanks: MultiscaleFilterBanks,
     FilterPair, CDF97, upsample_filter,
     ThreadingPolicy, Auto, Enabled, Disabled,
-    _data_eltype, _filter_eltype, _use_threading, _n_tasks, _chunk, _chunked_sum!,
-    _clamp_idx, _nsp_atrous_filters, _nsp_responses, _centred_dtft
+    _data_eltype, _filter_eltype, _use_threading, _n_tasks, _foreach_chunk, _chunked_sum!,
+    _loop_threaded, _with_fftw_threads, _clamp_idx, _nsp_atrous_filters, _nsp_responses, _centred_dtft
 
 # ── Types (must come before filters which use them) ──────────────────────────
 include("types/quincunx_filter_pair.jl")
@@ -76,7 +76,6 @@ include("directional/nsdfb.jl")
 
 # ── Workspace ─────────────────────────────────────────────────────────────────
 include("workspace/scratch_arena.jl")
-include("workspace/fft_tasks.jl")
 include("workspace/mask_bank.jl")
 include("workspace/contourlet_workspace.jl")
 

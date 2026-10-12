@@ -74,35 +74,39 @@ end
 # ── Transforms ────────────────────────────────────────────────────────────────
 
 function _stict_forward_ws!(coeffs::TICTCoefficients, x::AbstractMatrix, ws::STICTWorkspace)
-    m = ws.masks
-    ws.X .= x
-    ws.pfwd * ws.X
+    m, X, Z = ws.masks, ws.X, ws.Z
+    X .= x
+    ws.pfwd * X
     for i in eachindex(m.ana), c in 1:4
         out = coeffs.subbands[i][c]
         r = ws.runners[i][c]
-        r.X .= m.ana[i][c] .* ws.X
+        R, K = r.X, m.ana[i][c]
+        @.. R = K * X               # FastBroadcast: see `_mask_bank_forward_items!`
         _bank_analyze_spectrum!(out, r)
     end
-    ws.Z .= m.coarse_ana .* ws.X
-    ws.pbwd * ws.Z
-    _store!(coeffs.coarse, ws.Z, _bwd_scale(ws.Z))
+    Kc = m.coarse_ana
+    @.. Z = Kc * X
+    ws.pbwd * Z
+    _store!(coeffs.coarse, Z, _bwd_scale(Z))
     return coeffs
 end
 
 function _stict_inverse_ws!(x::AbstractMatrix, coeffs::TICTCoefficients, ws::STICTWorkspace)
-    m = ws.masks
-    fill!(ws.X, zero(eltype(ws.X)))
+    m, X, Z = ws.masks, ws.X, ws.Z
+    fill!(X, zero(eltype(X)))
     for i in eachindex(m.syn), c in 1:4
         sbs = coeffs.subbands[i][c]
         r = ws.runners[i][c]
         _bank_synthesize_spectrum!(sbs, r)
-        ws.X .+= m.syn[i][c] .* r.X
+        R, K = r.X, m.syn[i][c]
+        @.. X += K * R
     end
-    ws.Z .= coeffs.coarse
-    ws.pfwd * ws.Z
-    ws.X .+= m.coarse_syn .* ws.Z
-    ws.pbwd * ws.X
-    return _store!(x, ws.X, _bwd_scale(ws.X))
+    Z .= coeffs.coarse
+    ws.pfwd * Z
+    Kc = m.coarse_syn
+    @.. X += Kc * Z
+    ws.pbwd * X
+    return _store!(x, X, _bwd_scale(X))
 end
 
 """

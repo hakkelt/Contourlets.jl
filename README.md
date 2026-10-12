@@ -20,8 +20,9 @@ Directional Filter Bank (PDFB).
 ## Features
 
 - **Laplacian Pyramid** multiscale decomposition with CDF 9/7 filters
-- **Directional Filter Bank** (DFB) binary-tree decomposition with the "23-45"
-  Phoong et al. (1995) ladder filters
+- **Directional Filter Bank** (DFB) with the "23-45" Phoong et al. (1995) ladder
+  filters, computed as the multichannel bank of Do's thesis (closed-form
+  equivalent filters on the DFT grid, diagonal sampling per channel)
 - **CT**: `ct_forward` / `ct_inverse` — nearly critically sampled, O(N) complexity
 - **NSCT**: `nsct_forward` / `nsct_inverse` — invariant under circular shifts via
   à trous upsampling

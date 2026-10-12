@@ -55,7 +55,10 @@ packages share only the pyramid filter machinery, which lives in
 | [`ContourletParams`](@ref) | Scales `J`, direction counts `L_array`, filter pair |
 | [`ct_forward`](@ref) / [`ct_inverse`](@ref) | Contourlet transform, critically sampled |
 | [`nsct_forward`](@ref) / [`nsct_inverse`](@ref) | Nonsubsampled contourlet transform, shift-invariant |
+| [`tict_forward`](@ref) / [`tict_inverse`](@ref) | Translation-invariant CT (Eslami & Radha), shift-invariant |
+| [`stict_forward`](@ref) / [`stict_inverse`](@ref) | Semi-translation-invariant CT: invariant pyramid, decimated DFB, redundancy `4J + 1` |
 | [`make_workspace`](@ref) / [`make_nsct_workspace`](@ref) | Preallocated buffers for iterative algorithms |
+| [`make_tict_workspace`](@ref) / [`make_stict_workspace`](@ref) | The same for the TICT and STICT |
 | [`parabolic_levels`](@ref) | Direction counts following the parabolic scaling rule |
 | [`CDF97`](@ref) / [`Q2345`](@ref) | Default pyramid and ladder DFB filter pairs |
 

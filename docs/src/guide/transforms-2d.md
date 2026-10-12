@@ -174,6 +174,49 @@ println("shift equivariance error: ", err)
 @assert err < 1e-10
 ```
 
+The second level of each, one row per channel, shows the difference.  TICT
+subbands keep the image's size; STICT subbands are those of a critically sampled
+DFB of each full-size channel.  Full-size subbands alias into moiré at this
+panel size, so each panel shows the same central window — a quarter of the
+subband's height and width:
+
+```@example guide2d
+function crop_center(sb, frac = 4)
+    r = size(sb, 1) ÷ 2 .+ (-(size(sb, 1) ÷ 2frac):(size(sb, 1) ÷ 2frac))
+    c = size(sb, 2) ÷ 2 .+ (-(size(sb, 2) ÷ 2frac):(size(sb, 2) ÷ 2frac))
+    return sb[r, c]
+end
+
+function plot_tict_level(c, j; clip = 0.99)
+    nd = maximum(length, c.subbands[j])
+    panels = Any[]
+    for ch in 1:4, d in 1:nd
+        if d <= length(c.subbands[j][ch])
+            sb = crop_center(c.subbands[j][ch][d])
+            cl = max(quantile(abs.(vec(sb)), clip), eps())
+            push!(panels, heatmap(sb; title = "channel $ch dir $d", color = :grays,
+                clims = (-cl, cl), aspect_ratio = :equal, axis = false,
+                colorbar = false, yflip = true))
+        else
+            push!(panels, plot(; framestyle = :none, grid = false, ticks = false))
+        end
+    end
+    return plot(panels...; layout = (4, nd), size = (200 * nd, 800))
+end
+
+plot_tict_level(ti, 2)
+savefig("tict_coeffs.png"); nothing # hide
+```
+
+![](tict_coeffs.png)
+
+```@example guide2d
+plot_tict_level(sti, 2)
+savefig("stict_coeffs.png"); nothing # hide
+```
+
+![](stict_coeffs.png)
+
 Both transforms are FFT-based and have workspaces —
 [`make_tict_workspace`](@ref), [`make_stict_workspace`](@ref) — with which the
 `!` forms allocate nothing.

@@ -13,6 +13,21 @@ using Contourlets, Plots, FFTW
 Plots.default(show = false)
 ```
 
+All four transforms share one shape: a pyramid splits the image into a bandpass
+and a coarser lowpass, a directional filter bank splits each bandpass by
+orientation, and the lowpass is fed back into the next pyramid level.  They
+differ only in which stages decimate:
+
+![Block diagrams of the CT, the NSCT and the TICT/STICT, two pyramid levels each](assets/structure.svg)
+
+| | CT | NSCT | TICT | STICT |
+|---|---|---|---|---|
+| Pyramid | Laplacian (↓2) | nonsubsampled (à trous) | translation-invariant LP, 4 channels | translation-invariant LP, 4 channels |
+| Directional stage | DFB (↓``S_k``) | NSDFB | NSDFB | DFB (↓``S_k``) |
+| Invariant to circular shifts | no | yes | yes | pyramid only |
+| Redundancy | ``\approx 4/3`` | ``1 + \sum_j 2^{L_j}`` | ``1 + 2J + 3\sum_j 2^{L_j}`` | ``4J + 1`` |
+| Choose it for | compression, sparse approximation | denoising, enhancement, features | denoising when shift invariance matters most | denoising with a TI pyramid at low redundancy |
+
 ## Laplacian Pyramid (LP)
 
 The LP provides a multiscale decomposition without aliasing.
@@ -162,6 +177,52 @@ savefig(pf, "dfb_freq.png"); nothing # hide
 
 ![](dfb_freq.png)
 
+The partition itself is easiest to read without the decimation.  The NSDFB uses
+the same equivalent filters ``H_k`` at full rate, so its impulse responses show
+each ``|H_k|`` directly.  Colouring every frequency by the channel with the
+largest response, and labelling each wedge with its subband index, gives the
+partition of an ``l = 3`` bank (compare Do's thesis, Fig. 3.6).  The half trees that the TICT and STICT use on two of their pyramid
+channels (`half = :first` / `:second`; Eslami & Radha 2006, Fig. 7) keep one
+level-1 fan whole:
+
+```@example theory
+Nw = 128
+δ = zeros(Nw, Nw); δ[1, 1] = 1.0
+midw = Nw ÷ 2 + 1
+# Channel owning each frequency: the argmax of |H_k| over the centred DFT grid.
+function wedge_owner(l, half)
+    resp = [fftshift(abs.(fft(s))) for s in nsdfb_decompose(δ, l, Q2345; half = half)]
+    return [argmax([r[i, j] for r in resp]) for i in 1:Nw, j in 1:Nw]
+end
+# One label per wedge: the mean orientation of its pixels (averaged on the
+# doubled angle, so the two opposite lobes of a wedge agree), at 60 % radius.
+function wedge_labels(owner)
+    labels = []
+    for k in 1:maximum(owner)
+        z = sum(cis(2 * atan(I[1] - midw, I[2] - midw))
+            for I in findall(==(k), owner) if I != CartesianIndex(midw, midw))
+        θ = angle(z) / 2
+        r = 0.6 * (Nw ÷ 2)
+        push!(labels, (midw + r * cos(θ), midw + r * sin(θ), text(string(k), 11, :white)))
+    end
+    return labels
+end
+pw = plot(layout = (1, 3), size = (900, 320))
+for (i, (half, ttl)) in enumerate(((:both, "l = 3"), (:first, "l = 3, half = :first"),
+        (:second, "l = 3, half = :second")))
+    owner = wedge_owner(3, half)
+    heatmap!(pw[i], owner; color = cgrad(:tab10, maximum(owner); categorical = true),
+        title = ttl, aspect_ratio = :equal, axis = false, colorbar = false,
+        annotations = wedge_labels(owner))
+end
+savefig(pw, "dfb_wedges.png"); nothing # hide
+```
+
+![](dfb_wedges.png)
+
+Horizontal frequency runs left to right and vertical frequency bottom to top,
+with ``\omega = 0`` in the centre.
+
 The default pair [`Q2345`](@ref) is the "23-45" biorthogonal pair of Phoong et
 al. (1995), whose ladder filter ``\beta`` is the 12-tap design of their
 Example 3.2.  Its 2-D analysis filters have ``23 \times 23`` and ``45 \times 45``
@@ -225,6 +286,42 @@ savefig(p_ct, "ct_tiling.png"); nothing # hide
 ```
 
 ![](ct_tiling.png)
+
+In space the same partition gives the **contourlet basis images**: one
+coefficient reconstructed alone.  Each is an oriented, elongated element whose
+size doubles from one scale to the next, while its orientation is set by the
+directional subband.  Below, rows are scales 1 (finest) to 3 and columns four
+of the directional subbands at each scale; the crop doubles with the scale:
+
+```@example theory
+Na = 256
+pa = ContourletParams(J = 3, L_array = [3, 3, 2])
+function ct_atom(j, k)
+    c = ct_forward(zeros(Na, Na), pa)
+    sb = c.subbands[j][k]
+    sb[size(sb, 1) ÷ 2 + 1, size(sb, 2) ÷ 2 + 1] = 1.0
+    return ct_inverse(c, pa)
+end
+pat = plot(layout = (3, 4), size = (860, 660))
+for j in 1:3
+    n = 2^pa.L_array[j]
+    for (col, k) in enumerate(round.(Int, range(1, n; length = 4)))
+        a = ct_atom(j, k)
+        i0, j0 = Tuple(argmax(abs.(a)))
+        w = 8 * 2^(j - 1)                       # half-width of the crop
+        r0 = clamp(i0 - w, 1, Na - 2w + 1)
+        c0 = clamp(j0 - w, 1, Na - 2w + 1)
+        ac = a[r0:(r0 + 2w - 1), c0:(c0 + 2w - 1)]
+        cl = maximum(abs, ac)
+        heatmap!(pat[(j - 1) * 4 + col], ac; color = :RdBu, clims = (-cl, cl),
+            title = "scale $j, dir $k", aspect_ratio = :equal, axis = false,
+            colorbar = false, yflip = true)
+    end
+end
+savefig(pat, "ct_atoms.png"); nothing # hide
+```
+
+![](ct_atoms.png)
 
 ## Nonsubsampled Contourlet Transform (NSCT)
 
@@ -344,6 +441,30 @@ polyphase components follow from
 ``G_c(M\omega) = \tfrac14 \sum_{a \in \{0,\pi\}^2} e^{j(\omega+a)\cdot k_c}\,G(\omega+a)``,
 and each level's cascade folds into one mask per channel.
 
+The magnitude responses of the four highpass channels of the first level, and
+of the lowpass, show why the channels are treated differently below (compare
+Eslami & Radha, Fig. 6).  ``K_0`` and ``K_3`` split their energy evenly between
+the two level-1 fans, while about 60 % of ``K_1``'s energy lies in the fan
+around the vertical-frequency axis (``|\omega_\text{row}| > |\omega_\text{col}|``)
+and 60 % of ``K_2``'s in the other one:
+
+```@example theory
+Nt = 64
+δt = zeros(Nt, Nt); δt[1, 1] = 1.0
+# The analysis of an impulse is each channel's impulse response.
+t0 = tict_forward(δt, ContourletParams(J = 1, L_array = [0]))
+ptl = plot(layout = (1, 5), size = (900, 210))
+for c in 1:4
+    heatmap!(ptl[c], fftshift(abs.(fft(t0.subbands[1][c][1]))); color = :viridis,
+        title = "K$(c - 1)", aspect_ratio = :equal, axis = false, colorbar = false)
+end
+heatmap!(ptl[5], fftshift(abs.(fft(t0.coarse))); color = :viridis,
+    title = "lowpass", aspect_ratio = :equal, axis = false, colorbar = false)
+savefig(ptl, "tilp_channels.png"); nothing # hide
+```
+
+![](tilp_channels.png)
+
 **Directional stage.** A DFB splits each of the four highpass channels.  For
 the TICT it is the translation-invariant DFB: the DFB with its samplers
 suppressed and scaled by ``2^{-L}``, which is this package's NSDFB.  For the
@@ -355,6 +476,33 @@ whole.  ``K_1`` (the shift along the rows) carries most of its energy in the fan
 ``|\omega_\text{row}| > |\omega_\text{col}|`` and ``K_2`` in the other, so each
 splits the fan its energy is in.  A level of depth ``L \ge 1`` then has
 ``3 \cdot 2^L + 2`` TICT subbands.
+
+The frequency support of every TICT subband of one level with ``L = 2`` is the
+product of a TILP channel and a directional filter.  Rows are the channels
+``K_0`` to ``K_3``: the full trees give four subbands, the half trees three:
+
+```@example theory
+t2 = tict_forward(δt, ContourletParams(J = 1, L_array = [2]))
+pts = plot(layout = (4, 4), size = (760, 760))
+for c in 1:4, d in 1:4
+    i = (c - 1) * 4 + d
+    if d <= length(t2.subbands[1][c])
+        heatmap!(pts[i], fftshift(abs.(fft(t2.subbands[1][c][d]))); color = :viridis,
+            title = "K$(c - 1), dir $d", aspect_ratio = :equal, axis = false,
+            colorbar = false)
+    else
+        plot!(pts[i]; framestyle = :none, grid = false, ticks = false)
+    end
+end
+savefig(pts, "tict_tiling.png"); nothing # hide
+```
+
+![](tict_tiling.png)
+
+The STICT uses the same filters with the decimated DFB, so its subbands have the
+same frequency supports.  What it gives up is the directional stage's
+invariance: each STICT subband commutes only with shifts on its own sampling
+lattice, as a DFB subband does.
 
 The directional filters are the same at every level, as in the paper.  Unlike
 the NSCT's pyramid, the TILP keeps the decimated pyramid's aliasing: at coarse

@@ -1,0 +1,110 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 930 350" width="930" height="350" font-family="Helvetica, Arial, sans-serif" font-size="13">
+  <!-- Block diagrams of the four 2-D transforms (two pyramid levels shown).
+       Hand-written for the Theory page of Contourlets.jl. -->
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#333"/>
+    </marker>
+    <style>
+      .box { fill: #eef3fb; stroke: #3b5b92; stroke-width: 1.4; }
+      .dir { fill: #fbf1e6; stroke: #a8642a; stroke-width: 1.4; }
+      .ln  { stroke: #333; stroke-width: 1.3; fill: none; marker-end: url(#arr); }
+      .t   { fill: #222; }
+      .s   { fill: #555; font-size: 11px; }
+      .h   { fill: #111; font-size: 15px; font-weight: bold; }
+      .sup { baseline-shift: super; font-size: 8px; }
+      .sub { baseline-shift: sub; font-size: 9px; }
+    </style>
+  </defs>
+  <rect x="0" y="0" width="930" height="350" fill="#ffffff"/>
+
+  <!-- ── CT ─────────────────────────────────────────────────────────── -->
+  <g transform="translate(10,0)">
+    <text class="h" x="150" y="24" text-anchor="middle">CT (Do &amp; Vetterli)</text>
+    <text class="t" x="65" y="52" text-anchor="middle">image x</text>
+    <path class="ln" d="M65,58 L65,80"/>
+    <rect class="box" x="10" y="82" width="110" height="34" rx="4"/>
+    <text class="t" x="65" y="104" text-anchor="middle">LP level 1</text>
+    <path class="ln" d="M120,99 L172,99"/>
+    <text class="s" x="146" y="93" text-anchor="middle">b₁</text>
+    <rect class="dir" x="174" y="82" width="110" height="34" rx="4"/>
+    <text class="t" x="229" y="104" text-anchor="middle">DFB, ↓Sₖ</text>
+    <text class="s" x="229" y="132" text-anchor="middle">2<tspan class="sup">L₁</tspan> decimated subbands</text>
+    <path class="ln" d="M65,116 L65,166"/>
+    <text class="s" x="71" y="146">c₁, ↓2</text>
+    <rect class="box" x="10" y="168" width="110" height="34" rx="4"/>
+    <text class="t" x="65" y="190" text-anchor="middle">LP level 2</text>
+    <path class="ln" d="M120,185 L172,185"/>
+    <text class="s" x="146" y="179" text-anchor="middle">b₂</text>
+    <rect class="dir" x="174" y="168" width="110" height="34" rx="4"/>
+    <text class="t" x="229" y="190" text-anchor="middle">DFB, ↓Sₖ</text>
+    <text class="s" x="229" y="218" text-anchor="middle">2<tspan class="sup">L₂</tspan> decimated subbands</text>
+    <path class="ln" d="M65,202 L65,238"/>
+    <text class="t" x="65" y="254" text-anchor="middle">… c<tspan class="sub">J</tspan> (lowpass)</text>
+    <text class="s" x="10" y="292">critically sampled DFB, LP redundancy ≈ 4/3</text>
+    <text class="s" x="10" y="308">not shift invariant</text>
+  </g>
+
+  <!-- ── NSCT ───────────────────────────────────────────────────────── -->
+  <g transform="translate(320,0)">
+    <text class="h" x="150" y="24" text-anchor="middle">NSCT (da Cunha et al.)</text>
+    <text class="t" x="65" y="52" text-anchor="middle">image x</text>
+    <path class="ln" d="M65,58 L65,80"/>
+    <rect class="box" x="10" y="82" width="110" height="34" rx="4"/>
+    <text class="t" x="65" y="104" text-anchor="middle">NSP level 1</text>
+    <path class="ln" d="M120,99 L172,99"/>
+    <text class="s" x="146" y="93" text-anchor="middle">b₁</text>
+    <rect class="dir" x="174" y="82" width="110" height="34" rx="4"/>
+    <text class="t" x="229" y="104" text-anchor="middle">NSDFB</text>
+    <text class="s" x="229" y="132" text-anchor="middle">2<tspan class="sup">L₁</tspan> full-size subbands</text>
+    <path class="ln" d="M65,116 L65,166"/>
+    <text class="s" x="71" y="146">c₁, full size</text>
+    <rect class="box" x="10" y="168" width="110" height="34" rx="4"/>
+    <text class="t" x="65" y="184" text-anchor="middle">NSP level 2</text>
+    <text class="s" x="65" y="197" text-anchor="middle">filters ↑2 (à trous)</text>
+    <path class="ln" d="M120,185 L172,185"/>
+    <text class="s" x="146" y="179" text-anchor="middle">b₂</text>
+    <rect class="dir" x="174" y="168" width="110" height="34" rx="4"/>
+    <text class="t" x="229" y="184" text-anchor="middle">NSDFB</text>
+    <text class="s" x="229" y="197" text-anchor="middle">filters ↑2<tspan class="sup">m</tspan> (à trous)</text>
+    <text class="s" x="229" y="218" text-anchor="middle">2<tspan class="sup">L₂</tspan> full-size subbands</text>
+    <path class="ln" d="M65,202 L65,238"/>
+    <text class="t" x="65" y="254" text-anchor="middle">… c<tspan class="sub">J</tspan> (lowpass)</text>
+    <text class="s" x="10" y="292">no samplers anywhere</text>
+    <text class="s" x="10" y="308">shift invariant, redundancy 1 + Σⱼ 2<tspan class="sup">Lⱼ</tspan></text>
+  </g>
+
+  <!-- ── TICT / STICT ───────────────────────────────────────────────── -->
+  <g transform="translate(630,0)">
+    <text class="h" x="145" y="24" text-anchor="middle">TICT / STICT (Eslami &amp; Radha)</text>
+    <text class="t" x="55" y="52" text-anchor="middle">image x</text>
+    <path class="ln" d="M55,58 L55,80"/>
+    <rect class="box" x="0" y="82" width="110" height="34" rx="4"/>
+    <text class="t" x="55" y="104" text-anchor="middle">TILP level 1</text>
+    <path class="ln" d="M110,88 L172,88"/>
+    <path class="ln" d="M110,95 L172,95"/>
+    <path class="ln" d="M110,102 L172,102"/>
+    <path class="ln" d="M110,109 L172,109"/>
+    <text class="s" x="141" y="80" text-anchor="middle">K₀ … K₃</text>
+    <rect class="dir" x="174" y="78" width="112" height="42" rx="4"/>
+    <text class="t" x="230" y="96" text-anchor="middle">4 DFBs</text>
+    <text class="s" x="230" y="111" text-anchor="middle">full, half, half, full</text>
+    <text class="s" x="230" y="134" text-anchor="middle">3·2<tspan class="sup">L₁</tspan> + 2 subbands</text>
+    <path class="ln" d="M55,116 L55,166"/>
+    <text class="s" x="61" y="146">lowpass, full size</text>
+    <rect class="box" x="0" y="168" width="110" height="34" rx="4"/>
+    <text class="t" x="55" y="184" text-anchor="middle">TILP level 2</text>
+    <text class="s" x="55" y="197" text-anchor="middle">filters ↑2 (à trous)</text>
+    <path class="ln" d="M110,185 L172,185"/>
+    <text class="s" x="141" y="179" text-anchor="middle">K₀ … K₃</text>
+    <rect class="dir" x="174" y="168" width="112" height="34" rx="4"/>
+    <text class="t" x="230" y="190" text-anchor="middle">4 DFBs</text>
+    <text class="s" x="230" y="218" text-anchor="middle">3·2<tspan class="sup">L₂</tspan> + 2 subbands</text>
+    <path class="ln" d="M55,202 L55,238"/>
+    <text class="t" x="55" y="254" text-anchor="middle">… lowpass</text>
+    <text class="s" x="0" y="292">TICT: DFBs without samplers (NSDFB), shift invariant,</text>
+    <text class="s" x="0" y="306">redundancy 1 + 2J + 3 Σⱼ 2<tspan class="sup">Lⱼ</tspan></text>
+    <text class="s" x="0" y="324">STICT: decimated DFBs, only the pyramid is invariant,</text>
+    <text class="s" x="0" y="338">redundancy 4J + 1</text>
+  </g>
+</svg>

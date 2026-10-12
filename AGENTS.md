@@ -2,35 +2,9 @@
 
 This file guides AI agents (and human contributors) through the repository
 structure and the conventions that are *specific to this package*. General
-Julia best practices live in the skills under `.agents/skills/` (see below) and
-are not repeated here.
-
-## API Usage Pattern
-
-```julia
-using Contourlets
-
-img = randn(256, 256)
-params = ContourletParams(J=4, L_array=parabolic_levels(4))
-
-# Allocating API
-coeffs = ct_forward(img, params)
-img_rec = ct_inverse(coeffs, params)
-
-# Preallocated-buffer API (for iterative algorithms)
-ws = make_workspace(params, size(img))
-coeffs = similar_coefficients(params, size(img))
-img_out = similar(img)
-for iter in 1:100
-    ct_forward!(coeffs, img, params; workspace=ws)
-    ct_inverse!(img_out, coeffs, params; workspace=ws)
-end
-```
-
-`nsct_forward`/`nsct_inverse` (and `!` variants) follow the same pattern via
-`make_nsct_workspace`. See "In-place companions" below for the naming contract.
-
-Volumes are a separate package: see the "Package family" section below.
+Julia best practices live in the skills under `.agents/skills/` and are not
+repeated here. The package-specific skills are `my-gpu-ext`, `my-threading` and
+`my-localcoverage`.
 
 ## Package family
 
@@ -61,122 +35,18 @@ read `[sources]`, run `julia --project=. dev/bootstrap.jl` once instead.
 
 ## Quick Start
 
-1. **Read this file** for repository layout and project-specific invariants.
+1. **Read this file** for project-specific invariants.
 2. **Load the matching skill** from `.agents/skills/` for the kind of work you
    are doing (performance, benchmarking, JET, packaging, docs, GPU, threading).
-3. **Honour the invariants** in the table below — every change must keep them.
+3. **Honour the invariants** below — every change must keep them.
 
 ## Commit Rules
 
-- **Commit Message Formatting**: Follow the "Conventional Commits" format with the structure `type(scope): subject` and a detailed description (including performance numbers or context) separated by a blank line. For simple commits affecting only a couple lines, a detailed description is optional. Always append co-author line referencing yourself. Do **not** add a `Claude-Session:` trailer line.
+- **Commit Message Formatting**: Follow the "Conventional Commits" format with the structure `type(scope): subject` and a detailed description (including performance numbers or context) separated by a blank line. For simple commits affecting only a couple lines, a detailed description is optional. Always append co-author line referencing yourself.
 - **Committing Changes**: ONLY commit code upon explicit instruction from the user.
 
 ---
 
-## Skills (`.agents/skills/`)
-
-Vendor-neutral skills. Load the one that matches the task and open only the
-reference file it points you to.
-
-| Skill | Use when |
-|---|---|
-| `julia-perf` | Diagnosing slow code, reducing allocations, fixing type instabilities. |
-| `julia-bench` | Writing/running benchmarks, comparing revisions, benchmark CI. |
-| `julia-jet` | Running JET inference/type analysis on the package. |
-| `julia-package-dev` | Environments, dependencies, extensions, multi-package workspace. |
-| `julia-docs` | Documenter.jl site, docstrings, doctests, citations. |
-| `my-gpu-ext` | Adding/modifying GPU kernels, primitives, or CUDA graph capture in `ext/`. |
-| `my-threading` | Adding threaded loops, modifying `ThreadingPolicy` dispatch, or diagnosing threading performance. |
-| `my-localcoverage` | Measuring coverage percentages, generating HTML reports, enforcing a minimum coverage target. |
-
-The first five cover generic Julia patterns (type stability, `@inbounds`, column-major
-loops, `$`-interpolation in benchmarks, test-only deps in `test/Project.toml`,
-the `[workspace] projects = ["test"]` layout, never editing `Manifest.toml`,
-`JULIA_PKG_SERVER_REGISTRY_PREFERENCE=eager`, etc.). Don't duplicate them here.
-The last three are project-specific and cover invariants that are unique to this package.
-
----
-
-## Repository Layout
-
-```
-Contourlets/
-├── src/                       # Package source (Julia)
-│   ├── Contourlets.jl         # Main module — all exports here
-│   ├── precompile.jl          # PrecompileTools workload
-│   ├── types/
-│   │   ├── quincunx_filter_pair.jl # QuincunxFilterPair (the ladder filter β)
-│   │   ├── params.jl          # ContourletParams, parabolic_levels
-│   │   └── coefficients.jl    # ContourletCoefficients, NSCTCoefficients, TICTCoefficients
-│   ├── workspace/
-│   │   ├── scratch_arena.jl   # ScratchArena + task-local arena/filter cache, _scratch_like
-│   │   ├── fft_tasks.jl       # @batch runner of the threaded subband loop
-│   │   ├── mask_bank.jl       # _MaskBankEngine: the NSCT/TICT subband loops on the DFT grid
-│   │   └── contourlet_workspace.jl # CTWorkspace, NSCTWorkspace, make_workspace, make_nsct_workspace
-│   ├── filters/
-│   │   ├── q2345.jl           # "23-45" Phoong (pkva) ladder DFB filter constants
-│   │   └── filter_utils.jl    # upsample_filter, check_pr_condition
-│   ├── primitives/
-│   │   ├── conv2d.jl          # general 2-D convolution (direct + FFTW backends)
-│   │   ├── conv2d_sep.jl      # separable 2-D convolution (conv2d_sep!)
-│   │   ├── sampling.jl        # rect up/downsampling
-│   │   ├── quincunx.jl        # quincunx lattice up/downsampling
-│   │   └── shearing.jl        # shear! / inv_shear!
-│   ├── pyramid/
-│   │   ├── laplacian_pyramid.jl       # lp_decompose / lp_reconstruct
-│   │   ├── nonsubsampled_pyramid.jl   # nsp_decompose / nsp_reconstruct
-│   │   ├── tilp.jl                    # translation-invariant LP masks (Eslami & Radha §III-A)
-│   ├── directional/
-│   │   ├── quincunx_fb.jl     # 2-channel shear-based quincunx filter bank
-│   │   ├── bank_design.jl     # DFB equivalent filters in closed form (Do's thesis §3.3)
-│   │   ├── bank.jl            # _DirectionalBank on the DFT grid, quincunx storage
-│   │   ├── bank_runner.jl     # _BankRunner: FFT plans, alias fold, analyze/synthesize
-│   │   ├── dfb.jl             # L-level DFB (multichannel bank, eq. 3.23)
-│   │   ├── nsdfb.jl           # Non-subsampled DFB (same filters, no decimation)
-│   └── transforms/
-│       ├── ct.jl              # ct_forward / ct_inverse / ct_forward! / ct_inverse!
-│       ├── nsct.jl            # nsct_forward / nsct_inverse / ! variants
-│       ├── tilp_transforms.jl # TICT/STICT shared: half trees, checks, coefficient containers
-│       ├── tict.jl            # TICTWorkspace, tict_forward / inverse / ! variants
-│       ├── stict.jl           # STICTWorkspace, stict_forward / inverse / ! variants
-├── ext/
-│   ├── ContourletsGPUExt.jl   # GPU extension module (KernelAbstractions / GPUArrays)
-│   ├── ContourletsGPUExt/
-│   │   ├── utils_gpu.jl       # backend lookup, host→device transfer
-│   │   ├── primitives_gpu.jl  # conv2d_sep!, shear, rect/quincunx sampling kernels
-│   │   ├── qfb_gpu.jl         # qfb_decompose/reconstruct: reject device arrays (no kernels)
-│   │   └── transforms_gpu.jl  # CT/NSCT entry points, Adapt for coefficient sets
-│   └── ContourletsCUDAExt.jl  # CUDA graph capture for the workspace paths
-├── test/
-│   ├── runtests.jl            # TestItemRunner entry point
-│   └── items/
-│       ├── test_filters.jl
-│       ├── test_primitives.jl
-│       ├── test_pyramid.jl
-│       ├── test_dfb.jl
-│       ├── test_transforms.jl
-│       ├── test_workspace.jl
-│       ├── test_tict.jl       # TICT / STICT, tag :tict
-│       ├── test_gpu.jl        # universal GPU tests (GPUEnv + JLArrays), tag :gpu
-│       └── test_quality.jl    # Aqua checks
-├── benchmark/
-│   └── benchmarks.jl          # BenchmarkTools SUITE
-├── docs/
-│   ├── make.jl
-│   └── src/
-│       ├── index.md
-│       ├── theory.md
-│       ├── comparison.md      # feature/accuracy/timing vs the MATLAB toolboxes
-│       ├── api.md
-│       └── guide/             # user guide: one page per topic, not "examples"
-│           ├── transforms-2d.md
-│           ├── denoising.md
-│           └── performance.md
-├── .agents/skills/            # Vendor-neutral Julia skills (see table above)
-└── .github/workflows/         # CI.yml, documentation.yml, CompatHelper.yml, TagBot.yml
-```
-
----
 
 ## Implementation Conventions
 
@@ -323,23 +193,12 @@ output.
   polyphase channels for every lattice shift, which a test checks against an
   independent pyramid. Channels 2 and 3 use half trees; the fan each splits is
   fixed by the channel's energy (`_TILP_HALVES`), not by a label in the paper.
-- **GPU = whole transform on the device** — the `ContourletsGPUExt` extension
-  runs every stage of CT/NSCT/TICT/STICT on the device. Pyramid functions are
-  reused unchanged (broadcast-based dispatch picks up GPU primitives
-  automatically); the directional banks and TILP masks only need moving to the
-  device (`_adapt_bank`, `_like`) and an FFT for the array type (cuFFT, rocFFT;
-  JLArrays through FFTW on host memory — not OpenCL). JLArrays' `rfft` returns
-  a `Matrix`, so allocate outputs with `similar` and fill them via plans + `mul!`.
-  Coefficients stay device-resident (`ContourletCoefficients{Td,A}`,
-  `A<:AbstractMatrix`); use `Array(·)` / `Adapt.adapt(Array, coeffs)` to bring them
-  back. `ContourletsCUDAExt` adds CUDA graph capture for the workspace paths. Load
-  the `julia-gpu-ext` skill before touching any file under `ext/`.
 - **Hybrid Threading Architecture** — real data (`Float32`/`Float64`) uses
   `LoopVectorization.@turbo` (SIMD, single thread); complex data uses
   `Polyester.@batch` (multi-core, near-zero spawn overhead). The NSCT and
   TICT transforms (and `conv2d`) expose `threading::ThreadingPolicy` kwargs:
   `Auto` (default), `Enabled`, `Disabled`; the CT and STICT do not.
-  `Auto` enables threading for complex types only. Load the `julia-threading` skill
+  `Auto` enables threading for complex types only. Load the `my-threading` skill
   before adding or modifying threaded loops.  The FFT-bound workspace paths
   (NSCT, TICT) thread differently: one `@batch` task per thread
   (`_batch_chunks`, with MultiscaleFilterBanks' `_chunk`/`_chunked_sum!`; Polyester

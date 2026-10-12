@@ -31,7 +31,6 @@ struct _DirectionalBank{A <: AbstractMatrix, V <: AbstractVector}
     sampling::Vector{NTuple{2, Int}}    # (rows, cols) decimation; (0, 0) quincunx; (1, 1) none
     dims::NTuple{2, Int}
     levels::Int
-    half::Symbol
 end
 
 _is_decimated(b::_DirectionalBank) = !isempty(b.phase_r)
@@ -96,7 +95,7 @@ function _directional_bank(
         delay = NTuple{2, Int}[]
         samp = fill((1, 1), length(chs))
     end
-    return _DirectionalBank(ana, syn, pr, pc, delay, samp, dims, l, half)
+    return _DirectionalBank(ana, syn, pr, pc, delay, samp, dims, l)
 end
 
 # ── Quincunx storage of depth-1 channels ──────────────────────────────────────

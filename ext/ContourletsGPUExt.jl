@@ -24,7 +24,6 @@ using KernelAbstractions: KernelAbstractions, @kernel, @index, @Const, Adapt
 include("ContourletsGPUExt/utils_gpu.jl")
 include("ContourletsGPUExt/primitives_gpu.jl")
 include("ContourletsGPUExt/qfb_gpu.jl")
-include("ContourletsGPUExt/bank_gpu.jl")
 include("ContourletsGPUExt/transforms_gpu.jl")
 
 end # module ContourletsGPUExt

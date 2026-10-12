@@ -115,6 +115,7 @@ end
 # Copy a host array into the array family of `ref` (identity on the host).
 _like(ref::AbstractArray, A::Array) = copyto!(similar(ref, eltype(A), size(A)), A)
 _like(::Array, A::Array) = A
+_like(ref::SubArray, A::Array) = _like(parent(ref), A)
 
 _adapt_masks(ref::AbstractArray, m::_TILPMasks) = _TILPMasks(
     [[_like(ref, a) for a in lvl] for lvl in m.ana],

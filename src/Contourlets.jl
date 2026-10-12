@@ -43,7 +43,7 @@ using MultiscaleFilterBanks: MultiscaleFilterBanks,
     FilterPair, CDF97, upsample_filter,
     ThreadingPolicy, Auto, Enabled, Disabled,
     _data_eltype, _filter_eltype, _use_threading, _n_fft_tasks, _chunk, _clamp_idx,
-    _nsp_atrous_filters, _NSP_SYNTH_SCALE
+    _nsp_atrous_filters
 
 # ── Types (must come before filters which use them) ──────────────────────────
 include("types/quincunx_filter_pair.jl")
@@ -76,6 +76,7 @@ include("directional/nsdfb.jl")
 
 # ── Workspace ─────────────────────────────────────────────────────────────────
 include("workspace/scratch_arena.jl")
+include("workspace/fft_tasks.jl")
 include("workspace/contourlet_workspace.jl")
 
 # ── Top-level transforms ──────────────────────────────────────────────────────

@@ -3,8 +3,9 @@
 # Design: the whole transform runs on the device.  The multiscale (Laplacian /
 # nonsubsampled) pyramid stage dispatches to the GPU primitives, and both
 # directional filter banks stay on the device too: they are products with
-# precomputed equivalent filters, alias folds and FFTs (`bank_gpu.jl`), so they
-# need an array type with an FFT (cuFFT, rocFFT, …).
+# precomputed equivalent filters, alias folds and FFTs, so they only need their
+# masks copied to the device (`_adapt_bank`) and an array type with an FFT (cuFFT,
+# rocFFT, …).
 #
 # Coefficients are returned with their arrays still on the device (the containers
 # carry a generic `A <: AbstractMatrix` storage type), so nothing is implicitly

@@ -5,7 +5,7 @@
 # input (the defining property of the nonsubsampled transform).
 #
 # The a trous filter pair per pyramid level, and the synthesis rescale it carries,
-# come from MultiscaleFilterBanks (`_nsp_atrous_filters`, `_NSP_SYNTH_SCALE`): the
+# come from MultiscaleFilterBanks (`_nsp_atrous_filters`): the
 # nonsubsampled pyramid does no decimation, so the biorthogonal synthesis `g` --
 # designed with DC gain 2 to compensate the x2 upsampling of the decimated
 # Laplacian pyramid -- is rescaled to unit DC gain per axis.  Without that the

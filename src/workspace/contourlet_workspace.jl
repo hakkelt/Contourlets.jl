@@ -50,13 +50,12 @@ struct ContourletWorkspace{Td <: Number, Tf <: AbstractFloat, M <: AbstractMatri
     nsp_syn::Vector{C}
 
     # NSCT FFT stage: single-threaded plans between the image and its spectrum,
-    # the input spectrum / synthesis accumulator, and per task (one per thread on
-    # the host) an FFT buffer and, from task 2 on, a partial synthesis sum.  The
-    # outputs `(j, k)` in `nsct_items` are split between the tasks.  `nothing` /
-    # empty for a CT workspace.
+    # the input spectrum / synthesis accumulator, and per task (`fft_tasks.jl`) an
+    # FFT buffer and, from task 2 on, a partial synthesis sum.  The outputs
+    # `(j, k)` in `nsct_items` are split between the tasks.  `nothing` / empty for
+    # a CT workspace.
     fft_plan_fwd::P
     fft_plan_inv::Q
-    fft_buffer_c::C                 # === fft_tasks[1]
     fft_spectrum_bp::C
     fft_tasks::Vector{C}
     fft_acc::Vector{C}
@@ -69,32 +68,14 @@ struct ContourletWorkspace{Td <: Number, Tf <: AbstractFloat, M <: AbstractMatri
     inv_graph_cache::Vector{Any}
 end
 
-function ContourletWorkspace{Td, Tf, M}(
-        params::ContourletParams{Tf},
-        image_size::Tuple{Int, Int},
-        fwd_scratch::ScratchArena{M},
-        inv_scratch::ScratchArena{M},
-        bp_dims::Vector{Tuple{Int, Int}},
-        dfb_runners::R,
-        nsdfb_banks::B,
-        nsp_ana::Vector{C},
-        nsp_syn::Vector{C},
-        fft_plan_fwd::P,
-        fft_plan_inv::Q,
-        fft_tasks::Vector{C},
-        fft_acc::Vector{C},
-        fft_spectrum_bp::C,
-        nsct_items::Vector{NTuple{2, Int}},
-        graph_cache::Vector{Any} = Any[],
-        inv_graph_cache::Vector{Any} = Any[]
-    ) where {Td, Tf, M, R, B, C, P, Q}
-    first_task = isempty(fft_tasks) ? fft_spectrum_bp : fft_tasks[1]
-    return ContourletWorkspace{Td, Tf, M, R, B, C, P, Q}(
-        params, image_size, fwd_scratch, inv_scratch, bp_dims, dfb_runners, nsdfb_banks,
-        nsp_ana, nsp_syn, fft_plan_fwd, fft_plan_inv, first_task, fft_spectrum_bp,
-        fft_tasks, fft_acc, nsct_items, graph_cache, inv_graph_cache
-    )
-end
+ContourletWorkspace{Td, Tf, M}(
+    params::ContourletParams{Tf}, image_size, fwd_scratch::ScratchArena{M}, inv_scratch::ScratchArena{M},
+    bp_dims, dfb_runners::R, nsdfb_banks::B, nsp_ana::Vector{C}, nsp_syn::Vector{C},
+    fft_plan_fwd::P, fft_plan_inv::Q, fft_spectrum_bp, fft_tasks::Vector{C}, fft_acc::Vector{C}, nsct_items
+) where {Td, Tf, M, R, B, C, P, Q} = ContourletWorkspace{Td, Tf, M, R, B, C, P, Q}(
+    params, image_size, fwd_scratch, inv_scratch, bp_dims, dfb_runners, nsdfb_banks, nsp_ana, nsp_syn,
+    fft_plan_fwd, fft_plan_inv, fft_spectrum_bp, fft_tasks, fft_acc, nsct_items, Any[], Any[]
+)
 
 # Bandpass size at each of the `J` pyramid levels of the CT (halving, rounded up)
 # or the NSCT (constant).
@@ -204,7 +185,7 @@ function make_workspace(
     ws = ContourletWorkspace{Td, Tf, M}(
         p2, image_size, ScratchArena{M}(), ScratchArena{M}(), bp_dims,
         runners, Union{Nothing, _bank_type(ref, Tf)}[], Nothing[], Nothing[],
-        nothing, nothing, Nothing[], Nothing[], nothing, NTuple{2, Int}[]
+        nothing, nothing, nothing, Nothing[], Nothing[], NTuple{2, Int}[]
     )
     # Grow the scratch arena to its steady-state size now (forward + inverse), so
     # the first user call is already allocation-free.
@@ -263,7 +244,7 @@ function make_nsct_workspace(
     is_real = Td <: Real
     ref = _allocate_zeros(M, Td, (1, 1))
     keys_j = [(p2.L_array[j], _nsdfb_upsampling(j)) for j in 1:J]
-    banks = Dict{NTuple{2, Int}, Any}()
+    banks = Dict{NTuple{2, Int}, _bank_type(ref, Tf)}()
     for (l, m) in unique(keys_j)
         l > 0 || continue
         is_ladder(p2.dfb_filters) || throw(
@@ -278,40 +259,18 @@ function make_nsct_workspace(
     end
     # Levels with equal depth and upsampling share one bank.
     nsdfb_banks = Union{Nothing, _bank_type(ref, Tf)}[get(banks, key, nothing) for key in keys_j]
-    n1, n2 = image_size
-    init_shape = is_real ? (n1 ÷ 2 + 1, n2) : (n1, n2)
-    nsp_ana, nsp_syn = _nsp_masks(Tf, p2.lp_filters, image_size, J; rows = 1:init_shape[1])
-    fft_buffer_c = fill!(similar(ref, Complex{Tf}, init_shape), zero(Complex{Tf}))
-    nsp_ana = [_like(fft_buffer_c, a) for a in nsp_ana]
-    nsp_syn = [_like(fft_buffer_c, a) for a in nsp_syn]
-    fft_spectrum_bp = similar(fft_buffer_c)
-    tmp_d = similar(ref, Td, image_size)
-
-    if M <: Array
-        # Single-threaded plans: threading splits the independent subband FFTs
-        # between tasks instead (see `_nsct_forward_inner!`), which at these sizes
-        # scales far better than FFTW's threads splitting one FFT.
-        nthreads_before = FFTW.get_num_threads()
-        FFTW.set_num_threads(1)
-        try
-            fft_plan_fwd = is_real ? plan_rfft(tmp_d, flags = FFTW.MEASURE) : plan_fft(tmp_d, flags = FFTW.MEASURE)
-            fft_plan_inv = is_real ? plan_irfft(fft_buffer_c, n1, flags = FFTW.MEASURE) : plan_ifft(fft_buffer_c, flags = FFTW.MEASURE)
-        finally
-            FFTW.set_num_threads(nthreads_before)
-        end
-    else
-        fft_plan_fwd = is_real ? plan_rfft(tmp_d) : plan_fft(tmp_d)
-        fft_plan_inv = is_real ? plan_irfft(fft_buffer_c, n1) : plan_ifft(fft_buffer_c)
-    end
-    fft_tasks = [i == 1 ? fft_buffer_c : similar(fft_buffer_c) for i in 1:_n_fft_tasks(fft_buffer_c)]
+    X, fft_plan_fwd, fft_plan_inv = _ns_plans(similar(ref, Td, image_size); measured = true)
+    nsp_ana, nsp_syn = _nsp_masks(Tf, p2.lp_filters, image_size, J; rows = axes(X, 1))
+    nsp_ana = [_like(X, a) for a in nsp_ana]
+    nsp_syn = [_like(X, a) for a in nsp_syn]
     items = [(j, k) for j in 1:J for k in 1:(nsdfb_banks[j] === nothing ? 1 : length(nsdfb_banks[j].ana))]
+    nt = _n_tasks(X, length(items))
 
     ws = ContourletWorkspace{Td, Tf, M}(
         p2, image_size, ScratchArena{M}(), ScratchArena{M}(),
         _bandpass_dims(image_size, J; nonsubsampled = true),
         Union{Nothing, _runner_type(ref, Tf)}[], nsdfb_banks, nsp_ana, nsp_syn,
-        fft_plan_fwd, fft_plan_inv, fft_tasks, typeof(fft_buffer_c)[similar(t) for t in fft_tasks[2:end]],
-        fft_spectrum_bp, items
+        fft_plan_fwd, fft_plan_inv, X, [similar(X) for _ in 1:nt], typeof(X)[similar(X) for _ in 2:nt], items
     )
     prewarm && _prewarm_nsct!(ws; threading = threading)
     return ws

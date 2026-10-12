@@ -32,9 +32,18 @@ function _dfb_runner(bandpass::AbstractMatrix, l::Int, qfp::QuincunxFilterPair, 
     return _bank_runner(_adapt_bank(bandpass, bank), bandpass)
 end
 
-# Move a host bank to the array family of `ref` (identity on the host; the GPU
-# extension adds methods).
-_adapt_bank(::AbstractArray, bank::_DirectionalBank) = bank
+# Move a host bank to the array family of `ref` (identity on the host).
+function _adapt_bank(ref::AbstractArray, bank::_DirectionalBank)
+    A = typeof(similar(ref, eltype(eltype(bank.ana)), 0, 0))
+    V = typeof(similar(ref, eltype(eltype(bank.phase_r)), 0))
+    return _DirectionalBank(
+        A[_like(ref, a) for a in bank.ana], A[_like(ref, a) for a in bank.syn],
+        V[_like(ref, v) for v in bank.phase_r], V[_like(ref, v) for v in bank.phase_c],
+        bank.delay, bank.sampling, bank.dims, bank.levels
+    )
+end
+_adapt_bank(::Array, bank::_DirectionalBank) = bank
+_adapt_bank(ref::SubArray, bank::_DirectionalBank) = _adapt_bank(parent(ref), bank)
 
 # Call `f(runner)` with the workspace's runner when it has one for `x`, otherwise
 # with a freshly built one.  Each branch calls `f` on its own concrete runner type,

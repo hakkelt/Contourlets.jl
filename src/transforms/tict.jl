@@ -50,7 +50,8 @@ function make_tict_workspace(
     ref = _allocate_zeros(M, Td, image_size)
     rows = real_data ? (1:(n1 ÷ 2 + 1)) : (1:n1)
     masks = _adapt_masks(ref, _tilp_masks(Tf, p.lp_filters, image_size, p.J; rows = rows))
-    built = Dict{Tuple{Int, Symbol}, Any}()
+    B = _bank_type(ref, Tf)
+    built = Dict{Tuple{Int, Symbol}, B}()
     bank(l, half) = get!(built, (l, half)) do
         _adapt_bank(
             ref, _directional_bank(
@@ -59,14 +60,13 @@ function make_tict_workspace(
             )
         )
     end
-    B = _bank_type(ref, Tf)
     banks = [Union{Nothing, B}[l == 0 ? nothing : bank(l, h) for h in _TILP_HALVES] for l in p.L_array]
     items = [(i, c, k) for (i, l) in enumerate(p.L_array) for c in 1:4 for k in 1:_tict_n_subbands(l, c)]
-    X, pfwd, pinv = _ns_plans(ref)
-    nt = _n_fft_tasks(X)
-    Y = [similar(X) for _ in 1:nt]
+    X, pfwd, pinv = _ns_plans(ref; measured = true)
+    nt = _n_tasks(X, length(items))
     return TICTWorkspace{Td, Tf, typeof(X), B, typeof(pfwd), typeof(pinv)}(
-        p, (n1, n2), masks, banks, items, X, Y, [similar(X) for _ in 1:nt], typeof(X)[similar(X) for _ in 2:nt], pfwd, pinv
+        p, (n1, n2), masks, banks, items, X, [similar(X) for _ in 1:nt], [similar(X) for _ in 1:nt],
+        typeof(X)[similar(X) for _ in 2:nt], pfwd, pinv
     )
 end
 
@@ -121,17 +121,12 @@ function _tict_inverse_items!(acc, coeffs::TICTCoefficients, ws::TICTWorkspace, 
 end
 
 # The subbands are independent, so with `threaded` (host workspaces only) their
-# FFTs run in `length(ws.Z)` tasks over contiguous chunks of `ws.items`; at these
-# sizes that scales far better than FFTW's own threads, which split one FFT.
+# FFTs run in `length(ws.Z)` tasks over contiguous chunks of `ws.items`
+# (`fft_tasks.jl`).
 function _tict_forward_ws!(coeffs::TICTCoefficients, x::AbstractMatrix, ws::TICTWorkspace, threaded::Bool = false)
     mul!(ws.X, ws.pfwd, x)
-    n, nt = length(ws.items), length(ws.Z)
-    if threaded && nt > 1
-        @batch for t in 1:nt
-            _tict_forward_items!(coeffs, ws, _chunk(n, nt, t), ws.Y[t], ws.Z[t])
-        end
-    else
-        _tict_forward_items!(coeffs, ws, 1:n, ws.Y[1], ws.Z[1])
+    _foreach_chunk(length(ws.items), length(ws.Z), threaded) do range, t
+        _tict_forward_items!(coeffs, ws, range, ws.Y[t], ws.Z[t])
     end
     ws.Z[1] .= ws.masks.coarse_ana .* ws.X
     mul!(coeffs.coarse, ws.pinv, ws.Z[1])
@@ -140,18 +135,8 @@ end
 
 function _tict_inverse_ws!(x::AbstractMatrix, coeffs::TICTCoefficients, ws::TICTWorkspace, threaded::Bool = false)
     fill!(ws.X, zero(eltype(ws.X)))
-    n, nt = length(ws.items), length(ws.Z)
-    if threaded && nt > 1
-        @batch for t in 1:nt
-            acc = t == 1 ? ws.X : ws.acc[t - 1]
-            t == 1 || fill!(acc, zero(eltype(acc)))
-            _tict_inverse_items!(acc, coeffs, ws, _chunk(n, nt, t), ws.Z[t], ws.Y[t])
-        end
-        for a in ws.acc
-            ws.X .+= a
-        end
-    else
-        _tict_inverse_items!(ws.X, coeffs, ws, 1:n, ws.Z[1], ws.Y[1])
+    _chunked_sum!(ws.X, ws.acc, length(ws.items), threaded) do acc, range, t
+        _tict_inverse_items!(acc, coeffs, ws, range, ws.Z[t], ws.Y[t])
     end
     F = ws.Z[1]
     mul!(F, ws.pfwd, coeffs.coarse)

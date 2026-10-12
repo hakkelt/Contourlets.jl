@@ -162,7 +162,7 @@ end
     x = randn(32, 32)
     p = ContourletParams(J = 3, L_array = [0, 2, 3])
     ws = make_nsct_workspace(p, (32, 32))
-    @test length(ws.fft_tasks) == Threads.nthreads()
+    @test length(ws.fft_tasks) == min(Threads.nthreads(), length(ws.nsct_items))
     c_ser = nsct_forward!(similar_nsct_coefficients(p, (32, 32)), x, p; workspace = ws, threading = Disabled())
     c_par = nsct_forward!(similar_nsct_coefficients(p, (32, 32)), x, p; workspace = ws, threading = Enabled())
     @test all(c_ser.subbands[j][k] == c_par.subbands[j][k] for j in 1:3 for k in eachindex(c_ser.subbands[j]))

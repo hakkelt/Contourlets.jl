@@ -36,20 +36,32 @@
 # Upsampling exponent m of the directional filters at pyramid level `tree_level`.
 _nsdfb_upsampling(tree_level::Int) = max(0, tree_level - 2)
 
-# FFT pair for the data type (the rfft half-plane for real data).  The spectra and
-# outputs are allocated with `similar` and filled through plans, so they keep the
-# input's array type even for an array type whose FFT runs on host memory.
-function _ns_plans(x::AbstractMatrix{T}) where {T <: Real}
-    X = similar(x, Complex{T}, (size(x, 1) ÷ 2 + 1, size(x, 2)))
-    return X, plan_rfft(x), plan_irfft(X, size(x, 1))
-end
-function _ns_plans(x::AbstractMatrix)
-    X = similar(x)
-    return X, plan_fft(x), plan_ifft(X)
+# A spectrum buffer and FFT pair for the data type (the rfft half-plane for real
+# data).  The spectra and outputs are allocated with `similar` and filled through
+# plans, so they keep the input's array type even for an array type whose FFT runs
+# on host memory.
+#
+# A workspace passes `measured = true`: host plans are then measured and
+# single-threaded, because the workspace threads over its independent subband FFTs
+# instead (`_foreach_chunk`), which at these sizes scales far better than FFTW's
+# threads splitting one FFT.
+function _ns_plans(x::AbstractMatrix; measured::Bool = false)
+    X = _ns_spectrum(x)
+    (measured && x isa Array) || return (X, _ns_plan_pair(x, X)...)
+    nthreads_before = FFTW.get_num_threads()
+    FFTW.set_num_threads(1)
+    try
+        return (X, _ns_plan_pair(x, X; flags = FFTW.MEASURE)...)
+    finally
+        FFTW.set_num_threads(nthreads_before)
+    end
 end
 
-# irfft plans may overwrite their input, so the spectrum is passed as scratch.
-_ns_ifft!(out::AbstractMatrix, pinv, Y::AbstractMatrix) = mul!(out, pinv, Y)
+_ns_spectrum(x::AbstractMatrix{T}) where {T <: Real} = similar(x, Complex{T}, (size(x, 1) ÷ 2 + 1, size(x, 2)))
+_ns_spectrum(x::AbstractMatrix) = similar(x)
+
+_ns_plan_pair(x::AbstractMatrix{<:Real}, X; kwargs...) = (plan_rfft(x; kwargs...), plan_irfft(X, size(x, 1); kwargs...))
+_ns_plan_pair(x::AbstractMatrix, X; kwargs...) = (plan_fft(x; kwargs...), plan_ifft(X; kwargs...))
 
 function _nsdfb_bank(
         img::AbstractMatrix, l::Int, qfp::QuincunxFilterPair, tree_level::Int, half::Symbol, ::Type{Tf}
@@ -117,7 +129,7 @@ function nsdfb_decompose(
     Y = similar(X)
     return map(bank.ana) do a
         Y .= a .* X
-        _ns_ifft!(similar(img), pinv, Y)
+        mul!(similar(img), pinv, Y)    # irfft plans may overwrite Y
     end
 end
 
@@ -165,5 +177,5 @@ function nsdfb_reconstruct(
         mul!(X, pfwd, s)
         acc .+= bank.syn[k] .* X
     end
-    return _ns_ifft!(similar(ref), pinv, acc)
+    return mul!(similar(ref), pinv, acc)
 end

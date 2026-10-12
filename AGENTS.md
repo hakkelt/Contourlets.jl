@@ -49,8 +49,8 @@ packages share only the pyramid filter machinery.
 
 The shared surface with the core is small and explicit: `FilterPair`, `CDF97`,
 `upsample_filter`, the threading policy types, and the internals `_data_eltype`,
-`_filter_eltype`, `_use_threading`, `_clamp_idx`, `_nsp_atrous_filters`,
-`_NSP_SYNTH_SCALE`. All are re-exported (public names) or imported (internals)
+`_filter_eltype`, `_use_threading`, `_n_fft_tasks`, `_chunk`, `_clamp_idx`,
+`_nsp_atrous_filters`. All are re-exported (public names) or imported (internals)
 in `src/Contourlets.jl`.
 
 **First checkout**: `MultiscaleFilterBanks.jl` is unregistered and expected as a
@@ -108,6 +108,7 @@ Contourlets/
 │   │   └── coefficients.jl    # ContourletCoefficients, NSCTCoefficients, TICTCoefficients
 │   ├── workspace/
 │   │   ├── scratch_arena.jl   # ScratchArena + task-local arena/filter cache, _scratch_like
+│   │   ├── fft_tasks.jl       # threaded subband loop of the DFT-mask workspaces
 │   │   └── contourlet_workspace.jl # ContourletWorkspace, make_workspace, make_nsct_workspace
 │   ├── filters/
 │   │   ├── q2345.jl           # "23-45" Phoong (pkva) ladder DFB filter constants
@@ -141,7 +142,6 @@ Contourlets/
 │   │   ├── utils_gpu.jl       # backend lookup, host→device transfer
 │   │   ├── primitives_gpu.jl  # conv2d_sep!, shear, rect/quincunx sampling kernels
 │   │   ├── qfb_gpu.jl         # quincunx filter bank kernels, qfb_decompose/reconstruct
-│   │   ├── bank_gpu.jl        # moving directional banks to the device
 │   │   └── transforms_gpu.jl  # CT/NSCT entry points, Adapt for coefficient sets
 │   └── ContourletsCUDAExt.jl  # CUDA graph capture for the workspace paths
 ├── test/
@@ -321,7 +321,7 @@ output.
   runs every stage of CT/NSCT/TICT/STICT on the device. Pyramid functions are
   reused unchanged (broadcast-based dispatch picks up GPU primitives
   automatically); the directional banks and TILP masks only need moving to the
-  device (`bank_gpu.jl`, `_like`) and an FFT for the array type (cuFFT, rocFFT;
+  device (`_adapt_bank`, `_like`) and an FFT for the array type (cuFFT, rocFFT;
   JLArrays through FFTW on host memory — not OpenCL). JLArrays' `rfft` returns
   a `Matrix`, so allocate outputs with `similar` and fill them via plans + `mul!`.
   Coefficients stay device-resident (`ContourletCoefficients{Td,A}`,

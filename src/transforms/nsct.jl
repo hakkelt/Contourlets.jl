@@ -156,16 +156,12 @@ function _nsct_forward_inner!(
     # subbands are independent, so with threading their FFTs run in one task per
     # FFT buffer of the workspace.
     mul!(ws.fft_spectrum_bp, ws.fft_plan_fwd, img)
-    n, nt = length(ws.nsct_items), length(ws.fft_tasks)
-    if _use_threading(threading, T) && nt > 1
-        @batch for t in 1:nt
-            _nsct_forward_items!(coeffs, ws, _chunk(n, nt, t), ws.fft_tasks[t])
-        end
-    else
-        _nsct_forward_items!(coeffs, ws, 1:n, ws.fft_buffer_c)
+    _foreach_chunk(length(ws.nsct_items), length(ws.fft_tasks), _use_threading(threading, T)) do range, t
+        _nsct_forward_items!(coeffs, ws, range, ws.fft_tasks[t])
     end
-    ws.fft_buffer_c .= ws.nsp_ana[J + 1] .* ws.fft_spectrum_bp
-    mul!(coeffs.coarse, ws.fft_plan_inv, ws.fft_buffer_c)
+    Z = ws.fft_tasks[1]
+    Z .= ws.nsp_ana[J + 1] .* ws.fft_spectrum_bp
+    mul!(coeffs.coarse, ws.fft_plan_inv, Z)
     return coeffs
 end
 
@@ -306,21 +302,12 @@ function _nsct_inverse_inner!(
     # with threading summed in one partial accumulator per task.
     acc = ws.fft_spectrum_bp
     fill!(acc, zero(eltype(acc)))
-    n, nt = length(ws.nsct_items), length(ws.fft_tasks)
-    if _use_threading(threading, T) && nt > 1
-        @batch for t in 1:nt
-            a = t == 1 ? acc : ws.fft_acc[t - 1]
-            t == 1 || fill!(a, zero(eltype(a)))
-            _nsct_inverse_items!(a, coeffs, ws, _chunk(n, nt, t), ws.fft_tasks[t])
-        end
-        for a in ws.fft_acc
-            acc .+= a
-        end
-    else
-        _nsct_inverse_items!(acc, coeffs, ws, 1:n, ws.fft_buffer_c)
+    _chunked_sum!(acc, ws.fft_acc, length(ws.nsct_items), _use_threading(threading, T)) do a, range, t
+        _nsct_inverse_items!(a, coeffs, ws, range, ws.fft_tasks[t])
     end
-    mul!(ws.fft_buffer_c, ws.fft_plan_fwd, coeffs.coarse)
-    acc .+= ws.nsp_syn[J + 1] .* ws.fft_buffer_c
+    F = ws.fft_tasks[1]
+    mul!(F, ws.fft_plan_fwd, coeffs.coarse)
+    acc .+= ws.nsp_syn[J + 1] .* F
     if image isa _ws_matrix_type(ws)
         mul!(image, ws.fft_plan_inv, acc)
     else
@@ -329,10 +316,8 @@ function _nsct_inverse_inner!(
     return image
 end
 
-# Grow the workspace scratch arena to its steady-state size by running one forward
-# + inverse pass on zeros (the per-call allocation sequence is deterministic, so
-# afterwards the first real call allocates nothing).  Called from
-# `make_nsct_workspace(...; prewarm=true)`.
+# Run one forward + inverse pass on zeros, so the first real call is compiled and
+# allocates nothing.  Called from `make_nsct_workspace(...; prewarm=true)`.
 function _prewarm_nsct!(ws::ContourletWorkspace{Td, Tf, M}; threading::ThreadingPolicy = Auto()) where {Td, Tf, M}
     img = _allocate_zeros(M, Td, ws.image_size)
     coeffs = similar_nsct_coefficients(ws.params, ws.image_size; Td = Td, M = M)

@@ -43,12 +43,12 @@ function make_stict_workspace(
     p = _check_tict_params(_convert_params(Tf, params))
     ref = _allocate_zeros(M, Td, image_size)
     masks = _adapt_masks(ref, _tilp_masks(Tf, p.lp_filters, image_size, p.J))
-    built = Dict{Tuple{Int, Symbol}, Any}()
+    R = _runner_type(ref, Tf)
+    built = Dict{Tuple{Int, Symbol}, R}()
     runner(l, half) = get!(built, (l, half)) do
         b = _directional_bank(Tf, image_size, l, p.dfb_filters.f_ladder; decimated = true, half = half)
         _bank_runner(_adapt_bank(ref, b), ref)
     end
-    R = _runner_type(ref, Tf)
     runners = [Union{Nothing, R}[l == 0 ? nothing : runner(l, h) for h in _TILP_HALVES] for l in p.L_array]
     X = fill!(similar(ref, Complex{Tf}, image_size), zero(Complex{Tf}))
     pfwd, pinv = _inplace_plans(X, FFTW.ESTIMATE)
@@ -115,7 +115,9 @@ subbands are those of the decimated DFB.  Redundancy `4J + 1`.
 
 Both image dimensions must be divisible by `2^max(L - 1, 1)` for the deepest
 directional level `L`.  Pass a workspace from [`make_stict_workspace`](@ref) to
-reuse the precomputed filters and buffers.
+reuse the precomputed filters and buffers.  `threading` is accepted for symmetry
+with [`tict_forward`](@ref) and currently has no effect: the channels run one
+after another.
 
 # Examples
 ```jldoctest

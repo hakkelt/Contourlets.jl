@@ -18,15 +18,20 @@ hardware, are in [Comparison with the MATLAB toolboxes](@ref comparison).
 
 ## Workspaces are the main lever
 
-The NSCT has two execution paths with very different profiles:
+Both directional filter banks filter on the DFT grid with the equivalent filters
+of the DFB tree, which are evaluated in closed form for the image size at hand.
+That evaluation is the part a workspace saves:
 
-- **Allocating** (`nsct_forward(x, params)`) runs the 2-D fan/parallelogram
-  convolutions directly. Convenient for one-shot use; the kernels skip the
-  structural zeros of the à trous filters (~70% of each) and use SIMD or
-  multi-threaded batching.
-- **Workspace** ([`make_nsct_workspace`](@ref) + `nsct_forward!`) precomputes the
-  `2^L` equivalent leaf filters once in the frequency domain. Each later call is
-  an FFT, a pointwise multiply and an inverse FFT.
+- **Allocating** (`nsct_forward(x, params)`, `ct_forward(x, params)`) builds the
+  equivalent filters, FFT buffers and plans on every call.  Convenient for
+  one-shot use.
+- **Workspace** ([`make_nsct_workspace`](@ref) + `nsct_forward!`,
+  [`make_workspace`](@ref) + `ct_forward!`) builds them once.  Each later call is
+  an FFT, pointwise multiplies (plus an alias fold for the decimated DFB) and
+  inverse FFTs, and allocates nothing.  An NSCT workspace also holds the
+  nonsubsampled pyramid as masks on the input's spectrum, so `nsct_forward!` is
+  one FFT of the image and one inverse FFT per output array, with no
+  convolution at all.
 
 ```@example perf
 using Contourlets, BenchmarkTools
@@ -72,16 +77,29 @@ default), `Enabled()` or `Disabled()` — and the default is a hybrid:
 | Real (`Float32`/`Float64`) | single-threaded `LoopVectorization.@turbo` | the inner loops vectorise cleanly; SIMD beats thread-spawn overhead |
 | Complex | multi-threaded `Polyester.@batch` | the loops do not vectorise; `@batch` spawns at near-zero cost |
 
-`Enabled()` and `Disabled()` override that choice. Note that FFT threading in an
-NSCT workspace is fixed when the workspace is constructed — see
-[2-D transforms](@ref guide2d).
+`Enabled()` and `Disabled()` override that choice.  The NSCT and TICT workspace
+paths are FFT-bound instead: there, threading runs the independent subband FFTs
+in one task per Julia thread (FFTW's own threads, which split a single FFT, gain
+little at image sizes).  Real data stays single-threaded by default there too;
+pass `threading = Enabled()` to use the cores:
+
+```@example perf
+p_t = ContourletParams(J = 3, L_array = [2, 3, 4])
+ws_t = make_tict_workspace(p_t, (256, 256))
+buf_t = similar_tict_coefficients(p_t, (256, 256))
+t_serial = @belapsed tict_forward!($buf_t, $img, $p_t; workspace = $ws_t, threading = Disabled())
+t_threaded = @belapsed tict_forward!($buf_t, $img, $p_t; workspace = $ws_t, threading = Enabled())
+println("tict_forward! serial   : $(round(t_serial * 1e3; digits = 1)) ms")
+println("tict_forward! threaded : $(round(t_threaded * 1e3; digits = 1)) ms on $(Threads.nthreads()) thread(s)")
+```
 
 ## GPU
 
 `ContourletsGPUExt` loads when a KernelAbstractions backend (CUDA, AMDGPU, Metal,
 oneAPI) is present and runs *every* stage of the CT and NSCT on the device;
-coefficients stay device-resident. Pass a device array and dispatch does the
-rest:
+coefficients stay device-resident.  The directional stage needs an FFT for the
+array type (cuFFT with CUDA, rocFFT with AMDGPU); the pyramid and the shear-based
+primitives run on any backend.  Pass a device array and dispatch does the rest:
 
 ```julia
 using CUDA, Contourlets
@@ -90,8 +108,8 @@ img_back = Array(ct_inverse(coeffs, params))
 ```
 
 `ContourletsCUDAExt` additionally captures the workspace `ct_forward!` /
-`ct_inverse!` paths into CUDA graphs, replacing roughly 300 kernel launches per
-call with a single replay. Without graph capture — on AMDGPU, Metal or oneAPI —
+`ct_inverse!` paths into CUDA graphs, replacing their many small kernel launches
+per call with a single replay. Without graph capture — on AMDGPU —
 the device path is still correct, but only wins once the image is large enough
 for compute to dominate host-side launch overhead. There is a fixed per-call
 floor of a few milliseconds on the 2-D transforms, so small images are faster on

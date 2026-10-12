@@ -4,6 +4,9 @@
 #   • lp_decompose → nsp_decompose (no downsampling, à trous upsampled filters)
 #   • dfb_decompose → nsdfb_decompose (no quincunx decimation)
 # All outputs have the same spatial size as the input.
+#
+# Reference: A. L. da Cunha, J. Zhou & M. N. Do, "The nonsubsampled contourlet
+# transform: theory, design, and applications", IEEE TIP 15(10), 2006, §II-A.
 
 """
     nsct_forward(image, params::ContourletParams; workspace=nothing, threading=Auto()) -> NSCTCoefficients
@@ -65,11 +68,9 @@ In-place NSCT forward pass writing into the preallocated `coeffs`.
 Pass a `ContourletWorkspace` via `workspace` for an allocation-free pyramid
 stage.  Allocate `coeffs` with [`similar_nsct_coefficients`](@ref).
 
-!!! note "FFT threading"
-    The FFTW plans in `ws` are bound to the thread count chosen at workspace
-    construction time.  Passing a `threading` kwarg that implies a different
-    thread count will trigger a one-time warning; to change FFT threading,
-    create a new workspace with the desired `threading` policy.
+!!! note "Threading"
+    With a host workspace and threading on (`Enabled()`, or `Auto()` for complex
+    data) the independent subband FFTs run in one task per Julia thread.
 """
 function nsct_forward!(
         coeffs::NSCTCoefficients,
@@ -133,60 +134,69 @@ function _nsct_forward_noworkspace!(
     return coeffs
 end
 
+# The workspace's FFT plans run on its dense matrix type; a view or other wrapper
+# is staged through a grow-once scratch buffer of that type.
+function _staging(a::ScratchArena, x::AbstractMatrix)
+    _arena_reset!(a)
+    return _arena_take!(a, x, size(x)...)
+end
+_dense_input(ws::ContourletWorkspace, x::AbstractMatrix) =
+    x isa _ws_matrix_type(ws) ? x : copyto!(_staging(ws.fwd_scratch, x), x)
+
 function _nsct_forward_inner!(
         coeffs::NSCTCoefficients{T},
         image::AbstractMatrix,
         ws::ContourletWorkspace{T, Tf};
         threading::ThreadingPolicy = Auto()
     ) where {T, Tf}
-    params = ws.params
-    J = params.J
-    L = params.L_array
-    fp = params.lp_filters
-
-    img = T === eltype(image) ? image : T.(image)
-    if ws.fft_plan_fwd !== nothing && _use_threading(threading, T) != ws.fft_threaded
-        @warn "threading kwarg conflicts with workspace FFT thread count; " *
-            "FFT stage uses $(ws.fft_threaded ? "multi" : "single")-threaded plans " *
-            "from workspace construction — create a new workspace to change FFT threading" maxlog = 1
-    end
-    _arena_reset!(ws.fwd_scratch)
-    _with_arena(ws.fwd_scratch) do
-        current = img
-        for j in 1:J
-            n1, n2 = size(current)
-            coarse_j = _scratch_like(current, n1, n2)
-            bp_j = _scratch_like(current, n1, n2)
-            tmp_j = _scratch_like(current, n1, n2)
-            tmp2_j = _scratch_like(current, n1, n2)
-
-            nsp_decompose!(
-                coarse_j, bp_j, current, fp, j;
-                tmp = tmp_j, tmp2 = tmp2_j,
-                h_j = ws.lp_h_cache[j], g_j = ws.lp_g_cache[j]
-            )
-
-            if ws.fft_plan_fwd !== nothing
-                mul!(ws.fft_spectrum_bp, ws.fft_plan_fwd, bp_j)
-                H_leaves = ws.nsdfb_H_cache[j]
-                plan_inv = ws.fft_plan_inv
-
-                # In the hybrid threading model, Polyester is used natively
-                # inside the convolution kernels. For FFT-based convolution,
-                # we just loop through the leaves.
-                for k in 1:length(H_leaves)
-                    ws.fft_buffer_c .= ws.fft_spectrum_bp .* H_leaves[k]
-                    mul!(coeffs.subbands[j][k], plan_inv, ws.fft_buffer_c)
-                end
-            else
-                _nsdfb_decompose_into!(coeffs.subbands[j], bp_j, L[j], ws.qup_cache[j], ws.fwd_scratch)
-            end
-
-            current = coarse_j
+    J = ws.params.J
+    img = _dense_input(ws, T === eltype(image) ? image : T.(image))
+    # One FFT of the input; subband k of level j is ifft(Hₖ · Bⱼ · X) with the
+    # precomputed directional filter Hₖ and pyramid mask Bⱼ (`_nsp_masks`).  The
+    # subbands are independent, so with threading their FFTs run in one task per
+    # FFT buffer of the workspace.
+    mul!(ws.fft_spectrum_bp, ws.fft_plan_fwd, img)
+    n, nt = length(ws.nsct_items), length(ws.fft_tasks)
+    if _use_threading(threading, T) && nt > 1
+        @batch for t in 1:nt
+            _nsct_forward_items!(coeffs, ws, _chunk(n, nt, t), ws.fft_tasks[t])
         end
-        copyto!(coeffs.coarse, current)
+    else
+        _nsct_forward_items!(coeffs, ws, 1:n, ws.fft_buffer_c)
+    end
+    ws.fft_buffer_c .= ws.nsp_ana[J + 1] .* ws.fft_spectrum_bp
+    mul!(coeffs.coarse, ws.fft_plan_inv, ws.fft_buffer_c)
+    return coeffs
+end
+
+function _nsct_forward_items!(coeffs::NSCTCoefficients, ws::ContourletWorkspace, range, Z)
+    X = ws.fft_spectrum_bp
+    for n in range
+        j, k = ws.nsct_items[n]
+        bank = ws.nsdfb_banks[j]
+        if bank === nothing
+            Z .= ws.nsp_ana[j] .* X
+        else
+            Z .= bank.ana[k] .* ws.nsp_ana[j] .* X
+        end
+        mul!(coeffs.subbands[j][k], ws.fft_plan_inv, Z)
     end
     return coeffs
+end
+
+# acc += the synthesis of the subbands `ws.nsct_items[range]`, with FFT buffer F.
+function _nsct_inverse_items!(acc, coeffs::NSCTCoefficients, ws::ContourletWorkspace, range, F)
+    for n in range
+        j, k = ws.nsct_items[n]
+        bank = ws.nsdfb_banks[j]
+        mul!(F, ws.fft_plan_fwd, coeffs.subbands[j][k])
+        if bank === nothing
+            acc .+= ws.nsp_syn[j] .* F
+        else
+            acc .+= bank.syn[k] .* ws.nsp_syn[j] .* F
+        end
+    end
+    return acc
 end
 
 """
@@ -231,8 +241,8 @@ In-place NSCT inverse pass writing the reconstruction into `image`.
 Pass a `ContourletWorkspace` via `workspace` for an allocation-free pyramid
 stage.
 
-!!! note "FFT threading"
-    See [`nsct_forward!`](@ref) for the FFT threading constraint.
+!!! note "Threading"
+    See [`nsct_forward!`](@ref): the subband FFTs split between threads the same way.
 """
 function nsct_inverse!(
         image::AbstractMatrix,
@@ -291,61 +301,30 @@ function _nsct_inverse_inner!(
         ws::ContourletWorkspace{T, Tf};
         threading::ThreadingPolicy = Auto()
     ) where {T, Tf}
-    params = ws.params
-    J = params.J
-    fp = params.lp_filters
-
-    if ws.fft_plan_fwd !== nothing && _use_threading(threading, T) != ws.fft_threaded
-        @warn "threading kwarg conflicts with workspace FFT thread count; " *
-            "FFT stage uses $(ws.fft_threaded ? "multi" : "single")-threaded plans " *
-            "from workspace construction — create a new workspace to change FFT threading" maxlog = 1
-    end
-    _arena_reset!(ws.inv_scratch)
-    _with_arena(ws.inv_scratch) do
-        current = _scratch_like(image, size(coeffs.coarse, 1), size(coeffs.coarse, 2))
-        copyto!(current, coeffs.coarse)
-
-        for j in J:-1:1
-            n1, n2 = size(current)
-            bp = _scratch_like(current, n1, n2)
-
-            if ws.fft_plan_fwd !== nothing
-                G_leaves = ws.nsdfb_G_cache[j]
-                plan_fwd = ws.fft_plan_fwd
-                plan_inv = ws.fft_plan_inv
-                fill!(ws.fft_spectrum_bp, zero(eltype(ws.fft_spectrum_bp)))
-
-                n_subbands = length(coeffs.subbands[j])
-
-                # In the hybrid threading model, Polyester is used natively
-                # inside the convolution kernels. For FFT-based convolution,
-                # we just loop through the leaves.
-                for k in 1:n_subbands
-                    mul!(ws.fft_buffer_c, ws.fft_plan_fwd, coeffs.subbands[j][k])
-                    ws.fft_spectrum_bp .+= ws.fft_buffer_c .* G_leaves[k]
-                end
-                mul!(bp, ws.fft_plan_inv, ws.fft_spectrum_bp)
-            else
-                _nsdfb_reconstruct_into!(bp, coeffs.subbands[j], ws.qup_cache[j], ws.inv_scratch)
-            end
-
-            tmp_j = _scratch_like(current, n1, n2)
-            tmp2_j = _scratch_like(current, n1, n2)
-
-            if j > 1
-                next_coarse = _scratch_like(current, n1, n2)
-                nsp_reconstruct!(
-                    next_coarse, current, bp, fp, j;
-                    tmp = tmp_j, tmp2 = tmp2_j, g_j = ws.lp_g_cache[j]
-                )
-                current = next_coarse
-            else
-                nsp_reconstruct!(
-                    image, current, bp, fp, j;
-                    tmp = tmp_j, tmp2 = tmp2_j, g_j = ws.lp_g_cache[j]
-                )
-            end
+    J = ws.params.J
+    # image = ifft(Σⱼ Sⱼ Σₖ Gₖ · fft(subband k of level j) + S_{J+1} · fft(lowpass)),
+    # with threading summed in one partial accumulator per task.
+    acc = ws.fft_spectrum_bp
+    fill!(acc, zero(eltype(acc)))
+    n, nt = length(ws.nsct_items), length(ws.fft_tasks)
+    if _use_threading(threading, T) && nt > 1
+        @batch for t in 1:nt
+            a = t == 1 ? acc : ws.fft_acc[t - 1]
+            t == 1 || fill!(a, zero(eltype(a)))
+            _nsct_inverse_items!(a, coeffs, ws, _chunk(n, nt, t), ws.fft_tasks[t])
         end
+        for a in ws.fft_acc
+            acc .+= a
+        end
+    else
+        _nsct_inverse_items!(acc, coeffs, ws, 1:n, ws.fft_buffer_c)
+    end
+    mul!(ws.fft_buffer_c, ws.fft_plan_fwd, coeffs.coarse)
+    acc .+= ws.nsp_syn[J + 1] .* ws.fft_buffer_c
+    if image isa _ws_matrix_type(ws)
+        mul!(image, ws.fft_plan_inv, acc)
+    else
+        copyto!(image, mul!(_staging(ws.inv_scratch, image), ws.fft_plan_inv, acc))
     end
     return image
 end

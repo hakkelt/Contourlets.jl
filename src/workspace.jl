@@ -37,14 +37,13 @@ function _arena_take!(a::ScratchArena{M}, ref, m::Int, n::Int) where {M}
     return a.bufs[a.cursor]
 end
 
-# Task-local "active" arena.  The directional tree is a deep recursion of shared
-# functions, so rather than thread an arena argument through all of them the host
-# primitives (`_resamp`, `_extend2`, `_sefilter2`, the lifting broadcasts) draw
-# transient buffers from whatever arena is active on the current task, via
-# `_scratch_like`.  When no matching arena is active `_scratch_like` falls back to
-# `similar` (so the non-workspace and GPU paths are unchanged).  The arena is
-# typed on its matrix type, so a host arena only serves host arrays.
-# Task-local ⇒ thread-safe.
+# Task-local "active" arena.  Rather than thread an arena argument through every
+# call, the pyramid stage of the workspace paths (and the device separable
+# convolution's scratch) draws transient buffers from whatever arena is active on
+# the current task, via `_scratch_like`.  When no matching arena is active
+# `_scratch_like` falls back to `similar` (so the non-workspace paths are
+# unchanged).  The arena is typed on its matrix type, so a host arena only serves
+# host arrays.  Task-local ⇒ thread-safe.
 
 _active_arena() = get(task_local_storage(), :_contourlets_scratch, nothing)
 
@@ -110,7 +109,7 @@ iterations with the mutating `!` entry points.
     A `ContourletWorkspace` is **not thread-safe**.  Create a separate workspace
     per thread (e.g., `[make_workspace(params, sz) for _ in 1:Threads.nthreads()]`).
 """
-struct ContourletWorkspace{Td <: Number, Tf <: AbstractFloat, M <: AbstractMatrix{Td}, Q, L, DF}
+struct ContourletWorkspace{Td <: Number, Tf <: AbstractFloat, M <: AbstractMatrix{Td}, R, B, C, P, Q}
     params::ContourletParams{Tf}     # real filter precision Tf
     image_size::Tuple{Int, Int}
 
@@ -120,33 +119,37 @@ struct ContourletWorkspace{Td <: Number, Tf <: AbstractFloat, M <: AbstractMatri
     fwd_scratch::ScratchArena{M}
     inv_scratch::ScratchArena{M}
 
-    # Pre-built (possibly device-resident) DFB ladder filter for CT workspaces.
-    # Avoids re-uploading the same filter vector on every ct_forward!/ct_inverse! call.
-    # `nothing` for non-ladder qfp or NSCT workspaces.
-    dfb_f_cache::DF
+    # Size of the bandpass image at each pyramid level.
+    bp_dims::Vector{Tuple{Int, Int}}
 
-    # Per-level upsampled NSDFB filters (empty for a CT workspace, which uses the
-    # un-upsampled ladder filter directly).  Precomputed once at construction.
-    qup_cache::Q
+    # CT: per-level DFB runner (equivalent filters, FFT buffers and plans) for the
+    # ladder DFB; `nothing` at levels without a directional split, and empty for an
+    # NSCT workspace or a modulation-mode filter pair.
+    dfb_runners::R
 
-    # Per-level à trous upsampled LP analysis/synthesis filters for the NSP stage
-    # (the scaled synthesis `g` serves both decompose and reconstruct).  Empty for
-    # a CT workspace (the decimated LP uses the base filters directly).
-    lp_h_cache::L
-    lp_g_cache::L
+    # NSCT: per-level NSDFB bank (zero-phase equivalent filters, cropped to the
+    # rfft half-plane for real data).  Empty for a CT workspace.
+    nsdfb_banks::B
 
-    # FFT Caches for D2 equivalent-filter NSDFB (empty for CT workspaces).
-    nsdfb_H_cache::Vector{Vector{Matrix{Complex{Tf}}}}
-    nsdfb_G_cache::Vector{Vector{Matrix{Complex{Tf}}}}
-    fft_plan_fwd::Any
-    fft_plan_inv::Any
-    fft_buffer_c::Matrix{Complex{Tf}}
-    fft_spectrum_bp::Matrix{Complex{Tf}}
+    # NSCT: the nonsubsampled pyramid as masks on the input's spectrum (see
+    # `_nsp_masks`): `nsp_ana[j]` takes the input spectrum to the bandpass of level
+    # j, `nsp_syn[j]` takes that bandpass back, and entry J + 1 serves the lowpass.
+    # Empty for a CT workspace.
+    nsp_ana::Vector{C}
+    nsp_syn::Vector{C}
 
-    # FFTW thread state frozen at construction time.  The FFT plans are bound to
-    # this thread count and cannot be changed per-call; a mismatch between this
-    # field and a per-call threading kwarg triggers a one-time @warn.
-    fft_threaded::Bool
+    # NSCT FFT stage: single-threaded plans between the image and its spectrum,
+    # the input spectrum / synthesis accumulator, and per task (one per thread on
+    # the host) an FFT buffer and, from task 2 on, a partial synthesis sum.  The
+    # outputs `(j, k)` in `nsct_items` are split between the tasks.  `nothing` /
+    # empty for a CT workspace.
+    fft_plan_fwd::P
+    fft_plan_inv::Q
+    fft_buffer_c::C                 # === fft_tasks[1]
+    fft_spectrum_bp::C
+    fft_tasks::Vector{C}
+    fft_acc::Vector{C}
+    nsct_items::Vector{NTuple{2, Int}}
 
     # Mutable slots for device-accelerated graph execs (e.g. CUDA.CuGraphExec).
     # Layout: [] = uncaptured; [exec, img_ptr::UInt, coarse_ptr::UInt].
@@ -160,31 +163,75 @@ function ContourletWorkspace{Td, Tf, M}(
         image_size::Tuple{Int, Int},
         fwd_scratch::ScratchArena{M},
         inv_scratch::ScratchArena{M},
-        qup_cache::Q,
-        lp_h_cache::L,
-        lp_g_cache::L,
-        nsdfb_H_cache::Vector{Vector{Matrix{Complex{Tf}}}},
-        nsdfb_G_cache::Vector{Vector{Matrix{Complex{Tf}}}},
-        fft_plan_fwd::Any,
-        fft_plan_inv::Any,
-        fft_buffer_c::Matrix{Complex{Tf}},
-        fft_spectrum_bp::Matrix{Complex{Tf}},
-        fft_threaded::Bool = false,
-        dfb_f_cache::DF = nothing,
+        bp_dims::Vector{Tuple{Int, Int}},
+        dfb_runners::R,
+        nsdfb_banks::B,
+        nsp_ana::Vector{C},
+        nsp_syn::Vector{C},
+        fft_plan_fwd::P,
+        fft_plan_inv::Q,
+        fft_tasks::Vector{C},
+        fft_acc::Vector{C},
+        fft_spectrum_bp::C,
+        nsct_items::Vector{NTuple{2, Int}},
         graph_cache::Vector{Any} = Any[],
         inv_graph_cache::Vector{Any} = Any[]
-    ) where {Td, Tf, M, Q, L, DF}
-    return ContourletWorkspace{Td, Tf, M, Q, L, DF}(
-        params, image_size, fwd_scratch, inv_scratch, dfb_f_cache,
-        qup_cache, lp_h_cache, lp_g_cache,
-        nsdfb_H_cache, nsdfb_G_cache, fft_plan_fwd, fft_plan_inv, fft_buffer_c, fft_spectrum_bp,
-        fft_threaded, graph_cache, inv_graph_cache
+    ) where {Td, Tf, M, R, B, C, P, Q}
+    first_task = isempty(fft_tasks) ? fft_spectrum_bp : fft_tasks[1]
+    return ContourletWorkspace{Td, Tf, M, R, B, C, P, Q}(
+        params, image_size, fwd_scratch, inv_scratch, bp_dims, dfb_runners, nsdfb_banks,
+        nsp_ana, nsp_syn, fft_plan_fwd, fft_plan_inv, first_task, fft_spectrum_bp,
+        fft_tasks, fft_acc, nsct_items, graph_cache, inv_graph_cache
     )
 end
 
-_device_qup_cache(::Type{M}, qup_cache) where {M <: AbstractMatrix} = qup_cache
-_device_lp_cache(::Type{M}, lp_cache) where {M <: AbstractMatrix} = lp_cache
-_device_dfb_filter(::Type{M}, f) where {M <: AbstractMatrix} = f
+# Bandpass size at each of the `J` pyramid levels of the CT (halving, rounded up)
+# or the NSCT (constant).
+function _bandpass_dims(image_size::Tuple{Int, Int}, J::Int; nonsubsampled::Bool)
+    dims = Vector{Tuple{Int, Int}}(undef, J)
+    d = image_size
+    for j in 1:J
+        dims[j] = d
+        nonsubsampled || (d = cld.(d, 2))
+    end
+    return dims
+end
+
+# The bank and runner types for arrays like `ref` at precision `Tf`, so that the
+# workspace has one concrete type whatever the filter pair and depths (a tiny
+# throwaway plan supplies the plan types).
+_bank_type(ref::AbstractArray, ::Type{Tf}) where {Tf} =
+    _DirectionalBank{typeof(similar(ref, Tf, 0, 0)), typeof(similar(ref, Complex{Tf}, 0))}
+
+function _runner_type(ref::AbstractArray, ::Type{Tf}) where {Tf}
+    C = typeof(similar(ref, Complex{Tf}, 0, 0))
+    P, Q = typeof.(_inplace_plans(similar(ref, Complex{Tf}, 2, 2), FFTW.ESTIMATE))
+    return _BankRunner{_bank_type(ref, Tf), C, P, Q}
+end
+
+# Per-level DFB runners of a CT workspace (`nothing` where a level is not split).
+function _dfb_level_runners(ref::AbstractMatrix, p::ContourletParams, bp_dims, ::Type{Tf}) where {Tf}
+    R = Union{Nothing, _runner_type(ref, Tf)}
+    is_ladder(p.dfb_filters) || return R[]
+    flags = ref isa Array ? FFTW.MEASURE : FFTW.ESTIMATE
+    return R[
+        l > 0 ? _bank_runner(
+                _adapt_bank(ref, _directional_bank(Tf, dims, l, p.dfb_filters.f_ladder; decimated = true)),
+                ref; flags = flags
+            ) : nothing
+            for (l, dims) in zip(p.L_array, bp_dims)
+    ]
+end
+
+# The DFB runner a CT workspace holds for a bandpass of size `dims` split `l` deep.
+function _workspace_runner(ws::ContourletWorkspace, dims, l::Int, half::Symbol)
+    half === :both || return nothing
+    for (j, r) in enumerate(ws.dfb_runners)
+        r === nothing && continue
+        (ws.bp_dims[j] == dims && r.bank.levels == l) && return r
+    end
+    return nothing
+end
 
 Base.eltype(::ContourletWorkspace{Td}) where {Td} = Td
 
@@ -235,20 +282,15 @@ function make_workspace(
     Td = promote_type(Tp, T)         # data buffer type (may be complex)
     Tf = _filter_eltype(Td)          # real filter precision
     p2 = _convert_params(Tf, params)
-    # Build the ladder filter once and upload to device (no-op on CPU). Must stay a
-    # concrete Vector{Tf} (empty for non-ladder pairs) — never Nothing — so ContourletWorkspace's
-    # DF type parameter, and hence typeof(make_workspace(...)), stays inferrable for callers
-    # that build a type parameter from it. Safe because dfb_decompose/dfb_reconstruct only
-    # ever read `filter` inside their `is_ladder(qfp)` branch.
-    dfb_f = is_ladder(p2.dfb_filters) ? _ladder_modulate(Tf.(p2.dfb_filters.f_ladder)) : Tf[]
-    dfb_f_cache = _device_dfb_filter(M, dfb_f)
-    # CT uses the un-upsampled ladder/LP filters directly, so no per-level filter
-    # caches are needed.
+    bp_dims = _bandpass_dims(image_size, p2.J; nonsubsampled = false)
+    ref = _allocate_zeros(M, Td, (1, 1))
+    # The DFB equivalent filters, FFT buffers and plans of every level are built
+    # once here (the allocating API rebuilds them per call).
+    runners = _dfb_level_runners(ref, p2, bp_dims, Tf)
     ws = ContourletWorkspace{Td, Tf, M}(
-        p2, image_size, ScratchArena{M}(), ScratchArena{M}(),
-        _NSDFBFilters[], Vector{Tf}[], Vector{Tf}[],
-        Vector{Matrix{Complex{Tf}}}[], Vector{Matrix{Complex{Tf}}}[], nothing, nothing, Matrix{Complex{Tf}}(undef, 0, 0), Matrix{Complex{Tf}}(undef, 0, 0),
-        false, dfb_f_cache
+        p2, image_size, ScratchArena{M}(), ScratchArena{M}(), bp_dims,
+        runners, Union{Nothing, _bank_type(ref, Tf)}[], Nothing[], Nothing[],
+        nothing, nothing, Nothing[], Nothing[], nothing, NTuple{2, Int}[]
     )
     # Grow the scratch arena to its steady-state size now (forward + inverse), so
     # the first user call is already allocation-free.
@@ -266,11 +308,11 @@ Allocate a workspace for the NSCT transforms.  All buffers have the full `image_
 since the NSCT performs no downsampling.
 The second form is a convenience overload with the element type as the first positional argument.
 
-!!! note "FFT threading"
-    The `threading` kwarg controls how many FFTW threads the pre-built FFT plans use.
-    This choice is frozen at construction time: the plans cannot switch thread counts
-    per-call.  Passing a conflicting `threading` kwarg to `nsct_forward!`/`nsct_inverse!`
-    later will emit a one-time warning.  To change FFT threading, create a new workspace.
+!!! note "Threading"
+    A host workspace holds one FFT buffer per Julia thread, and `nsct_forward!` /
+    `nsct_inverse!` split their independent subband FFTs between threads when their
+    own `threading` policy says so, call by call.  The `threading` kwarg here only
+    applies to the warm-up pass.
 """
 make_nsct_workspace(
     T::Type{<:Number}, image_size::Tuple{Int, Int},
@@ -301,48 +343,61 @@ function make_nsct_workspace(
     Tf = _filter_eltype(Td)          # real filter precision
     p2 = _convert_params(Tf, params)
     J = p2.J
-    # Precompute the 2-D NSDFB fan/parallelogram filter bundle (scale independent,
-    # so identical for every LP level) and the à trous upsampled LP filters; the
+    # Precompute the NSDFB equivalent filters (the bank depends on the pyramid level
+    # only through its depth and its filter upsampling) and the pyramid masks; the
     # `!` paths then never rebuild them per call.
-    nsdfb_bundle = _nsdfb_filters(p2.dfb_filters, Tf)
-    qup_cache = [nsdfb_bundle for _ in 1:J]
-    lp = p2.lp_filters
-    lp_h_cache = Vector{Tf}[upsample_filter(lp.h, 2^(j - 1)) for j in 1:J]
-    lp_g_cache = Vector{Tf}[Tf(_NSP_SYNTH_SCALE) .* upsample_filter(lp.g, 2^(j - 1)) for j in 1:J]
-
     is_real = Td <: Real
+    ref = _allocate_zeros(M, Td, (1, 1))
+    keys_j = [(p2.L_array[j], _nsdfb_upsampling(j)) for j in 1:J]
+    banks = Dict{NTuple{2, Int}, Any}()
+    for (l, m) in unique(keys_j)
+        l > 0 || continue
+        is_ladder(p2.dfb_filters) || throw(
+            ArgumentError("the NSDFB is built from the ladder of a ladder QuincunxFilterPair such as Q2345")
+        )
+        banks[(l, m)] = _adapt_bank(
+            ref, _directional_bank(
+                Tf, image_size, l, p2.dfb_filters.f_ladder;
+                decimated = false, real_data = is_real, upsample = m
+            )
+        )
+    end
+    # Levels with equal depth and upsampling share one bank.
+    nsdfb_banks = Union{Nothing, _bank_type(ref, Tf)}[get(banks, key, nothing) for key in keys_j]
     n1, n2 = image_size
     init_shape = is_real ? (n1 ÷ 2 + 1, n2) : (n1, n2)
-    fft_buffer_c = zeros(Complex{Tf}, init_shape)
-    fft_spectrum_bp = zeros(Complex{Tf}, init_shape)
+    nsp_ana, nsp_syn = _nsp_masks(Tf, p2.lp_filters, image_size, J; rows = 1:init_shape[1])
+    fft_buffer_c = fill!(similar(ref, Complex{Tf}, init_shape), zero(Complex{Tf}))
+    nsp_ana = [_like(fft_buffer_c, a) for a in nsp_ana]
+    nsp_syn = [_like(fft_buffer_c, a) for a in nsp_syn]
+    fft_spectrum_bp = similar(fft_buffer_c)
+    tmp_d = similar(ref, Td, image_size)
 
-    fft_threaded = false
     if M <: Array
-        tmp_d = zeros(Td, n1, n2)
-        fft_threaded = _use_threading(threading, Td)
-        FFTW.set_num_threads(fft_threaded ? Threads.nthreads() : 1)
-        fft_plan_fwd = is_real ? plan_rfft(tmp_d, flags = FFTW.MEASURE) : plan_fft(tmp_d, flags = FFTW.MEASURE)
-        fft_plan_inv = is_real ? plan_irfft(fft_buffer_c, n1, flags = FFTW.MEASURE) : plan_ifft(fft_buffer_c, flags = FFTW.MEASURE)
+        # Single-threaded plans: threading splits the independent subband FFTs
+        # between tasks instead (see `_nsct_forward_inner!`), which at these sizes
+        # scales far better than FFTW's threads splitting one FFT.
+        nthreads_before = FFTW.get_num_threads()
+        FFTW.set_num_threads(1)
+        try
+            fft_plan_fwd = is_real ? plan_rfft(tmp_d, flags = FFTW.MEASURE) : plan_fft(tmp_d, flags = FFTW.MEASURE)
+            fft_plan_inv = is_real ? plan_irfft(fft_buffer_c, n1, flags = FFTW.MEASURE) : plan_ifft(fft_buffer_c, flags = FFTW.MEASURE)
+        finally
+            FFTW.set_num_threads(nthreads_before)
+        end
     else
-        fft_plan_fwd = nothing
-        fft_plan_inv = nothing
+        fft_plan_fwd = is_real ? plan_rfft(tmp_d) : plan_fft(tmp_d)
+        fft_plan_inv = is_real ? plan_irfft(fft_buffer_c, n1) : plan_ifft(fft_buffer_c)
     end
-
-    nsdfb_H_cache = Vector{Vector{Matrix{Complex{Tf}}}}(undef, J)
-    nsdfb_G_cache = Vector{Vector{Matrix{Complex{Tf}}}}(undef, J)
-    for j in 1:J
-        nsdfb_H_cache[j], nsdfb_G_cache[j] = _build_equivalent_filters(Tf, n1, n2, qup_cache[j], p2.L_array[j], is_real)
-    end
-
-    qup_cache = _device_qup_cache(M, qup_cache)
-    lp_h_cache = _device_lp_cache(M, lp_h_cache)
-    lp_g_cache = _device_lp_cache(M, lp_g_cache)
+    fft_tasks = [i == 1 ? fft_buffer_c : similar(fft_buffer_c) for i in 1:_n_fft_tasks(fft_buffer_c)]
+    items = [(j, k) for j in 1:J for k in 1:(nsdfb_banks[j] === nothing ? 1 : length(nsdfb_banks[j].ana))]
 
     ws = ContourletWorkspace{Td, Tf, M}(
         p2, image_size, ScratchArena{M}(), ScratchArena{M}(),
-        qup_cache, lp_h_cache, lp_g_cache,
-        nsdfb_H_cache, nsdfb_G_cache, fft_plan_fwd, fft_plan_inv, fft_buffer_c, fft_spectrum_bp,
-        fft_threaded
+        _bandpass_dims(image_size, J; nonsubsampled = true),
+        Union{Nothing, _runner_type(ref, Tf)}[], nsdfb_banks, nsp_ana, nsp_syn,
+        fft_plan_fwd, fft_plan_inv, fft_tasks, typeof(fft_buffer_c)[similar(t) for t in fft_tasks[2:end]],
+        fft_spectrum_bp, items
     )
     prewarm && _prewarm_nsct!(ws; threading = threading)
     return ws

@@ -9,7 +9,10 @@ end
     p = ContourletParams(J = 2, L_array = [2, 3])
     ws = make_nsct_workspace(Float64, (32, 32), p)
     @test ws isa ContourletWorkspace
-    @test length(ws.qup_cache) == 2
+    @test length(ws.nsdfb_banks) == 2
+    @test ws.bp_dims == [(32, 32), (32, 32)]
+    # rfft half-plane masks for real data
+    @test all(size(m) == (17, 32) for b in ws.nsdfb_banks for m in b.ana)
 end
 
 @testitem "CT with workspace gives same result as without" tags = [:ct] begin
@@ -81,9 +84,10 @@ end
     # (~500 bytes) is attributable to Julia's kwarg dispatch machinery in @allocated.
     @test (@allocated nsct_forward!(coeffs, x, p; workspace = ws)) < 1000
     @test (@allocated nsct_inverse!(out, coeffs, p; workspace = ws)) < 1000
-    # Results still match the allocating reference exactly (real-linear, bit-for-bit).
+    # Results match the allocating reference, which convolves where the workspace
+    # multiplies spectra: equal to rounding.
     ref = nsct_forward(x, p)
-    @test coeffs.coarse == ref.coarse
+    @test isapprox(coeffs.coarse, ref.coarse; atol = 1.0e-12)
     @test all(isapprox(coeffs.subbands[j][k], ref.subbands[j][k]; atol = 1.0e-10) for j in 1:2 for k in eachindex(ref.subbands[j]))
 end
 
@@ -152,26 +156,29 @@ end
     @test size(scratch) == (4, 4)
 end
 
-@testitem "NSCT workspace threading mismatch warns" tags = [:nsct] begin
-    using Random, Logging
+@testitem "NSCT/TICT workspace threading is chosen per call" tags = [:nsct, :tict] begin
+    using Random
     Random.seed!(99)
     x = randn(32, 32)
-    p = ContourletParams(J = 2, L_array = [2, 3])
-    # Build with Disabled (fft_threaded=false) then call with Enabled (wants true).
-    ws = make_nsct_workspace(p, (32, 32); threading = Disabled())
-    coeffs = similar_nsct_coefficients(p, (32, 32))
-    @test_logs (:warn,) nsct_forward!(coeffs, x, p; workspace = ws, threading = Enabled())
-end
+    p = ContourletParams(J = 3, L_array = [0, 2, 3])
+    ws = make_nsct_workspace(p, (32, 32))
+    @test length(ws.fft_tasks) == Threads.nthreads()
+    c_ser = nsct_forward!(similar_nsct_coefficients(p, (32, 32)), x, p; workspace = ws, threading = Disabled())
+    c_par = nsct_forward!(similar_nsct_coefficients(p, (32, 32)), x, p; workspace = ws, threading = Enabled())
+    @test all(c_ser.subbands[j][k] == c_par.subbands[j][k] for j in 1:3 for k in eachindex(c_ser.subbands[j]))
+    @test c_ser.coarse == c_par.coarse
+    y_ser = nsct_inverse!(similar(x), c_ser, p; workspace = ws, threading = Disabled())
+    y_par = nsct_inverse!(similar(x), c_ser, p; workspace = ws, threading = Enabled())
+    @test y_par ≈ y_ser atol = 1.0e-13
+    @test y_par ≈ x atol = 1.0e-12
 
-@testitem "NSCT workspace fft_threaded field reflects construction threading" tags = [:nsct] begin
-    p = ContourletParams(J = 1, L_array = [1])
-    ws_auto = make_nsct_workspace(p, (32, 32); threading = Auto())
-    ws_ena = make_nsct_workspace(p, (32, 32); threading = Enabled())
-    ws_dis = make_nsct_workspace(p, (32, 32); threading = Disabled())
-    # Auto() on Float64 → not threaded
-    @test ws_auto.fft_threaded === false
-    @test ws_ena.fft_threaded === true
-    @test ws_dis.fft_threaded === false
+    wt = make_tict_workspace(p, (32, 32))
+    t_ser = tict_forward!(similar_tict_coefficients(p, (32, 32)), x, p; workspace = wt, threading = Disabled())
+    t_par = tict_forward!(similar_tict_coefficients(p, (32, 32)), x, p; workspace = wt, threading = Enabled())
+    @test all(t_ser.subbands[i][c][k] == t_par.subbands[i][c][k] for i in 1:3 for c in 1:4 for k in eachindex(t_ser.subbands[i][c]))
+    z_par = tict_inverse!(similar(x), t_ser, p; workspace = wt, threading = Enabled())
+    @test z_par ≈ tict_inverse!(similar(x), t_ser, p; workspace = wt, threading = Disabled()) atol = 1.0e-13
+    @test z_par ≈ x atol = 1.0e-12
 end
 
 @testitem "make_workspace return type is concrete (no Union)" tags = [:ct] begin
@@ -198,11 +205,10 @@ end
     p = ContourletParams(J = 1, L_array = [1], dfb_filters = haar)
 
     ws = make_workspace(p, (16, 16))
-    # dfb_f_cache must stay a concrete empty vector (never `nothing`) on the non-ladder path,
-    # so `make_workspace`'s return type stays stable across filter modes; dfb_decompose/
-    # dfb_reconstruct only read it inside their `is_ladder(qfp)` branch, so it's safe unused here.
-    @test ws.dfb_f_cache isa Vector{Float64}
-    @test isempty(ws.dfb_f_cache)
+    # No ladder, no DFB runners — but the same workspace type as a ladder pair gets,
+    # so `make_workspace`'s return type stays stable across filter modes.
+    @test isempty(ws.dfb_runners)
+    @test typeof(ws) == typeof(make_workspace(ContourletParams(J = 1, L_array = [1]), (16, 16)))
 
     x = randn(16, 16)
     coeffs = similar_coefficients(p, (16, 16))
@@ -213,4 +219,81 @@ end
 
     ref = ct_forward(x, p)
     @test maximum(abs, coeffs.coarse .- ref.coarse) < 1.0e-10
+end
+
+@testitem "_with_filter_cache sets and restores the task-local cache" tags = [:ct] begin
+    @test Contourlets._active_filter_cache() === nothing
+    cache = Dict(:a => 1)
+    inner = Contourlets._with_filter_cache(cache) do
+        @test Contourlets._active_filter_cache() === cache
+        # Nesting restores the outer cache afterwards.
+        Contourlets._with_filter_cache(:inner) do
+            @test Contourlets._active_filter_cache() === :inner
+        end
+        @test Contourlets._active_filter_cache() === cache
+        42
+    end
+    @test inner == 42
+    @test Contourlets._active_filter_cache() === nothing
+    # Restored even when the body throws.
+    @test_throws ErrorException Contourlets._with_filter_cache(() -> error("boom"), cache)
+    @test Contourlets._active_filter_cache() === nothing
+end
+
+@testitem "NSCT workspace with an unsplit level (L = 0)" tags = [:nsct] begin
+    using Random
+    Random.seed!(90)
+    x = randn(32, 32)
+    p = ContourletParams(J = 2, L_array = [2, 0])
+    ws = make_nsct_workspace(p, size(x))
+    @test ws.nsdfb_banks[2] === nothing
+    c = similar_nsct_coefficients(p, size(x))
+    nsct_forward!(c, x, p; workspace = ws)
+    ref = nsct_forward(x, p)
+    @test length(c.subbands[2]) == 1
+    @test c.subbands[2][1] ≈ ref.subbands[2][1] atol = 1.0e-12
+    out = similar(x)
+    nsct_inverse!(out, c, p; workspace = ws)
+    @test maximum(abs, out .- x) < 1.0e-12
+end
+
+@testitem "DFB falls back to its own bank when the workspace has none" tags = [:ct] begin
+    using Random
+    Random.seed!(91)
+    p = ContourletParams(J = 1, L_array = [2])
+    ws = make_workspace(p, (32, 32))
+    bp = randn(32, 32)
+    # The workspace holds a depth-2 bank for 32×32 only: depth 3 and another size
+    # must build their own and give the same result as no workspace at all.
+    @test Contourlets._workspace_runner(ws, (32, 32), 3, :both) === nothing
+    @test Contourlets._workspace_runner(ws, (16, 16), 2, :both) === nothing
+    a = dfb_decompose(bp, 3, Q2345; workspace = ws)
+    b = dfb_decompose(bp, 3, Q2345)
+    @test all(a .== b)
+    @test maximum(abs, dfb_reconstruct(a, Q2345; workspace = ws) .- bp) < 1.0e-12
+end
+
+@testitem "ScratchArena resizes a slot whose requested size changes" tags = [:ct] begin
+    a = Contourlets.ScratchArena{Matrix{Float64}}()
+    ref = zeros(1, 1)
+    b1 = Contourlets._arena_take!(a, ref, 4, 4)
+    Contourlets._arena_reset!(a)
+    @test Contourlets._arena_take!(a, ref, 4, 4) === b1      # same slot, same size: reused
+    Contourlets._arena_reset!(a)
+    b2 = Contourlets._arena_take!(a, ref, 2, 3)              # same slot, new size: replaced
+    @test size(b2) == (2, 3)
+    @test length(a.bufs) == 1
+end
+
+@testitem "_allocate_zeros generic (non-Array) matrix path" tags = [:ct] begin
+    # UnionAll Array type → `zeros` fast path.
+    A = Contourlets._allocate_zeros(Matrix, Float32, (3, 4))
+    @test A isa Matrix{Float32}
+    @test iszero(A)
+    # A non-Array concrete matrix type goes through `similar` + `fill!`
+    # (device arrays use this path; see test_gpu.jl for JLArrays).
+    B = Contourlets._allocate_zeros(BitMatrix, Bool, (3, 4))
+    @test B isa BitMatrix
+    @test size(B) == (3, 4)
+    @test !any(B)
 end

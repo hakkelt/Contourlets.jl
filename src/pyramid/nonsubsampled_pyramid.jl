@@ -11,6 +11,50 @@
 # Laplacian pyramid -- is rescaled to unit DC gain per axis.  Without that the
 # "bandpass" would be dominated by low-pass leakage instead of being a true
 # bandpass, defeating the directional decomposition that follows.
+#
+# This follows the NSP of da Cunha, Zhou & Do (IEEE TIP 15(10), 2006, §II-A) with
+# separable filters: the paper designs non-separable 2-D pyramid filters, this
+# package uses the CDF 9/7 pair per axis.  À trous filtering: Shensa, IEEE TSP
+# 40(10), 1992.
+
+"""
+    _nsp_masks(Tf, fp, dims, J; rows=1:dims[1]) -> (ana, syn)
+
+The `J`-level NSP as masks on the DFT grid of `dims`, restricted to the frequency
+rows `rows` (the `rfft` half-plane for real data).  Periodic filtering with the à
+trous filters of level j is the pointwise product with their DTFTs Hⱼ, Gⱼ on the
+grid, so the cascade folds into one mask per output: `ana[j]` takes the input
+spectrum to the bandpass of level j,
+
+    Bⱼ = (Π_{i<j} Hᵢ) (1 − GⱼHⱼ),        ana[J + 1] = Π_{i≤J} Hᵢ (the lowpass),
+
+and `syn[j] = Π_{i<j} Gᵢ` (`syn[J + 1] = Π_{i≤J} Gᵢ`) takes it back, so that
+`Σⱼ syn[j]·ana[j] = 1` telescopes.  This is [`nsp_decompose`](@ref) /
+[`nsp_reconstruct`](@ref) applied level by level, to rounding error, at the cost
+of one pointwise product per output instead of two convolutions per level.
+"""
+function _nsp_masks(
+        ::Type{Tf}, fp::FilterPair, dims::NTuple{2, Int}, J::Int; rows = 1:dims[1]
+    ) where {Tf <: AbstractFloat}
+    n1, n2 = dims
+    pre_a = ones(ComplexF64, length(rows), n2)       # Π_{i<j} Hᵢ
+    pre_s = ones(ComplexF64, length(rows), n2)       # Π_{i<j} Gᵢ
+    ana = Matrix{Complex{Tf}}[]
+    syn = Matrix{Complex{Tf}}[]
+    for j in 1:J
+        h, g = _nsp_atrous_filters(fp, j, Float64)
+        axis(f, n, ks) = [_centred_dtft(f, 2π * (k - 1) / n) for k in ks]
+        H = axis(h, n1, rows) .* transpose(axis(h, n2, 1:n2))
+        G = axis(g, n1, rows) .* transpose(axis(g, n2, 1:n2))
+        push!(ana, Matrix{Complex{Tf}}(pre_a .* (1 .- G .* H)))
+        push!(syn, Matrix{Complex{Tf}}(pre_s))
+        pre_a .*= H
+        pre_s .*= G
+    end
+    push!(ana, Matrix{Complex{Tf}}(pre_a))
+    push!(syn, Matrix{Complex{Tf}}(pre_s))
+    return ana, syn
+end
 
 """
     nsp_decompose(image, fp::FilterPair, level::Int) -> (coarse, bandpass)

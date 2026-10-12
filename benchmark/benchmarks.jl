@@ -43,6 +43,8 @@ end
 const SUITE = BenchmarkGroup()
 SUITE["CT"] = BenchmarkGroup()
 SUITE["NSCT"] = BenchmarkGroup()
+SUITE["TICT"] = BenchmarkGroup()
+SUITE["STICT"] = BenchmarkGroup()
 SUITE["LP"] = BenchmarkGroup()
 SUITE["DFB"] = BenchmarkGroup()
 SUITE["NSDFB"] = BenchmarkGroup()
@@ -114,6 +116,27 @@ for sz in TEST_SIZES
         # NSCT Inverse: in-place with workspace
         img_out_nsct = similar(img)
         SUITE["NSCT"][sz_str]["inverse!"] = @benchmarkable nsct_inverse!($img_out_nsct, $coeffs_nsct, $p_nsct; workspace = $ws_nsct)
+
+        # Subband FFTs split between threads (one task per Julia thread)
+        SUITE["NSCT"][sz_str]["forward! threaded"] = @benchmarkable nsct_forward!($coeffs_nsct_alloc, $img, $p_nsct; workspace = $ws_nsct, threading = Enabled())
+        SUITE["NSCT"][sz_str]["inverse! threaded"] = @benchmarkable nsct_inverse!($img_out_nsct, $coeffs_nsct, $p_nsct; workspace = $ws_nsct, threading = Enabled())
+
+        # TICT / STICT (Eslami & Radha): workspace paths, same parameters as the NSCT
+        for (name, mk, sim, fwd!, inv!) in (
+                ("TICT", make_tict_workspace, similar_tict_coefficients, tict_forward!, tict_inverse!),
+                ("STICT", make_stict_workspace, similar_stict_coefficients, stict_forward!, stict_inverse!),
+            )
+            ws_ti = mk(p_nsct, (sz, sz); T = T)
+            coeffs_ti = sim(p_nsct, (sz, sz); Td = T)
+            img_out_ti = similar(img)
+            SUITE[name][sz_str]["forward!"] = @benchmarkable $fwd!($coeffs_ti, $img, $p_nsct; workspace = $ws_ti)
+            SUITE[name][sz_str]["inverse!"] = @benchmarkable $inv!($img_out_ti, $coeffs_ti, $p_nsct; workspace = $ws_ti)
+        end
+        ws_tt = make_tict_workspace(p_nsct, (sz, sz); T = T)
+        coeffs_tt = similar_tict_coefficients(p_nsct, (sz, sz); Td = T)
+        img_out_tt = similar(img)
+        SUITE["TICT"][sz_str]["forward! threaded"] = @benchmarkable tict_forward!($coeffs_tt, $img, $p_nsct; workspace = $ws_tt, threading = Enabled())
+        SUITE["TICT"][sz_str]["inverse! threaded"] = @benchmarkable tict_inverse!($img_out_tt, $coeffs_tt, $p_nsct; workspace = $ws_tt, threading = Enabled())
 
         # Optional GPU Benchmarks if a backend is available
         if @isdefined(GPU_BACKEND)

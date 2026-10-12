@@ -115,13 +115,16 @@ Contourlets/
 │   ├── pyramid/
 │   │   ├── laplacian_pyramid.jl       # lp_decompose / lp_reconstruct
 │   │   ├── nonsubsampled_pyramid.jl   # nsp_decompose / nsp_reconstruct
+│   │   ├── tilp.jl                    # translation-invariant LP masks (Eslami & Radha §III-A)
 │   ├── directional/
-│   │   ├── quincunx_fb.jl     # 2-channel quincunx filter bank
-│   │   ├── dfb.jl             # L-level DFB binary tree
-│   │   ├── nsdfb.jl           # Non-subsampled DFB
+│   │   ├── quincunx_fb.jl     # 2-channel shear-based quincunx filter bank
+│   │   ├── directional_bank.jl # DFB equivalent filters on the DFT grid (Do's thesis §3.3)
+│   │   ├── dfb.jl             # L-level DFB (multichannel bank, eq. 3.23)
+│   │   ├── nsdfb.jl           # Non-subsampled DFB (same filters, no decimation)
 │   └── transforms/
 │       ├── ct.jl              # ct_forward / ct_inverse / ct_forward! / ct_inverse!
 │       ├── nsct.jl            # nsct_forward / nsct_inverse / ! variants
+│       ├── tict.jl            # tict_/stict_forward / inverse / ! variants, workspaces
 ├── test/
 │   ├── runtests.jl            # TestItemRunner entry point
 │   └── items/
@@ -131,6 +134,7 @@ Contourlets/
 │       ├── test_dfb.jl
 │       ├── test_transforms.jl
 │       ├── test_workspace.jl
+│       ├── test_tict.jl       # TICT / STICT, tag :tict
 │       ├── test_gpu.jl        # universal GPU tests (GPUEnv + JLArrays), tag :gpu
 │       └── test_quality.jl    # Aqua checks
 ├── benchmark/
@@ -215,7 +219,8 @@ Conventions that are non-obvious or specific to this package's API contract:
 - All tests are self-contained `@testitem` blocks (TestItemRunner): each block
   must import all dependencies except `Contourlets` and `Test` inside the block.
 - Tag taxonomy: `:filters`, `:primitives`, `:pyramid`, `:directional`, `:ct`,
-  `:nsct` (also implies `:ct`), `:quality` (Aqua/JET), `:jet`, `:docs`, `:gpu`.
+  `:nsct` (also implies `:ct`), `:tict` (TICT and STICT), `:quality` (Aqua/JET),
+  `:jet`, `:docs`, `:gpu`.
 - Seed every random input (`Random.seed!(42)`); never rely on global RNG state.
 - NSCT shift-invariance is a required property — compare `nsct_forward(x)` with
   `nsct_forward(circshift(x, s))` against `circshift(., s)` (tol `1e-10`).
@@ -263,24 +268,55 @@ output.
 
 - **No downsampling in NSCT** — all subbands have the same spatial size as the
   input. All NSP/NSDFB filtering uses periodic (circular) convolution, so the
-  NSCT is exactly invariant under circular shifts of the input.
+  NSCT is exactly invariant under circular shifts of the input.  Periodic
+  filtering is a product on the DFT grid, so an NSCT workspace holds the whole
+  pyramid as masks (`_nsp_masks`): `nsct_forward!` is one FFT plus one inverse
+  FFT per output, no convolution.  The allocating path and the public
+  `nsp_decompose` still convolve (skipping the à trous zeros); both agree to
+  rounding.
 - **Perfect reconstruction proves nothing about directional geometry.** The
-  directional stage reconstructs exactly by construction — the Phoong ladder's
-  synthesis is the structural inverse of its analysis — so a wrong directional
+  directional stage reconstructs exactly by construction — Phoong's quincunx pair
+  satisfies the PR conditions for any ladder filter — so a wrong directional
   partition still round-trips perfectly. That is how an `nsdfb` regression once
-  slipped through. Directional tests must assert the *index* of the subband a
-  plane wave lands in, not just PR.
+  slipped through (sibling wedges merged from `l = 4`). Directional tests must
+  assert the *index* of the subband a plane wave lands in, not just PR.
+- **The DFB is the thesis' multichannel bank, computed on the DFT grid.** Each
+  channel is `yₖ[n] = (hₖ ⊛ x)[Sₖn]` with the closed-form equivalent filter `Hₖ`
+  (Do's thesis eqs. 3.17–3.23) and a diagonal `Sₖ`; the NSDFB is the same `Hₖ`
+  without decimation. It equals the MATLAB toolbox at `l ≤ 2` and deliberately
+  not from `l = 3` (the toolbox is not equivariant on its lattices there). Keep
+  the bank paths broadcast + FFT only; no scalar indexing, no allocation inside
+  `_bank_analyze!` / `_bank_synthesize!` (CUDA graph capture relies on it).
+- **NSDFB coarse-scale upsampling is measured, not guessed.** da Cunha et al.
+  (§II-A.3) filter pyramid level `j` with `Uₖ(z^(2^m I))` but leave `m` open;
+  `m = max(0, j − 2)` minimises the energy each NSP level leaks outside the
+  ideal wedge for every depth 1–5. The TILP is different (it keeps the
+  decimated LP's aliasing), and there `m = 0` leaks least, so the TICT does not
+  upsample. Re-measure before changing either rule.
+- **TICT/STICT are Eslami & Radha's, on the DFT grid.** The TILP's four highpass
+  channels per level are closed-form masks (`tilp.jl`) — the decimated LP's
+  polyphase channels for every lattice shift, which a test checks against an
+  independent pyramid. Channels 2 and 3 use half trees; the fan each splits is
+  fixed by the channel's energy (`_TILP_HALVES`), not by a label in the paper.
 - **GPU = whole transform on the device** — the `ContourletsGPUExt` extension
-  runs every stage of CT/NSCT on the device. Pyramid functions are reused
-  unchanged (broadcast-based dispatch picks up GPU primitives automatically); both
-  directional banks are kernelised (`dfb_gpu.jl`, `nsdfb_gpu.jl`). Coefficients
-  stay device-resident (`ContourletCoefficients{Td,A}`, `A<:AbstractMatrix`); use
-  `Array(·)` / `Adapt.adapt(Array, coeffs)` to bring them back. `ContourletsCUDAExt`
-  adds CUDA graph capture for the workspace paths. Load the `julia-gpu-ext` skill
-  before touching any file under `ext/`.
+  runs every stage of CT/NSCT/TICT/STICT on the device. Pyramid functions are
+  reused unchanged (broadcast-based dispatch picks up GPU primitives
+  automatically); the directional banks and TILP masks only need moving to the
+  device (`bank_gpu.jl`, `_like`) and an FFT for the array type (cuFFT, rocFFT;
+  JLArrays through FFTW on host memory — not OpenCL). JLArrays' `rfft` returns
+  a `Matrix`, so allocate outputs with `similar` and fill them via plans + `mul!`.
+  Coefficients stay device-resident (`ContourletCoefficients{Td,A}`,
+  `A<:AbstractMatrix`); use `Array(·)` / `Adapt.adapt(Array, coeffs)` to bring them
+  back. `ContourletsCUDAExt` adds CUDA graph capture for the workspace paths. Load
+  the `julia-gpu-ext` skill before touching any file under `ext/`.
 - **Hybrid Threading Architecture** — real data (`Float32`/`Float64`) uses
   `LoopVectorization.@turbo` (SIMD, single thread); complex data uses
   `Polyester.@batch` (multi-core, near-zero spawn overhead). Public API exposes
   `threading::ThreadingPolicy` kwargs: `Auto` (default), `Enabled`, `Disabled`.
   `Auto` enables threading for complex types only. Load the `julia-threading` skill
-  before adding or modifying threaded loops.
+  before adding or modifying threaded loops.  The FFT-bound workspace paths
+  (NSCT, TICT) thread differently: one `@batch` task per thread runs a
+  contiguous chunk of the independent subband FFTs with its own buffer (and,
+  for the inverse, its own partial sum).  FFTW's own threads split one FFT and
+  gain ~nothing at 256²; this gains ~3.5× on 4 threads.  Plans stay
+  single-threaded, and the choice is per call.

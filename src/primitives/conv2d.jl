@@ -291,7 +291,7 @@ end
         for i in 1:n1
             acc = zero(Td)
             for k in 1:lc
-                acc += h_col[k] * _get(src, i - (k - cc), j, n1, n2, bv)
+                iszero(h_col[k]) || (acc += h_col[k] * _get(src, i - (k - cc), j, n1, n2, bv))
             end
             tmp[i, j] = acc
         end
@@ -301,7 +301,7 @@ end
         for i in 1:n1
             acc = zero(Td)
             for k in 1:lr
-                acc += h_row[k] * _get(tmp, i, j - (k - cr), n1, n2, bv)
+                iszero(h_row[k]) || (acc += h_row[k] * _get(tmp, i, j - (k - cr), n1, n2, bv))
             end
             dst[i, j] = acc
         end
@@ -341,14 +341,14 @@ function _conv2d_sep_impl!(
         @inbounds for i in 1:min(i_lo - 1, n1)
             acc = zero(Td)
             for k in 1:lc
-                acc += h_col[k] * _get(src, i - (k - cc), j, n1, n2, bv)
+                iszero(h_col[k]) || (acc += h_col[k] * _get(src, i - (k - cc), j, n1, n2, bv))
             end
             tmp[i, j] = acc
         end
         @inbounds for i in max(i_hi + 1, i_lo):n1
             acc = zero(Td)
             for k in 1:lc
-                acc += h_col[k] * _get(src, i - (k - cc), j, n1, n2, bv)
+                iszero(h_col[k]) || (acc += h_col[k] * _get(src, i - (k - cc), j, n1, n2, bv))
             end
             tmp[i, j] = acc
         end
@@ -361,6 +361,7 @@ function _conv2d_sep_impl!(
     end
     @inbounds for k in 1:lc
         c = h_col[k]
+        iszero(c) && continue      # the holes of an à trous filter
         row_off = cc - k
         for j in 1:n2
             @simd for i in i_lo:i_hi
@@ -379,7 +380,7 @@ function _conv2d_sep_impl!(
         for i in 1:n1
             acc = zero(Td)
             for k in 1:lr
-                acc += h_row[k] * _get(tmp, i, j - (k - cr), n1, n2, bv)
+                iszero(h_row[k]) || (acc += h_row[k] * _get(tmp, i, j - (k - cr), n1, n2, bv))
             end
             dst[i, j] = acc
         end
@@ -388,7 +389,7 @@ function _conv2d_sep_impl!(
         for i in 1:n1
             acc = zero(Td)
             for k in 1:lr
-                acc += h_row[k] * _get(tmp, i, j - (k - cr), n1, n2, bv)
+                iszero(h_row[k]) || (acc += h_row[k] * _get(tmp, i, j - (k - cr), n1, n2, bv))
             end
             dst[i, j] = acc
         end
@@ -401,6 +402,7 @@ function _conv2d_sep_impl!(
     end
     @inbounds for k in 1:lr
         c = h_row[k]
+        iszero(c) && continue
         col_off = cr - k
         @inbounds for j in j_lo:j_hi
             @simd for i in 1:n1

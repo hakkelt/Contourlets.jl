@@ -58,7 +58,7 @@ Run **before committing** (from the package root):
 runic src/
 
 # 2. Static analysis (project-specific suppressions: @inbounds, return type
-#    annotation, in/tin, unsafe-logging)
+#    annotation, in/tin, haskey/thaskey, unsafe-logging)
 JULIA_LOAD_PATH="@relint:@stdlib" julia --startup-file=no scripts/relint.jl src/
 ```
 

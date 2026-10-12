@@ -5,6 +5,7 @@
 #   @inbounds          — deliberate, tested bounds-safety
 #   return type annotation — used for documentation/correctness, not coercion
 #   in                 — RelationalAI-internal `tin` convention; stdlib `in` is fine
+#   haskey             — RelationalAI-internal `thaskey` convention; stdlib `haskey` is fine
 #   unsafe-logging     — RelationalAI-internal `@safe(...)` convention; not applicable here
 #
 # Usage:
@@ -14,7 +15,7 @@
 
 using ReLint
 
-const SUPPRESSED = Set(["@inbounds", "return type annotation", "in", "unsafe-logging"])
+const SUPPRESSED = Set(["@inbounds", "return type annotation", "in", "haskey", "unsafe-logging"])
 
 rules = filter(r -> !(r.name in SUPPRESSED), ReLint.ALL_RULES)
 ctx = ReLint.LintContext(rules)

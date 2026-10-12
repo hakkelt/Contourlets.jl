@@ -1,57 +1,12 @@
-@testitem "QFB modulation-mode PR col-direction (boundary-wrapping filter)" tags = [:directional] begin
-    # Haar pair with c_h=2: analysis reads x[j+1] (wraps for j=n2), synthesis scatters
-    # to j_out=j+1 (wraps for j=n2). PR: sb0+sb1=x[j], sb0-sb1=x[j+1].
-    using Random
-    Random.seed!(30)
-    x = randn(16, 16)
-    qfp_wrap = QuincunxFilterPair(
-        reshape([0.5, 0.5], 1, 2), reshape([1.0, 1.0], 1, 2), (1, 2), (1, 1)
-    )
-    sb0, sb1 = qfb_decompose(x, qfp_wrap; dir = :col)
-    @test size(sb0) == (16, 8)
-    rec = qfb_reconstruct(sb0, sb1, qfp_wrap; dir = :col)
-    @test maximum(abs, rec .- x) < 1.0e-12
-end
-
-@testitem "QFB modulation-mode PR row-direction (boundary-wrapping filter)" tags = [:directional] begin
-    using Random
-    Random.seed!(31)
-    x = randn(16, 16)
-    qfp_wrap = QuincunxFilterPair(
-        reshape([0.5, 0.5], 1, 2), reshape([1.0, 1.0], 1, 2), (1, 2), (1, 1)
-    )
-    sb0, sb1 = qfb_decompose(x, qfp_wrap; dir = :row)
-    @test size(sb0) == (8, 16)
-    rec = qfb_reconstruct(sb0, sb1, qfp_wrap; dir = :row)
-    @test maximum(abs, rec .- x) < 1.0e-12
-end
-
-@testitem "DFB modulation-mode PR (boundary-wrapping filter, l=1..3)" tags = [:directional] begin
-    using Random
-    Random.seed!(32)
-    x = randn(32, 32)
-    qfp_wrap = QuincunxFilterPair(
-        reshape([0.5, 0.5], 1, 2), reshape([1.0, 1.0], 1, 2), (1, 2), (1, 1)
-    )
-    for l in 1:3
-        sbs = dfb_decompose(x, l, qfp_wrap)
-        rec = dfb_reconstruct(sbs, qfp_wrap)
-        @test maximum(abs, rec .- x) < 1.0e-12
-    end
-end
-
-@testitem "QFB non-ladder odd-width throws ArgumentError" tags = [:directional] begin
-    h5 = [1.0, 4.0, 6.0, 4.0, 1.0] / 16.0
-    g5 = [1.0, 4.0, 6.0, 4.0, 1.0] / 8.0
-    qfp5 = QuincunxFilterPair(reshape(h5, 1, 5), reshape(g5, 1, 5), (1, 3), (1, 3))
+@testitem "QFB odd-width throws ArgumentError" tags = [:directional] begin
     # dir=:col checks n2 of image (columns)
-    @test_throws ArgumentError qfb_decompose(randn(8, 7), qfp5; dir = :col)
+    @test_throws ArgumentError qfb_decompose(randn(8, 7), Q2345; dir = :col)
     # dir=:row transposes, so checks n1 of image (rows)
-    @test_throws ArgumentError qfb_decompose(randn(7, 8), qfp5; dir = :row)
+    @test_throws ArgumentError qfb_decompose(randn(7, 8), Q2345; dir = :row)
     # reconstruct: out has odd n2
     out_odd = zeros(8, 7)
     sb0 = zeros(8, 3); sb1 = zeros(8, 3)
-    @test_throws ArgumentError qfb_reconstruct!(out_odd, sb0, sb1, qfp5; dir = :col)
+    @test_throws ArgumentError qfb_reconstruct!(out_odd, sb0, sb1, Q2345; dir = :col)
 end
 
 @testitem "QFB PR col-direction" tags = [:directional] begin
@@ -470,29 +425,8 @@ end
     @test_throws ArgumentError dfb_reconstruct(sbs, Q2345)
 end
 
-@testitem "dfb_subband_sizes modulation-mode (ladder=false)" tags = [:directional] begin
-    szs = dfb_subband_sizes(64, 64, 2; ladder = false)
-    @test length(szs) == 4
-    @test all(==((32, 32)), szs)
-
-    szs1 = dfb_subband_sizes(64, 64, 1; ladder = false)
-    @test length(szs1) == 2
-    @test all(s -> s == (64, 32), szs1)
-
-    szs0 = dfb_subband_sizes(64, 64, 0; ladder = false)
-    @test length(szs0) == 1
-    @test szs0[1] == (64, 64)
-end
-
-@testitem "DFB threading=Enabled with modulation-mode Haar pair" tags = [:directional] begin
-    using Random
-    Random.seed!(74)
-    x = randn(32, 32)
-    haar = QuincunxFilterPair([0.5 0.5], [1.0 1.0], (1, 1), (1, 2))
-    sbs = dfb_decompose(x, 3, haar; threading = Enabled())
-    @test length(sbs) == 8
-    rec = dfb_reconstruct(sbs, haar; threading = Enabled())
-    @test maximum(abs, rec .- x) < 1.0e-12
+@testitem "dfb_subband_sizes l=0 is the input size" tags = [:directional] begin
+    @test dfb_subband_sizes(64, 64, 0) == [(64, 64)]
 end
 
 @testitem "nsdfb_decompose l_levels=0 returns copy" tags = [:directional] begin
@@ -518,8 +452,8 @@ end
 
 @testitem "the ladder filter must be Phoong's symmetric even-length β" tags = [:directional] begin
     x = randn(32, 32)
-    odd = QuincunxFilterPair{Float64}(reshape([1.0], 1, 1), reshape([1.0], 1, 1), (1, 1), (1, 1), [0.25, 0.5, 0.25])
-    asym = QuincunxFilterPair{Float64}(reshape([1.0], 1, 1), reshape([1.0], 1, 1), (1, 1), (1, 1), [0.1, 0.4, 0.5, 0.3])
+    odd = QuincunxFilterPair([0.25, 0.5, 0.25])
+    asym = QuincunxFilterPair([0.1, 0.4, 0.5, 0.3])
     for qfp in (odd, asym)
         @test_throws ArgumentError dfb_decompose(x, 2, qfp)
         @test_throws ArgumentError nsdfb_decompose(x, 2, qfp)
@@ -530,13 +464,6 @@ end
     @test_throws ArgumentError dfb_decompose(randn(30, 32), 3, Q2345)   # 30 not divisible by 4
     @test_throws ArgumentError dfb_decompose(randn(31, 32), 1, Q2345)
     @test_throws ArgumentError dfb_decompose(randn(32, 32), 2, Q2345; half = :neither)
-end
-
-@testitem "nsdfb_decompose threading kwarg is accepted" tags = [:directional] begin
-    x = randn(16, 16)
-    sbs_e = nsdfb_decompose(x, 2, Q2345, 1; threading = Enabled())
-    sbs_d = nsdfb_decompose(x, 2, Q2345, 1; threading = Disabled())
-    @test maximum(abs, sbs_e[1] .- sbs_d[1]) < 1.0e-14
 end
 
 @testitem "dfb_reconstruct single subband returns copy" tags = [:directional] begin

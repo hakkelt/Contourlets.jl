@@ -44,22 +44,19 @@ function make_tict_workspace(
         T::Type{<:Number} = Float64, M::Type{<:AbstractMatrix} = Matrix{promote_type(Tp, T)}
     ) where {Tp}
     Td, Tf = _tict_types(params, T)
-    p = _check_tict_params(_convert_params(Tf, params))
+    p = _convert_params(Tf, params)
     n1, n2 = image_size
     real_data = Td <: Real
     ref = _allocate_zeros(M, Td, image_size)
     rows = real_data ? (1:(n1 ÷ 2 + 1)) : (1:n1)
     masks = _adapt_masks(ref, _tilp_masks(Tf, p.lp_filters, image_size, p.J; rows = rows))
     B = _bank_type(ref, Tf)
-    built = Dict{Tuple{Int, Symbol}, B}()
-    bank(l, half) = get!(built, (l, half)) do
-        _adapt_bank(
-            ref, _directional_bank(
-                Tf, image_size, l, p.dfb_filters.f_ladder;
-                decimated = false, half = half, real_data = real_data
-            )
-        )
+    # One full bank per depth; the half trees share its masks (`_half_bank`).
+    built = Dict{Int, B}()
+    full(l) = get!(built, l) do
+        _adapt_bank(ref, _directional_bank(Tf, image_size, l, p.dfb_filters.f_ladder; decimated = false, real_data = real_data))
     end
+    bank(l, half) = _half_bank(full(l), full(1), half)
     banks = [Union{Nothing, B}[l == 0 ? nothing : bank(l, h) for h in _TILP_HALVES] for l in p.L_array]
     items = [(i, c, k) for (i, l) in enumerate(p.L_array) for c in 1:4 for k in 1:_tict_n_subbands(l, c)]
     X, pfwd, pinv = _ns_plans(ref; measured = true)
@@ -125,7 +122,7 @@ end
 # (`fft_tasks.jl`).
 function _tict_forward_ws!(coeffs::TICTCoefficients, x::AbstractMatrix, ws::TICTWorkspace, threaded::Bool = false)
     mul!(ws.X, ws.pfwd, x)
-    _foreach_chunk(length(ws.items), length(ws.Z), threaded) do range, t
+    _batch_chunks(length(ws.items), length(ws.Z), threaded) do range, t
         _tict_forward_items!(coeffs, ws, range, ws.Y[t], ws.Z[t])
     end
     ws.Z[1] .= ws.masks.coarse_ana .* ws.X
@@ -135,7 +132,7 @@ end
 
 function _tict_inverse_ws!(x::AbstractMatrix, coeffs::TICTCoefficients, ws::TICTWorkspace, threaded::Bool = false)
     fill!(ws.X, zero(eltype(ws.X)))
-    _chunked_sum!(ws.X, ws.acc, length(ws.items), threaded) do acc, range, t
+    _chunked_sum!(ws.X, ws.acc, length(ws.items), threaded; foreach = _batch_chunks) do acc, range, t
         _tict_inverse_items!(acc, coeffs, ws, range, ws.Z[t], ws.Y[t])
     end
     F = ws.Z[1]

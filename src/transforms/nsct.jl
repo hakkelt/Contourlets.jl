@@ -54,7 +54,7 @@ function nsct_forward(
     subbands = Vector{Vector{Matrix{Td}}}(undef, J)
     for j in 1:J
         coarse_j, bp_j = nsp_decompose(coarse, fp, j)
-        subbands[j] = nsdfb_decompose(bp_j, L[j], qfp, j; threading = threading)
+        subbands[j] = nsdfb_decompose(bp_j, L[j], qfp, j)
         coarse = coarse_j
     end
     return NSCTCoefficients(coarse, subbands)
@@ -79,7 +79,7 @@ function nsct_forward!(
         workspace::Union{ContourletWorkspace, Nothing} = nothing,
         threading::ThreadingPolicy = Auto()
     )
-    workspace === nothing && return _nsct_forward_noworkspace!(coeffs, image, params; threading = threading)
+    workspace === nothing && return _nsct_forward_noworkspace!(coeffs, image, params)
     return _nsct_forward_ws_barrier!(coeffs, image, workspace, threading)
 end
 
@@ -111,8 +111,7 @@ end
 function _nsct_forward_noworkspace!(
         coeffs::NSCTCoefficients,
         image::AbstractMatrix,
-        params::ContourletParams;
-        threading::ThreadingPolicy = Auto()
+        params::ContourletParams
     )
     Td = eltype(coeffs.coarse)
     Tf = _filter_eltype(Td)
@@ -124,7 +123,7 @@ function _nsct_forward_noworkspace!(
     fp, qfp = p_out.lp_filters, p_out.dfb_filters
     for j in 1:J
         coarse_j, bp_j = nsp_decompose(coarse, fp, j)
-        sbs = nsdfb_decompose(bp_j, L[j], qfp, j; threading = threading)
+        sbs = nsdfb_decompose(bp_j, L[j], qfp, j)
         for (k, sb) in enumerate(sbs)
             copyto!(coeffs.subbands[j][k], sb)
         end
@@ -156,7 +155,7 @@ function _nsct_forward_inner!(
     # subbands are independent, so with threading their FFTs run in one task per
     # FFT buffer of the workspace.
     mul!(ws.fft_spectrum_bp, ws.fft_plan_fwd, img)
-    _foreach_chunk(length(ws.nsct_items), length(ws.fft_tasks), _use_threading(threading, T)) do range, t
+    _batch_chunks(length(ws.nsct_items), length(ws.fft_tasks), _use_threading(threading, T)) do range, t
         _nsct_forward_items!(coeffs, ws, range, ws.fft_tasks[t])
     end
     Z = ws.fft_tasks[1]
@@ -226,7 +225,7 @@ function nsct_inverse(
         image = _allocate_zeros(M, Tw, workspace.image_size)
         return nsct_inverse!(image, coeffs, params; workspace = workspace, threading = threading)
     end
-    return _nsct_inverse_alloc(coeffs, params; threading = threading)
+    return _nsct_inverse_alloc(coeffs, params)
 end
 
 """
@@ -247,7 +246,7 @@ function nsct_inverse!(
         workspace::Union{ContourletWorkspace, Nothing} = nothing,
         threading::ThreadingPolicy = Auto()
     )
-    workspace === nothing && return (copyto!(image, _nsct_inverse_alloc(coeffs, params; threading = threading)); image)
+    workspace === nothing && return (copyto!(image, _nsct_inverse_alloc(coeffs, params)); image)
     return _nsct_inverse_ws_barrier!(image, coeffs, workspace, threading)
 end
 
@@ -274,8 +273,7 @@ end
 
 function _nsct_inverse_alloc(
         coeffs::NSCTCoefficients,
-        params::ContourletParams;
-        threading::ThreadingPolicy = Auto()
+        params::ContourletParams
     )
     J = params.J
     Tf = _filter_eltype(eltype(coeffs.coarse))
@@ -285,7 +283,7 @@ function _nsct_inverse_alloc(
     coarse = copy(coeffs.coarse)
 
     for j in J:-1:1
-        bp = nsdfb_reconstruct(coeffs.subbands[j], qfp, j; threading = threading)
+        bp = nsdfb_reconstruct(coeffs.subbands[j], qfp, j)
         coarse = nsp_reconstruct(coarse, bp, fp, j)
     end
     return coarse
@@ -302,7 +300,7 @@ function _nsct_inverse_inner!(
     # with threading summed in one partial accumulator per task.
     acc = ws.fft_spectrum_bp
     fill!(acc, zero(eltype(acc)))
-    _chunked_sum!(acc, ws.fft_acc, length(ws.nsct_items), _use_threading(threading, T)) do a, range, t
+    _chunked_sum!(acc, ws.fft_acc, length(ws.nsct_items), _use_threading(threading, T); foreach = _batch_chunks) do a, range, t
         _nsct_inverse_items!(a, coeffs, ws, range, ws.fft_tasks[t])
     end
     F = ws.fft_tasks[1]

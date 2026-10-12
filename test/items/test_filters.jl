@@ -10,29 +10,10 @@ end
 end
 
 @testitem "Q2345 structure" tags = [:filters] begin
-    # Q2345 is the Phoong et al. (1995) ladder pair: 12-tap symmetric lifting
-    # filter, with 23-tap / 45-tap equivalent analysis/synthesis low-pass filters.
-    @test Contourlets.is_ladder(Q2345)
+    # Q2345 is the Phoong et al. (1995) ladder pair: 12-tap symmetric lifting filter.
     @test length(Q2345.f_ladder) == 12
     @test Q2345.f_ladder == reverse(Q2345.f_ladder)          # symmetric
     @test Q2345.f_ladder[7] == 0.63                        # pkva12 taps
-    # h_q and g_q hold the equivalent 1-row filters ("23-45")
-    @test size(Q2345.h_q) == (1, 23)
-    @test size(Q2345.g_q) == (1, 45)
-end
-
-@testitem "Modulation-mode Haar pair PR" tags = [:filters] begin
-    using Random
-    Random.seed!(11)
-    haar = QuincunxFilterPair([0.5 0.5], [1.0 1.0], (1, 1), (1, 2))
-    @test !Contourlets.is_ladder(haar)
-    @test check_pr_condition(haar)
-    x = randn(32, 32)
-    sbs = dfb_decompose(x, 3, haar)
-    @test maximum(abs, dfb_reconstruct(sbs, haar) .- x) < 1.0e-12
-    # The resampling-matrix NSDFB needs diamond (pkva ladder) filters; haar is not
-    # a directional/diamond filter, so it is rejected with a clear error.
-    @test_throws ArgumentError nsdfb_decompose(x, 2, haar, 2)
 end
 
 @testitem "Phoong quincunx pair satisfies the quincunx PR conditions" tags = [:filters] begin
@@ -101,11 +82,15 @@ end
     @test eltype(fp) == Float64
 end
 
-@testitem "QuincunxFilterPair generic constructor" tags = [:filters] begin
-    qfp = QuincunxFilterPair([0.5 0.5], [1.0 1.0], (1, 1), (1, 2))
-    @test eltype(qfp) == Float64
-    @test qfp.c_h == (1, 1)
-    @test qfp.c_g == (1, 2)
+@testitem "QuincunxFilterPair constructors" tags = [:filters] begin
+    qfp = QuincunxFilterPair(Float32.(Q2345.f_ladder))
+    @test qfp isa QuincunxFilterPair{Float32}
+    @test eltype(qfp) == Float32
+    @test qfp.f_ladder == Float32.(Q2345.f_ladder)
+    qfp64 = QuincunxFilterPair{Float64}(Float32[0.25, 0.25])
+    @test eltype(qfp64.f_ladder) == Float64
+    # Any ladder filter gives a perfect-reconstruction pair.
+    @test check_pr_condition(QuincunxFilterPair([0.1, 0.4, 0.4, 0.1]))
 end
 
 @testitem "ContourletParams show method" tags = [:filters] begin
@@ -130,17 +115,6 @@ end
     @test f[6] == 0.63       # pkva12 tap check (f[6] = _PKVA12_HALF[1])
 end
 
-@testitem "QuincunxFilterPair{T} 4-arg modulation-mode constructor" tags = [:filters] begin
-    qfp = QuincunxFilterPair{Float32}([0.5 0.5], [1.0 1.0], (1, 1), (1, 2))
-    @test qfp isa QuincunxFilterPair{Float32}
-    @test eltype(qfp) == Float32
-    @test qfp.h_q == Float32[0.5 0.5]
-    @test qfp.g_q == Float32[1.0 1.0]
-    @test isempty(qfp.f_ladder)
-    @test eltype(qfp.f_ladder) == Float32
-    @test !Contourlets.is_ladder(qfp)
-end
-
 @testitem "ContourletParams eltype and same-type conversions are identities" tags = [:filters] begin
     using Random
     p = ContourletParams(J = 2, L_array = [1, 2])
@@ -163,33 +137,4 @@ end
     zc = zeros(ComplexF32, 2, 2)
     nc = NSCTCoefficients(zc, [[zeros(ComplexF32, 2, 2)]])
     @test nc isa NSCTCoefficients{ComplexF32, Matrix{ComplexF32}}
-end
-
-@testitem "_ladder_equivalent_filters reproduces Q2345 and satisfies PR" tags = [:filters] begin
-    f = Contourlets._ladder_modulate(Contourlets.pkva_ladder_filter())
-    eq = Contourlets._ladder_equivalent_filters(f)
-    # Stored Q2345 equivalent filters are exactly these (computed at load time).
-    @test eq.h0 == vec(Q2345.h_q)
-    @test eq.g0 == vec(Q2345.g_q)
-    @test (1, eq.c0) == Q2345.c_h
-    @test (1, eq.cg0) == Q2345.c_g
-    @test length(eq.h0) == 23
-    @test length(eq.g0) == 45
-    # PR identity (g0 ⊛ h0 + g1 ⊛ h1) / 2 = δ at zero lag.
-    conv(a, ca, b, cb) = Contourlets._lag_conv(a, ca, b, cb)
-    p0, c_p0 = conv(eq.g0, eq.cg0, eq.h0, eq.c0)
-    p1, c_p1 = conv(eq.g1, eq.cg1, eq.h1, eq.c1)
-    lo = min(1 - c_p0, 1 - c_p1)
-    hi = max(length(p0) - c_p0, length(p1) - c_p1)
-    acc = zeros(hi - lo + 1)
-    for (p, c) in ((p0, c_p0), (p1, c_p1)), m in eachindex(p)
-        acc[m - c - lo + 1] += p[m] / 2
-    end
-    δ = zeros(length(acc))
-    δ[1 - lo] = 1
-    @test maximum(abs, acc .- δ) < 1.0e-12
-    # Works for any element type / lifting filter (PR is structural).
-    eq32 = Contourlets._ladder_equivalent_filters(Float32[0.25, -0.5, 0.25])
-    @test eltype(eq32.h0) == Float32
-    @test eltype(eq32.g1) == Float32
 end

@@ -36,23 +36,12 @@ of one pointwise product per output instead of two convolutions per level.
 function _nsp_masks(
         ::Type{Tf}, fp::FilterPair, dims::NTuple{2, Int}, J::Int; rows = 1:dims[1]
     ) where {Tf <: AbstractFloat}
-    n1, n2 = dims
-    pre_a = ones(ComplexF64, length(rows), n2)       # Π_{i<j} Hᵢ
-    pre_s = ones(ComplexF64, length(rows), n2)       # Π_{i<j} Gᵢ
-    ana = Matrix{Complex{Tf}}[]
-    syn = Matrix{Complex{Tf}}[]
-    for j in 1:J
-        h, g = _nsp_atrous_filters(fp, j, Float64)
-        axis(f, n, ks) = [_centred_dtft(f, 2π * (k - 1) / n) for k in ks]
-        H = axis(h, n1, rows) .* transpose(axis(h, n2, 1:n2))
-        G = axis(g, n1, rows) .* transpose(axis(g, n2, 1:n2))
-        push!(ana, Matrix{Complex{Tf}}(pre_a .* (1 .- G .* H)))
-        push!(syn, Matrix{Complex{Tf}}(pre_s))
-        pre_a .*= H
-        pre_s .*= G
-    end
-    push!(ana, Matrix{Complex{Tf}}(pre_a))
-    push!(syn, Matrix{Complex{Tf}}(pre_s))
+    a1, gh1, s1 = _nsp_responses(fp, J, dims[1]; bins = rows)
+    a2, gh2, s2 = _nsp_responses(fp, J, dims[2])
+    sep(u, v) = Matrix{Complex{Tf}}(u .* transpose(v))
+    ana = [Matrix{Complex{Tf}}(a1[j] .* transpose(a2[j]) .* (1 .- gh1[j] .* transpose(gh2[j]))) for j in 1:J]
+    push!(ana, sep(a1[J + 1], a2[J + 1]))
+    syn = [sep(s1[j], s2[j]) for j in 1:(J + 1)]
     return ana, syn
 end
 

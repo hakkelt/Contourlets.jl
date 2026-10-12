@@ -16,7 +16,7 @@
 # pyramidal directional filter bank).
 
 """
-    ct_forward(image, params::ContourletParams; workspace=nothing, threading=Auto()) -> ContourletCoefficients
+    ct_forward(image, params::ContourletParams; workspace=nothing) -> ContourletCoefficients
 
 Discrete Contourlet Transform forward pass.
 
@@ -39,14 +39,13 @@ julia> length(coeffs.subbands[2])
 """
 function ct_forward(
         image::AbstractMatrix, params::ContourletParams;
-        workspace::Union{ContourletWorkspace, Nothing} = nothing,
-        threading::ThreadingPolicy = Auto()
+        workspace::Union{ContourletWorkspace, Nothing} = nothing
     )
     if workspace !== nothing
         Tw = eltype(workspace)
         coeffs = similar_coefficients(params, size(image); Td = Tw)
         img = Tw === eltype(image) ? image : Tw.(image)
-        return ct_forward!(coeffs, img, params; workspace = workspace, threading = threading)
+        return ct_forward!(coeffs, img, params; workspace = workspace)
     end
     # No-workspace: direct construction keeps the return type concrete (type-stable).
     Td = _data_eltype(image)
@@ -60,14 +59,14 @@ function ct_forward(
     coarse = img
     for j in 1:J
         coarse_j, bp_j = lp_decompose(coarse, fp)
-        subbands[j] = dfb_decompose(bp_j, L[j], qfp; threading = threading)
+        subbands[j] = dfb_decompose(bp_j, L[j], qfp)
         coarse = coarse_j
     end
     return ContourletCoefficients(coarse, subbands)
 end
 
 """
-    ct_forward!(coeffs::ContourletCoefficients, image, params::ContourletParams; workspace=nothing, threading=Auto()) -> coeffs
+    ct_forward!(coeffs::ContourletCoefficients, image, params::ContourletParams; workspace=nothing) -> coeffs
 
 In-place CT forward pass writing into the preallocated `coeffs`.
 
@@ -79,11 +78,10 @@ function ct_forward!(
         coeffs::ContourletCoefficients,
         image::AbstractMatrix,
         params::ContourletParams;
-        workspace::Union{ContourletWorkspace, Nothing} = nothing,
-        threading::ThreadingPolicy = Auto()
+        workspace::Union{ContourletWorkspace, Nothing} = nothing
     )
-    workspace === nothing && return _ct_forward_noworkspace!(coeffs, image, params; threading = threading)
-    return _ct_forward_ws_barrier!(coeffs, image, workspace, threading)
+    workspace === nothing && return _ct_forward_noworkspace!(coeffs, image, params)
+    return _ct_forward_ws_barrier!(coeffs, image, workspace)
 end
 
 # Typed dispatch barrier — forces specialization on the concrete workspace type,
@@ -91,22 +89,20 @@ end
 function _ct_forward_ws_barrier!(
         coeffs::ContourletCoefficients,
         image::AbstractMatrix,
-        ws::ContourletWorkspace,
-        threading::ThreadingPolicy
+        ws::ContourletWorkspace
     )
     T = eltype(ws)
     img = T === eltype(image) ? image : T.(image)
-    return _ct_forward_ws!(coeffs, img, ws; threading = threading)
+    return _ct_forward_ws!(coeffs, img, ws)
 end
 
 # Internal dispatch seam — overloaded by ContourletsCUDAExt for graph capture.
 function _ct_forward_ws!(
         coeffs::ContourletCoefficients{T},
         image::AbstractMatrix,
-        ws::ContourletWorkspace{T};
-        threading::ThreadingPolicy = Auto()
+        ws::ContourletWorkspace{T}
     ) where {T}
-    _ct_forward_inner!(coeffs, image, ws; threading = threading)
+    _ct_forward_inner!(coeffs, image, ws)
     return coeffs
 end
 
@@ -114,8 +110,7 @@ end
 function _ct_forward_noworkspace!(
         coeffs::ContourletCoefficients,
         image::AbstractMatrix,
-        params::ContourletParams;
-        threading::ThreadingPolicy = Auto()
+        params::ContourletParams
     )
     Td = eltype(coeffs.coarse)
     Tf = _filter_eltype(Td)
@@ -127,7 +122,7 @@ function _ct_forward_noworkspace!(
     coarse = img
     for j in 1:J
         coarse_j, bp_j = lp_decompose(coarse, fp)
-        sbs = dfb_decompose(bp_j, L[j], qfp; threading = threading)
+        sbs = dfb_decompose(bp_j, L[j], qfp)
         for (k, sb) in enumerate(sbs)
             copyto!(coeffs.subbands[j][k], sb)
         end
@@ -140,8 +135,7 @@ end
 function _ct_forward_inner!(
         coeffs::ContourletCoefficients{T},
         image::AbstractMatrix,
-        ws::ContourletWorkspace{T};
-        threading::ThreadingPolicy = Auto()
+        ws::ContourletWorkspace{T}
     ) where {T}
     params = ws.params
     J = params.J
@@ -162,7 +156,7 @@ function _ct_forward_inner!(
 
             lp_decompose!(coarse_j, bp_j, current, fp; tmp = tmp_j, tmp2 = tmp2_j)
             # The workspace runner holds this level's filters, buffers and plans.
-            dfb_decompose!(coeffs.subbands[j], bp_j, L[j], qfp; workspace = ws, threading = threading)
+            dfb_decompose!(coeffs.subbands[j], bp_j, L[j], qfp; workspace = ws)
             current = coarse_j
         end
         copyto!(coeffs.coarse, current)
@@ -170,7 +164,7 @@ function _ct_forward_inner!(
 end
 
 """
-    ct_inverse(coeffs::ContourletCoefficients, params::ContourletParams; workspace=nothing, threading=Auto()) -> Matrix
+    ct_inverse(coeffs::ContourletCoefficients, params::ContourletParams; workspace=nothing) -> Matrix
 
 Discrete Contourlet Transform inverse pass.
 
@@ -194,20 +188,19 @@ true
 function ct_inverse(
         coeffs::ContourletCoefficients,
         params::ContourletParams;
-        workspace::Union{ContourletWorkspace, Nothing} = nothing,
-        threading::ThreadingPolicy = Auto()
+        workspace::Union{ContourletWorkspace, Nothing} = nothing
     )
     if workspace !== nothing
         Tw = eltype(workspace)
         M = _ws_matrix_type(workspace)
         image = _allocate_zeros(M, Tw, workspace.image_size)
-        return ct_inverse!(image, coeffs, params; workspace = workspace, threading = threading)
+        return ct_inverse!(image, coeffs, params; workspace = workspace)
     end
-    return _ct_inverse_alloc(coeffs, params; threading = threading)
+    return _ct_inverse_alloc(coeffs, params)
 end
 
 """
-    ct_inverse!(image, coeffs::ContourletCoefficients, params::ContourletParams; workspace=nothing, threading=Auto()) -> image
+    ct_inverse!(image, coeffs::ContourletCoefficients, params::ContourletParams; workspace=nothing) -> image
 
 In-place CT inverse pass writing the reconstruction into `image`.
 
@@ -219,31 +212,28 @@ function ct_inverse!(
         image::AbstractMatrix,
         coeffs::ContourletCoefficients,
         params::ContourletParams;
-        workspace::Union{ContourletWorkspace, Nothing} = nothing,
-        threading::ThreadingPolicy = Auto()
+        workspace::Union{ContourletWorkspace, Nothing} = nothing
     )
-    workspace === nothing && return (copyto!(image, _ct_inverse_alloc(coeffs, params; threading = threading)); image)
-    return _ct_inverse_ws_barrier!(image, coeffs, workspace, threading)
+    workspace === nothing && return (copyto!(image, _ct_inverse_alloc(coeffs, params)); image)
+    return _ct_inverse_ws_barrier!(image, coeffs, workspace)
 end
 
 # Typed dispatch barrier — forces specialization on the concrete workspace type.
 function _ct_inverse_ws_barrier!(
         image::AbstractMatrix,
         coeffs::ContourletCoefficients,
-        ws::ContourletWorkspace,
-        threading::ThreadingPolicy
+        ws::ContourletWorkspace
     )
-    return _ct_inverse_ws!(image, coeffs, ws; threading = threading)
+    return _ct_inverse_ws!(image, coeffs, ws)
 end
 
 # Internal dispatch seam — overloaded by ContourletsCUDAExt for graph capture.
 function _ct_inverse_ws!(
         image::AbstractMatrix{T},
         coeffs::ContourletCoefficients{T},
-        ws::ContourletWorkspace{T};
-        threading::ThreadingPolicy = Auto()
+        ws::ContourletWorkspace{T}
     ) where {T}
-    _ct_inverse_inner!(image, coeffs, ws; threading = threading)
+    _ct_inverse_inner!(image, coeffs, ws)
     return image
 end
 
@@ -251,8 +241,7 @@ end
 # so we cannot pre-allocate from params alone without running the transform.
 function _ct_inverse_alloc(
         coeffs::ContourletCoefficients,
-        params::ContourletParams;
-        threading::ThreadingPolicy = Auto()
+        params::ContourletParams
     )
     Tf = _filter_eltype(eltype(coeffs.coarse))
     p_out = _convert_params(Tf, params)
@@ -262,7 +251,7 @@ function _ct_inverse_alloc(
     coarse = copy(coeffs.coarse)
 
     for j in J:-1:1
-        bp = dfb_reconstruct(coeffs.subbands[j], qfp; threading = threading)
+        bp = dfb_reconstruct(coeffs.subbands[j], qfp)
         coarse = lp_reconstruct(coarse, bp, fp)
     end
     return coarse
@@ -271,8 +260,7 @@ end
 function _ct_inverse_inner!(
         image::AbstractMatrix{T},
         coeffs::ContourletCoefficients{T},
-        ws::ContourletWorkspace{T};
-        threading::ThreadingPolicy = Auto()
+        ws::ContourletWorkspace{T}
     ) where {T}
     params = ws.params
     J = params.J
@@ -287,7 +275,7 @@ function _ct_inverse_inner!(
         for j in J:-1:1
             n1, n2 = ws.bp_dims[j]
             bp = _scratch_like(current, n1, n2)
-            dfb_reconstruct!(bp, coeffs.subbands[j], qfp; workspace = ws, threading = threading)
+            dfb_reconstruct!(bp, coeffs.subbands[j], qfp; workspace = ws)
             tmp_j = _scratch_like(current, n1, n2)
             tmp2_j = _scratch_like(current, n1, n2)
             if j > 1
@@ -332,12 +320,11 @@ function similar_coefficients(
     J = params.J
     L = params.L_array
     n1, n2 = image_size
-    ladder = is_ladder(params.dfb_filters)
     A = typeof(_allocate_zeros(M, Td, (1, 1)))
     subbands = Vector{Vector{A}}(undef, J)
     cur_n1, cur_n2 = n1, n2
     for j in 1:J
-        szs = dfb_subband_sizes(cur_n1, cur_n2, L[j]; ladder = ladder)
+        szs = dfb_subband_sizes(cur_n1, cur_n2, L[j])
         subbands[j] = [_allocate_zeros(M, Td, s) for s in szs]
         cur_n1 = cld(cur_n1, 2)
         cur_n2 = cld(cur_n2, 2)

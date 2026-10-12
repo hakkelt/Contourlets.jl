@@ -40,20 +40,29 @@ function make_stict_workspace(
         T::Type{<:Number} = Float64, M::Type{<:AbstractMatrix} = Matrix{promote_type(Tp, T)}
     ) where {Tp}
     Td, Tf = _tict_types(params, T)
-    p = _check_tict_params(_convert_params(Tf, params))
+    p = _convert_params(Tf, params)
     ref = _allocate_zeros(M, Td, image_size)
     masks = _adapt_masks(ref, _tilp_masks(Tf, p.lp_filters, image_size, p.J))
     R = _runner_type(ref, Tf)
+    # One full bank per depth, the half trees sharing its masks (`_half_bank`), and
+    # one buffer pool for every runner: the channels run one after another.  The
+    # runners' scratch `Z` is also the workspace's, which is never live meanwhile.
+    flags = ref isa Array ? FFTW.MEASURE : FFTW.ESTIMATE
+    banks = Dict{Int, _bank_type(ref, Tf)}()
+    full(l) = get!(banks, l) do
+        _adapt_bank(ref, _directional_bank(Tf, image_size, l, p.dfb_filters.f_ladder; decimated = true))
+    end
+    pool = _runner_pool(ref, Tf)
     built = Dict{Tuple{Int, Symbol}, R}()
     runner(l, half) = get!(built, (l, half)) do
-        b = _directional_bank(Tf, image_size, l, p.dfb_filters.f_ladder; decimated = true, half = half)
-        _bank_runner(_adapt_bank(ref, b), ref)
+        _bank_runner(_half_bank(full(l), full(1), half), ref; flags = flags, pool = pool)
     end
     runners = [Union{Nothing, R}[l == 0 ? nothing : runner(l, h) for h in _TILP_HALVES] for l in p.L_array]
     X = fill!(similar(ref, Complex{Tf}, image_size), zero(Complex{Tf}))
-    pfwd, pbwd = _inplace_plans(X, FFTW.ESTIMATE)
+    pfwd, pbwd = _inplace_plans(X, flags)
+    Z = isempty(pool) ? similar(X) : first(pool[(:Z, image_size)])
     return STICTWorkspace{Td, Tf, typeof(X), R, typeof(pfwd), typeof(pbwd)}(
-        p, image_size, masks, runners, X, similar(X), pfwd, pbwd
+        p, image_size, masks, runners, X, Z, pfwd, pbwd
     )
 end
 
@@ -104,7 +113,7 @@ function _stict_inverse_ws!(x::AbstractMatrix, coeffs::TICTCoefficients, ws::STI
 end
 
 """
-    stict_forward(image, params::ContourletParams; workspace=nothing, threading=Auto())
+    stict_forward(image, params::ContourletParams; workspace=nothing)
         -> TICTCoefficients
 
 Semi-translation-invariant contourlet transform of Eslami & Radha (2006): the
@@ -115,9 +124,7 @@ subbands are those of the decimated DFB.  Redundancy `4J + 1`.
 
 Both image dimensions must be divisible by `2^max(L - 1, 1)` for the deepest
 directional level `L`.  Pass a workspace from [`make_stict_workspace`](@ref) to
-reuse the precomputed filters and buffers.  `threading` is accepted for symmetry
-with [`tict_forward`](@ref) and currently has no effect: the channels run one
-after another.
+reuse the precomputed filters and buffers.
 
 # Examples
 ```jldoctest
@@ -138,8 +145,7 @@ true
 """
 function stict_forward(
         image::AbstractMatrix, params::ContourletParams;
-        workspace::Union{Nothing, STICTWorkspace} = nothing,
-        threading::ThreadingPolicy = Auto()
+        workspace::Union{Nothing, STICTWorkspace} = nothing
     )
     ws = workspace === nothing ? _own_workspace(make_stict_workspace, image, params) : workspace
     x = _check_tict_input(ws, _ws_input(ws, image))
@@ -148,15 +154,14 @@ function stict_forward(
 end
 
 """
-    stict_forward!(coeffs, image, params; workspace=nothing, threading=Auto()) -> coeffs
+    stict_forward!(coeffs, image, params; workspace=nothing) -> coeffs
 
 In-place [`stict_forward`](@ref) into coefficients from
 [`similar_stict_coefficients`](@ref).  With a workspace it allocates nothing.
 """
 function stict_forward!(
         coeffs::TICTCoefficients, image::AbstractMatrix, params::ContourletParams;
-        workspace::Union{Nothing, STICTWorkspace} = nothing,
-        threading::ThreadingPolicy = Auto()
+        workspace::Union{Nothing, STICTWorkspace} = nothing
     )
     ws = workspace === nothing ? _own_workspace(make_stict_workspace, image, params) : workspace
     _check_tict_eltype(ws, coeffs.coarse, "coefficient set")
@@ -164,14 +169,13 @@ function stict_forward!(
 end
 
 """
-    stict_inverse(coeffs::TICTCoefficients, params; workspace=nothing, threading=Auto()) -> image
+    stict_inverse(coeffs::TICTCoefficients, params; workspace=nothing) -> image
 
 Inverse of [`stict_forward`](@ref): exact reconstruction (to rounding error).
 """
 function stict_inverse(
         coeffs::TICTCoefficients, params::ContourletParams;
-        workspace::Union{Nothing, STICTWorkspace} = nothing,
-        threading::ThreadingPolicy = Auto()
+        workspace::Union{Nothing, STICTWorkspace} = nothing
     )
     ws = workspace === nothing ? _own_workspace(make_stict_workspace, coeffs.coarse, params) : workspace
     _check_tict_eltype(ws, coeffs.coarse, "coefficient set")
@@ -179,14 +183,13 @@ function stict_inverse(
 end
 
 """
-    stict_inverse!(image, coeffs, params; workspace=nothing, threading=Auto()) -> image
+    stict_inverse!(image, coeffs, params; workspace=nothing) -> image
 
 In-place [`stict_inverse`](@ref).  With a workspace it allocates nothing.
 """
 function stict_inverse!(
         image::AbstractMatrix, coeffs::TICTCoefficients, params::ContourletParams;
-        workspace::Union{Nothing, STICTWorkspace} = nothing,
-        threading::ThreadingPolicy = Auto()
+        workspace::Union{Nothing, STICTWorkspace} = nothing
     )
     ws = workspace === nothing ? _own_workspace(make_stict_workspace, image, params) : workspace
     _check_tict_eltype(ws, coeffs.coarse, "coefficient set")

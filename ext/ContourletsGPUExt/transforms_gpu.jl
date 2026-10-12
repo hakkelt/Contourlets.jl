@@ -24,15 +24,14 @@ Float32 precision).  `ct_inverse(coeffs, params)` then reconstructs on the devic
 """
 function Contourlets.ct_forward(
         image::_AbstractGPUMatrix, params::ContourletParams;
-        workspace::Union{Contourlets.ContourletWorkspace, Nothing} = nothing,
-        threading::Contourlets.ThreadingPolicy = Contourlets.Auto()
+        workspace::Union{Contourlets.ContourletWorkspace, Nothing} = nothing
     )
     if workspace !== nothing
         Tw = eltype(workspace)
         M = Contourlets._ws_matrix_type(workspace)
         coeffs = Contourlets.similar_coefficients(params, size(image); Td = Tw, M = M)
         img = Tw === eltype(image) ? image : Tw.(image)
-        return ct_forward!(coeffs, img, params; workspace = workspace, threading = threading)
+        return ct_forward!(coeffs, img, params; workspace = workspace)
     end
     Td = Contourlets._data_eltype(image)        # data type (real or complex)
     Tf = Contourlets._filter_eltype(Td)         # real filter precision
@@ -61,14 +60,13 @@ GPU Discrete Contourlet Transform inverse pass.
 function Contourlets.ct_inverse(
         coeffs::ContourletCoefficients{T, <:AbstractGPUMatrix{T}},
         params::ContourletParams;
-        workspace::Union{Contourlets.ContourletWorkspace, Nothing} = nothing,
-        threading::Contourlets.ThreadingPolicy = Contourlets.Auto()
+        workspace::Union{Contourlets.ContourletWorkspace, Nothing} = nothing
     ) where {T <: Number}
     if workspace !== nothing
         Tw = eltype(workspace)
         M = Contourlets._ws_matrix_type(workspace)
         image = Contourlets._allocate_zeros(M, Tw, workspace.image_size)
-        return ct_inverse!(image, coeffs, params; workspace = workspace, threading = threading)
+        return ct_inverse!(image, coeffs, params; workspace = workspace)
     end
     Tf = Contourlets._filter_eltype(T)
     p = Contourlets._convert_params(Tf, params)

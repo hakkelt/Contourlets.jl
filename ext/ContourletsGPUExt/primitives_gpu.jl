@@ -2,8 +2,8 @@
 #
 # Each CPU primitive (conv2d_sep!, shear!, rect_downsample!, …) is overloaded
 # for _AbstractGPUMatrix via a specialised @kernel that runs on any KA backend
-# (CUDA, AMDGPU, oneAPI, Metal, CPU).  The quincunx filter bank kernels are in
-# `qfb_gpu.jl`.
+# (CUDA, AMDGPU, oneAPI, Metal, CPU).  The quincunx filter bank overloads (which
+# only reject device arrays for now) are in `qfb_gpu.jl`.
 
 # ── Separable 2-D convolution ─────────────────────────────────────────────────
 

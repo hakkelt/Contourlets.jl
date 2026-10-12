@@ -69,8 +69,9 @@ resolution, so its redundancy is `1 + Σ_j 2^{L_j}` rather than ≈ 4/3.
 
 ## Threading
 
-The `threading` keyword takes a [`ThreadingPolicy`](@ref) — `Auto()` (the
-default), `Enabled()` or `Disabled()` — and the default is a hybrid:
+The NSCT and TICT transforms take a `threading` keyword (the CT and the STICT
+run their stages one after another and take none).  It is a [`ThreadingPolicy`](@ref) —
+`Auto()` (the default), `Enabled()` or `Disabled()` — and the default is a hybrid:
 
 | Data | Default | Why |
 |---|---|---|

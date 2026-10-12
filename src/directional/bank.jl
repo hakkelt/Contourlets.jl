@@ -98,6 +98,28 @@ function _directional_bank(
     return _DirectionalBank(ana, syn, pr, pc, delay, samp, dims, l)
 end
 
+"""
+    _half_bank(full, root, half) -> _DirectionalBank
+
+The half tree `half` (`:first` or `:second`) of the full `l`-level bank `full`,
+sharing its arrays: a half tree splits one fan exactly as the full tree does and
+leaves the other fan's node unsplit, and that node is a channel of the depth-1
+bank `root` (built with the same options).  `:both` returns `full`.
+"""
+function _half_bank(full::_DirectionalBank, root::_DirectionalBank, half::Symbol)
+    _check_half(half) === :both && return full
+    m = length(full.ana) ÷ 2
+    first = half === :first
+    split = first ? (1:m) : ((m + 1):(2m))
+    node = first ? 2 : 1                # fan 0 follows the fan-1 subtree, fan 1 precedes fan 0's
+    pick(f, r) = isempty(f) ? f : (first ? vcat(f[split], [r[node]]) : vcat([r[node]], f[split]))
+    return _DirectionalBank(
+        pick(full.ana, root.ana), pick(full.syn, root.syn),
+        pick(full.phase_r, root.phase_r), pick(full.phase_c, root.phase_c),
+        pick(full.delay, root.delay), pick(full.sampling, root.sampling), full.dims, full.levels
+    )
+end
+
 # ── Quincunx storage of depth-1 channels ──────────────────────────────────────
 #
 # A depth-1 channel keeps the samples of the quincunx lattice {n₀ + n₁ even}.  They

@@ -242,56 +242,14 @@ end
     end
 end
 
-@testitem "GPU qfb_decompose/reconstruct non-ladder filter" tags = [:gpu] setup = [GPUBackends] begin
-    using GPUEnv, Random
-    Random.seed!(59)
+@testitem "GPU qfb_decompose/reconstruct reject device arrays" tags = [:gpu] setup = [GPUBackends] begin
+    using GPUEnv
     x = randn(Float32, 16, 16)
-    # Haar-like non-ladder QuincunxFilterPair
-    haar = QuincunxFilterPair([0.5 0.5], [1.0 1.0], (1, 1), (1, 2))
     for backend in GPUBackends.backends
         xg = to_gpu(backend, x)
-        # :col direction — GPU kernel path
-        sb0g, sb1g = qfb_decompose(xg, haar; dir = :col)
-        sb0c, sb1c = qfb_decompose(x, haar; dir = :col)
-        @test maximum(abs, Array(sb0g) .- sb0c) < 1.0f-5
-        @test maximum(abs, Array(sb1g) .- sb1c) < 1.0f-5
-        # GPU results must stay on device
-        @test !(sb0g isa Array)
-        # synthesis round-trip (col)
-        rec_col = qfb_reconstruct(sb0g, sb1g, haar; dir = :col)
-        @test !(rec_col isa Array)
-        # :row direction — transpose-to-CPU-and-back path
-        sb0r, sb1r = qfb_decompose(xg, haar; dir = :row)
-        @test !(sb0r isa Array)
-        rec_row = qfb_reconstruct(sb0r, sb1r, haar; dir = :row)
-        @test !(rec_row isa Array)
-        @test maximum(abs, Array(rec_row) .- x) < 1.0f-4
-        # ladder filter throws
+        sg = to_gpu(backend, zeros(Float32, 16, 8))
         @test_throws ArgumentError qfb_decompose(xg, Q2345)
-        @test_throws ArgumentError qfb_reconstruct(sb0g, sb1g, Q2345)
-    end
-end
-
-@testitem "GPU DFB with non-ladder filter (exercises shear kernels)" tags = [:gpu] setup = [GPUBackends] begin
-    using GPUEnv, Random
-    Random.seed!(73)
-    x = randn(Float32, 16, 16)
-    # Haar-like non-ladder pair: is_ladder == false → _dfb_split path → shear!/inv_shear!
-    haar = QuincunxFilterPair([0.5 0.5], [1.0 1.0], (1, 1), (1, 2))
-    for backend in GPUBackends.backends
-        xg = to_gpu(backend, x)
-        # l=2 forces depth 1 (:h shear) and depth 2 (:v shear), hitting all 4 kernels
-        sbs = dfb_decompose(xg, 2, haar)
-        @test length(sbs) == 4
-        @test !(sbs[1] isa Array)
-        # CPU reference
-        sbs_cpu = dfb_decompose(x, 2, haar)
-        for k in 1:4
-            @test maximum(abs, Array(sbs[k]) .- sbs_cpu[k]) < 1.0f-5
-        end
-        rec = dfb_reconstruct(sbs, haar)
-        @test !(rec isa Array)
-        @test maximum(abs, Array(rec) .- x) < 1.0f-4
+        @test_throws ArgumentError qfb_reconstruct(sg, sg, Q2345)
     end
 end
 
@@ -365,10 +323,7 @@ end
     p = ContourletParams(
         J = 1, L_array = [2],
         lp_filters = FilterPair{Float32}(Float32.(CDF97.h), Float32.(CDF97.g)),
-        dfb_filters = QuincunxFilterPair{Float32}(
-            Float32.(Q2345.h_q), Float32.(Q2345.g_q),
-            Q2345.c_h, Q2345.c_g, Float32.(Q2345.f_ladder)
-        )
+        dfb_filters = QuincunxFilterPair{Float32}(Float32.(Q2345.f_ladder))
     )
     x = randn(Float32, 32, 32)
     for backend in GPUBackends.fft_backends
@@ -417,10 +372,7 @@ end
     p = ContourletParams(
         J = 2, L_array = [2, 3],
         lp_filters = FilterPair{Float32}(Float32.(CDF97.h), Float32.(CDF97.g)),
-        dfb_filters = QuincunxFilterPair{Float32}(
-            Float32.(Q2345.h_q), Float32.(Q2345.g_q),
-            Q2345.c_h, Q2345.c_g, Float32.(Q2345.f_ladder)
-        )
+        dfb_filters = QuincunxFilterPair{Float32}(Float32.(Q2345.f_ladder))
     )
     x = randn(Float32, 64, 64)
     ccpu = ct_forward(x, p)
@@ -453,10 +405,7 @@ end
     p = ContourletParams(
         J = 2, L_array = [2, 3],
         lp_filters = FilterPair{Float32}(Float32.(CDF97.h), Float32.(CDF97.g)),
-        dfb_filters = QuincunxFilterPair{Float32}(
-            Float32.(Q2345.h_q), Float32.(Q2345.g_q),
-            Q2345.c_h, Q2345.c_g, Float32.(Q2345.f_ladder)
-        )
+        dfb_filters = QuincunxFilterPair{Float32}(Float32.(Q2345.f_ladder))
     )
     x = randn(Float32, 32, 32)
     ncpu = nsct_forward(x, p)
@@ -481,34 +430,6 @@ end
         @test maximum(abs, Array(ng.subbands[1][1]) .- ncpu.subbands[1][1]) < 1.0f-5
         nsct_inverse!(rec, ng, p; workspace = ws)
         @test maximum(abs, Array(rec) .- x) < 1.0f-4
-    end
-end
-
-@testitem "GPU non-ladder QFB periodic boundary matches CPU (both directions)" tags = [:gpu] setup = [GPUBackends] begin
-    using GPUEnv, Random
-    Random.seed!(42)
-    x = randn(Float32, 8, 8)
-    # 5-tap filter centred at 3: the first/last kept sample reads one sample past
-    # the edge, which the CPU kernel wraps periodically; the device kernels must
-    # wrap the same way (they used to fold symmetrically / drop out-of-range taps).
-    h5 = Float64[1 / 16 1 / 4 3 / 8 1 / 4 1 / 16]
-    wide_qfp = QuincunxFilterPair(h5, h5, (1, 3), (1, 3))
-    # Haar pair with c_h = 2: PR holds only with periodic wrap (see test_dfb.jl).
-    qfp_wrap = QuincunxFilterPair(
-        reshape([0.5, 0.5], 1, 2), reshape([1.0, 1.0], 1, 2), (1, 2), (1, 1)
-    )
-    for dir in (:row, :col), qfp in (wide_qfp, qfp_wrap)
-        sb0c, sb1c = qfb_decompose(x, qfp; dir = dir)
-        recc = qfb_reconstruct(sb0c, sb1c, qfp; dir = dir)
-        for backend in GPUBackends.backends
-            sb0g, sb1g = qfb_decompose(to_gpu(backend, x), qfp; dir = dir)
-            @test size(sb0g) == size(sb0c)
-            @test maximum(abs, Array(sb0g) .- sb0c) < 1.0f-5
-            @test maximum(abs, Array(sb1g) .- sb1c) < 1.0f-5
-            recg = qfb_reconstruct(sb0g, sb1g, qfp; dir = dir)
-            @test maximum(abs, Array(recg) .- recc) < 1.0f-5
-            qfp === qfp_wrap && @test maximum(abs, Array(recg) .- x) < 1.0f-5
-        end
     end
 end
 

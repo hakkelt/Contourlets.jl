@@ -243,7 +243,7 @@ The CT couples `J` LP levels with one DFB per bandpass:
 coarse ← image
 for j = 1 … J:
     coarse_j, bandpass_j = LP(coarse, h, g)
-    subbands[j]          = DFB(bandpass_j, L_array[j], h_q, g_q)
+    subbands[j]          = DFB(bandpass_j, L_array[j], Q2345)
     coarse               = coarse_j
 ```
 

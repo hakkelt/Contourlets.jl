@@ -44,4 +44,4 @@ julia --project=test test/runtests.jl :gpu,:ct
 - **Forgot `_scratch_like`**: using `zeros(T, m, n)` silently creates a CPU buffer; the kernel then fails with a type mismatch.
 - **Index-vector gather**: `A[[2:end; 1], :]` triggers scalar indexing on JLArrays — replace with `circshift!`.
 - **Filter on wrong device**: pass `_ensure_gpu(backend, h)` before the kernel; raw CPU vectors error on JLArrays.
-- **QFB ladder path**: `qfb_decompose` does not yet support ladder-mode (`Q2345`) filters on GPU — it throws `ArgumentError`. Tests should use modulation-mode pairs or the DFB path (which handles ladder via the CPU `_ladder_modulate`).
+- **QFB on GPU**: `qfb_decompose` / `qfb_reconstruct` have no device kernels — they throw `ArgumentError` for device arrays. Test the directional stage through the DFB/NSDFB, which run on the device as FFT banks.

@@ -33,9 +33,9 @@ struct ContourletWorkspace{Td <: Number, Tf <: AbstractFloat, M <: AbstractMatri
     # Size of the bandpass image at each pyramid level.
     bp_dims::Vector{Tuple{Int, Int}}
 
-    # CT: per-level DFB runner (equivalent filters, FFT buffers and plans) for the
-    # ladder DFB; `nothing` at levels without a directional split, and empty for an
-    # NSCT workspace or a modulation-mode filter pair.
+    # CT: per-level DFB runner (equivalent filters, FFT buffers and plans);
+    # `nothing` at levels without a directional split, and empty for an NSCT
+    # workspace.
     dfb_runners::R
 
     # NSCT: per-level NSDFB bank (zero-phase equivalent filters, cropped to the
@@ -104,12 +104,12 @@ end
 # Per-level DFB runners of a CT workspace (`nothing` where a level is not split).
 function _dfb_level_runners(ref::AbstractMatrix, p::ContourletParams, bp_dims, ::Type{Tf}) where {Tf}
     R = Union{Nothing, _runner_type(ref, Tf)}
-    is_ladder(p.dfb_filters) || return R[]
     flags = ref isa Array ? FFTW.MEASURE : FFTW.ESTIMATE
+    pool = _runner_pool(ref, Tf)     # the levels run one after another
     return R[
         l > 0 ? _bank_runner(
                 _adapt_bank(ref, _directional_bank(Tf, dims, l, p.dfb_filters.f_ladder; decimated = true)),
-                ref; flags = flags
+                ref; flags = flags, pool = pool
             ) : nothing
             for (l, dims) in zip(p.L_array, bp_dims)
     ]
@@ -247,9 +247,6 @@ function make_nsct_workspace(
     banks = Dict{NTuple{2, Int}, _bank_type(ref, Tf)}()
     for (l, m) in unique(keys_j)
         l > 0 || continue
-        is_ladder(p2.dfb_filters) || throw(
-            ArgumentError("the NSDFB is built from the ladder of a ladder QuincunxFilterPair such as Q2345")
-        )
         banks[(l, m)] = _adapt_bank(
             ref, _directional_bank(
                 Tf, image_size, l, p2.dfb_filters.f_ladder;
@@ -274,36 +271,4 @@ function make_nsct_workspace(
     )
     prewarm && _prewarm_nsct!(ws; threading = threading)
     return ws
-end
-
-"""
-    estimate_workspace_size(params::ContourletParams, image_size;
-                            nonsubsampled=false) -> Int
-
-Return the total number of floating-point elements across all workspace buffers
-(useful for memory planning before allocation).  Pass `nonsubsampled=true` for
-workspaces created with [`make_nsct_workspace`](@ref), whose per-level buffers
-all have the full image size.
-"""
-function estimate_workspace_size(
-        params::ContourletParams,
-        image_size::Tuple{Int, Int};
-        nonsubsampled::Bool = false
-    )::Int
-    J = params.J
-    n1, n2 = image_size
-    total = 0
-    if nonsubsampled
-        total += 4 * J * n1 * n2          # coarse_j + bp_j + tmp_j + tmp2_j, full size each level
-    else
-        c1, c2 = n1, n2
-        for j in 1:J
-            d1, d2 = cld(c1, 2), cld(c2, 2)
-            total += d1 * d2    # coarse buf
-            total += c1 * c2    # bp buf
-            c1, c2 = d1, d2
-        end
-    end
-    total += 3 * n1 * n2    # tmp_buf + tmp_buf2 + current
-    return total
 end

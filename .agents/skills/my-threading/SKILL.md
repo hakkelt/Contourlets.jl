@@ -20,12 +20,12 @@ mutually exclusive. `Polyester`'s near-zero spawn overhead makes multi-core
 ## Public API
 
 ```julia
-# All top-level transforms accept a threading kwarg:
-ct_forward(image, params; threading=Auto())     # default
-ct_forward(image, params; threading=Enabled())  # force multi-core
-ct_forward(image, params; threading=Disabled()) # force single-thread
+# The transforms that thread (NSCT, TICT, STICT) accept a threading kwarg:
+nsct_forward(image, params; threading=Auto())     # default
+nsct_forward(image, params; threading=Enabled())  # force multi-core
+nsct_forward(image, params; threading=Disabled()) # force single-thread
 
-# Same for ct_inverse!, nsct_forward!, etc.
+# Same for nsct_inverse!, tict_forward!, etc.  The CT takes no threading kwarg.
 ```
 
 `ThreadingPolicy` types are exported: `Auto`, `Enabled`, `Disabled`.

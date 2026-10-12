@@ -37,12 +37,6 @@
 # Coset representatives k_c of M = 2I, in (row, column) order.
 const _TILP_SHIFTS = ((0, 0), (1, 0), (0, 1), (1, 1))
 
-# DTFT of a filter whose centre tap sits at `(length + 1) ÷ 2`.
-function _centred_dtft(f::AbstractVector, θ::Float64)
-    c = (length(f) + 1) ÷ 2
-    return sum(f[l] * cis(-θ * (l - c)) for l in eachindex(f))
-end
-
 # Per-axis factors of one level at frequencies θ: the 1-D filters and the 1-D
 # polyphase factors ½ Σ_a e^{±j(θ+a)k} f(θ+a) of the coset shift k ∈ {0, 1}.
 function _tilp_axis(fp::FilterPair, θ::Float64)

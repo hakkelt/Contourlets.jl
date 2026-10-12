@@ -31,19 +31,12 @@
 # its application to image denoising", IEEE TIP 15(11), 2006, pp. 3362–3374.
 #
 # This file holds what the two share: the half tree of each channel, the
-# parameter / input / element-type checks, the coefficient containers and the
+# input / element-type checks, the coefficient containers and the
 # workspace helpers of the allocating forms.  The TICT is in `tict.jl`, the STICT
 # in `stict.jl`.
 
 # Half tree of each TILP channel (see above).
 const _TILP_HALVES = (:both, :second, :first, :both)
-
-function _check_tict_params(p::ContourletParams)
-    any(>(0), p.L_array) && !is_ladder(p.dfb_filters) && throw(
-        ArgumentError("the TICT and STICT need a ladder QuincunxFilterPair such as Q2345")
-    )
-    return p
-end
 
 _tict_types(params::ContourletParams{Tp}, T::Type) where {Tp} = (Td = promote_type(Tp, T); (Td, _filter_eltype(Td)))
 

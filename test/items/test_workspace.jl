@@ -27,25 +27,6 @@ end
     @test maximum(abs, c1.subbands[1][1] .- c2.subbands[1][1]) < 1.0e-12
 end
 
-@testitem "estimate_workspace_size" tags = [:ct, :nsct] begin
-    p = ContourletParams(J = 2, L_array = [2, 3])
-    n = estimate_workspace_size(p, (32, 32))
-    @test n isa Int
-    @test n > 0
-    # Analytical: coarse1=256, coarse2=64, bp1=1024, bp2=256, + 3*1024 = 4672
-    @test n == 4672
-
-    n_ns = estimate_workspace_size(p, (32, 32); nonsubsampled = true)
-    @test n_ns isa Int
-    @test n_ns > 0
-    # Analytical: 4 bufs/level * 2 levels * 1024 + 3*1024 = 8192 + 3072 = 11264
-    @test n_ns == 11264
-    # Estimate must be ≥ actual scratch arena size after a warm forward pass
-    ws = make_nsct_workspace(p, (32, 32))
-    actual = length(ws.fwd_scratch.bufs) * 32 * 32
-    @test n_ns >= actual
-end
-
 @testitem "make_workspace params (type-first positional API)" tags = [:ct] begin
     p = ContourletParams(J = 2, L_array = [1, 2])
     # Float64 params + Float32 request → promotes to Float64
@@ -182,9 +163,8 @@ end
 end
 
 @testitem "make_workspace return type is concrete (no Union)" tags = [:ct] begin
-    # `make_workspace`'s inferred return type must stay a single concrete type across
-    # ladder and non-ladder filter pairs, never a `Union` of two `ContourletWorkspace{...}`
-    # instantiations — a Union return type is invisible to `@test_call`/`@test_opt` run
+    # `make_workspace`'s inferred return type must stay a single concrete type, never a
+    # `Union` of two `ContourletWorkspace{...}` instantiations — a Union return type is invisible to `@test_call`/`@test_opt` run
     # against `make_workspace` alone, but poisons any downstream package that builds a type
     # parameter from `typeof(make_workspace(...))` (e.g. AbstractOperators.jl's
     # ContourletOperators subpackage does `ContourletOp{...,typeof(workspace),...}`),
@@ -193,32 +173,6 @@ end
     rt = Base.return_types(make_workspace, (typeof(p), Tuple{Int, Int}))
     @test length(rt) == 1
     @test isconcretetype(only(rt))
-end
-
-@testitem "make_workspace with non-ladder (modulation-mode) filter pair" tags = [:ct] begin
-    using Random
-    Random.seed!(44)
-    # Modulation-mode (non-ladder) filter pair: the 4-arg QuincunxFilterPair constructor
-    # used throughout the test suite (e.g. test_filters.jl, test_dfb.jl) for the Haar pair.
-    haar = QuincunxFilterPair([0.5 0.5], [1.0 1.0], (1, 1), (1, 2))
-    @test !Contourlets.is_ladder(haar)
-    p = ContourletParams(J = 1, L_array = [1], dfb_filters = haar)
-
-    ws = make_workspace(p, (16, 16))
-    # No ladder, no DFB runners — but the same workspace type as a ladder pair gets,
-    # so `make_workspace`'s return type stays stable across filter modes.
-    @test isempty(ws.dfb_runners)
-    @test typeof(ws) == typeof(make_workspace(ContourletParams(J = 1, L_array = [1]), (16, 16)))
-
-    x = randn(16, 16)
-    coeffs = similar_coefficients(p, (16, 16))
-    rec = similar(x)
-    ct_forward!(coeffs, x, p; workspace = ws)
-    ct_inverse!(rec, coeffs, p; workspace = ws)
-    @test maximum(abs, rec .- x) < 1.0e-10
-
-    ref = ct_forward(x, p)
-    @test maximum(abs, coeffs.coarse .- ref.coarse) < 1.0e-10
 end
 
 @testitem "_with_filter_cache sets and restores the task-local cache" tags = [:ct] begin

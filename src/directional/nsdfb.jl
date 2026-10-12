@@ -43,7 +43,7 @@ _nsdfb_upsampling(tree_level::Int) = max(0, tree_level - 2)
 #
 # A workspace passes `measured = true`: host plans are then measured and
 # single-threaded, because the workspace threads over its independent subband FFTs
-# instead (`_foreach_chunk`), which at these sizes scales far better than FFTW's
+# instead (`_batch_chunks`), which at these sizes scales far better than FFTW's
 # threads splitting one FFT.
 function _ns_plans(x::AbstractMatrix; measured::Bool = false)
     X = _ns_spectrum(x)
@@ -66,9 +66,6 @@ _ns_plan_pair(x::AbstractMatrix, X; kwargs...) = (plan_fft(x; kwargs...), plan_i
 function _nsdfb_bank(
         img::AbstractMatrix, l::Int, qfp::QuincunxFilterPair, tree_level::Int, half::Symbol, ::Type{Tf}
     ) where {Tf}
-    is_ladder(qfp) || throw(
-        ArgumentError("the NSDFB is built from the ladder of a ladder QuincunxFilterPair such as Q2345")
-    )
     bank = _directional_bank(
         Tf, size(img), l, qfp.f_ladder;
         decimated = false, half = half, real_data = eltype(img) <: Real,
@@ -78,7 +75,7 @@ function _nsdfb_bank(
 end
 
 """
-    nsdfb_decompose(bandpass, l_levels, qfp, tree_level=1; half=:both, threading=Auto())
+    nsdfb_decompose(bandpass, l_levels, qfp, tree_level=1; half=:both)
         -> Vector{Matrix}
 
 Nonsubsampled DFB analysis.  Returns `2^l_levels` directional subbands, each the
@@ -113,8 +110,7 @@ julia> length(sbs), size(sbs[1]) == size(x)
 function nsdfb_decompose(
         bandpass::AbstractMatrix, l_levels::Int,
         qfp::QuincunxFilterPair, tree_level::Int = 1;
-        half::Symbol = :both,
-        threading::ThreadingPolicy = Auto()
+        half::Symbol = :both
     )
     l_levels >= 0 || throw(ArgumentError("l_levels must be ≥ 0"))
     tree_level >= 1 || throw(ArgumentError("tree_level must be ≥ 1"))
@@ -134,7 +130,7 @@ function nsdfb_decompose(
 end
 
 """
-    nsdfb_reconstruct(subbands, qfp, tree_level=1; half=:both, threading=Auto()) -> bandpass
+    nsdfb_reconstruct(subbands, qfp, tree_level=1; half=:both) -> bandpass
 
 Nonsubsampled DFB synthesis (inverse of [`nsdfb_decompose`](@ref)).  Pass the
 same `tree_level` and `half` as the analysis; the tree depth is inferred from
@@ -157,8 +153,7 @@ true
 function nsdfb_reconstruct(
         subbands::Vector{<:AbstractMatrix},
         qfp::QuincunxFilterPair, tree_level::Int = 1;
-        half::Symbol = :both,
-        threading::ThreadingPolicy = Auto()
+        half::Symbol = :both
     )
     tree_level >= 1 || throw(ArgumentError("tree_level must be ≥ 1"))
     _check_half(half)

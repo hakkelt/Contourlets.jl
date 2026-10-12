@@ -197,16 +197,6 @@ end
     @test Contourlets._use_threading(Auto(), ComplexF32) === true
 end
 
-@testitem "CT with threading=Enabled() and Real data" tags = [:ct] begin
-    using Random
-    Random.seed!(90)
-    x = randn(32, 32)
-    p = ContourletParams(J = 2, L_array = [2, 3])
-    c = ct_forward(x, p; threading = Enabled())
-    rec = ct_inverse(c, p; threading = Enabled())
-    @test maximum(abs, rec .- x) < 1.0e-12
-end
-
 @testitem "NSCT with threading=Enabled() and Real data" tags = [:nsct] begin
     using Random
     Random.seed!(91)

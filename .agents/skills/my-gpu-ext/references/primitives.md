@@ -20,7 +20,7 @@ CPU methods use `AbstractMatrix`; GPU overloads use `_AbstractGPUMatrix`. Julia 
 | `rect_downsample!` | `dst, src` | `_rect_downsample_kernel!` |
 | `rect_upsample!` | `dst, src` | `_rect_upsample_kernel!` |
 | `qx_downsample!` / `qx_upsample!` | `dst, src` | `_qx_downsample/upsample_kernel!` |
-| `qfb_decompose` / `qfb_reconstruct` | `image, qfp; dir` | `_qfb_{col,row}_{decompose,reconstruct}_kernel_gpu!` |
+| `qfb_decompose` / `qfb_reconstruct` | `image, qfp; dir` | none — throws `ArgumentError` (`qfb_gpu.jl`) |
 
 ## Adding a New Primitive Overload
 

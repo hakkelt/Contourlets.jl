@@ -65,7 +65,6 @@ make_tict_workspace
 make_stict_workspace
 similar_tict_coefficients
 similar_stict_coefficients
-estimate_workspace_size
 ```
 
 ## Pyramid

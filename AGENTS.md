@@ -49,8 +49,10 @@ packages share only the pyramid filter machinery.
 
 The shared surface with the core is small and explicit: `FilterPair`, `CDF97`,
 `upsample_filter`, the threading policy types, and the internals `_data_eltype`,
-`_filter_eltype`, `_use_threading`, `_n_fft_tasks`, `_chunk`, `_clamp_idx`,
-`_nsp_atrous_filters`. All are re-exported (public names) or imported (internals)
+`_filter_eltype`, `_use_threading`, the threaded FFT loop (`_n_tasks`, `_chunk`,
+`_chunked_sum!`), `_clamp_idx`, `_nsp_atrous_filters`, and the
+pyramid's frequency responses (`_nsp_responses`, `_centred_dtft`). All are
+re-exported (public names) or imported (internals)
 in `src/Contourlets.jl`.
 
 **First checkout**: `MultiscaleFilterBanks.jl` is unregistered and expected as a
@@ -103,12 +105,12 @@ Contourlets/
 │   ├── Contourlets.jl         # Main module — all exports here
 │   ├── precompile.jl          # PrecompileTools workload
 │   ├── types/
-│   │   ├── quincunx_filter_pair.jl # QuincunxFilterPair, is_ladder
+│   │   ├── quincunx_filter_pair.jl # QuincunxFilterPair (the ladder filter β)
 │   │   ├── params.jl          # ContourletParams, parabolic_levels
 │   │   └── coefficients.jl    # ContourletCoefficients, NSCTCoefficients, TICTCoefficients
 │   ├── workspace/
 │   │   ├── scratch_arena.jl   # ScratchArena + task-local arena/filter cache, _scratch_like
-│   │   ├── fft_tasks.jl       # threaded subband loop of the DFT-mask workspaces
+│   │   ├── fft_tasks.jl       # @batch runner of the threaded subband loop
 │   │   └── contourlet_workspace.jl # ContourletWorkspace, make_workspace, make_nsct_workspace
 │   ├── filters/
 │   │   ├── q2345.jl           # "23-45" Phoong (pkva) ladder DFB filter constants
@@ -141,7 +143,7 @@ Contourlets/
 │   ├── ContourletsGPUExt/
 │   │   ├── utils_gpu.jl       # backend lookup, host→device transfer
 │   │   ├── primitives_gpu.jl  # conv2d_sep!, shear, rect/quincunx sampling kernels
-│   │   ├── qfb_gpu.jl         # quincunx filter bank kernels, qfb_decompose/reconstruct
+│   │   ├── qfb_gpu.jl         # qfb_decompose/reconstruct: reject device arrays (no kernels)
 │   │   └── transforms_gpu.jl  # CT/NSCT entry points, Adapt for coefficient sets
 │   └── ContourletsCUDAExt.jl  # CUDA graph capture for the workspace paths
 ├── test/
@@ -180,8 +182,9 @@ Contourlets/
 Conventions that are non-obvious or specific to this package's API contract:
 
 - **Filter storage.** `FilterPair{T}` stores `h` (analysis) and `g` (synthesis)
-  as `Vector{T}`. `QuincunxFilterPair{T}` stores `h_q`, `g_q` as `Matrix{T}`
-  (1×N by convention). Filter constants are defined once in `src/filters/` and
+  as `Vector{T}`. `QuincunxFilterPair{T}` stores only the 1-D ladder filter
+  `f_ladder::Vector{T}` (Phoong's β, unmodulated); every directional filter is
+  derived from it. Filter constants are defined once in `src/filters/` and
   referenced by value — never rebuild filter arrays inside hot loops.
 - **Element types: real filters, real-or-complex data.** `FilterPair` and the
   `_data_eltype`/`_filter_eltype` helpers come from MultiscaleFilterBanks.
@@ -197,11 +200,13 @@ Conventions that are non-obvious or specific to this package's API contract:
   `T(x) + i·T(y)` bit-for-bit — a useful correctness invariant. The FFTW conv
   backend is real-only; complex data routes through the direct backend.
 - **In-place companions.** The top-level transforms follow the convention that
-  `f!(dst, args..., params; workspace=nothing, threading=Auto())` writes into
-  `dst`, and `f(args..., params; workspace=nothing, threading=Auto())` allocates
-  and returns the result — the **only** difference is whether the caller supplies
-  the output container.  Both variants accept the same optional `workspace` kwarg
-  for reusing scratch buffers; pass a `ContourletWorkspace` from
+  `f!(dst, args..., params; workspace=nothing)` writes into `dst`, and
+  `f(args..., params; workspace=nothing)` allocates and returns the result — the
+  **only** difference is whether the caller supplies the output container.  The
+  transforms that thread (NSCT, TICT) also take `threading=Auto()` on both
+  variants; the CT and the STICT have nothing to thread and take no `threading`
+  keyword.  Both
+  variants accept the same optional `workspace` kwarg for reusing scratch buffers; pass a `ContourletWorkspace` from
   `make_workspace`/`make_nsct_workspace` to eliminate per-call allocation in the
   pyramid stage.  Do not allocate inside the `_ct_forward_ws!` /
   `_ct_inverse_ws!` / `_nsct_forward_ws!` / `_nsct_inverse_ws!` workspace paths.
@@ -330,11 +335,14 @@ output.
   the `julia-gpu-ext` skill before touching any file under `ext/`.
 - **Hybrid Threading Architecture** — real data (`Float32`/`Float64`) uses
   `LoopVectorization.@turbo` (SIMD, single thread); complex data uses
-  `Polyester.@batch` (multi-core, near-zero spawn overhead). Public API exposes
-  `threading::ThreadingPolicy` kwargs: `Auto` (default), `Enabled`, `Disabled`.
+  `Polyester.@batch` (multi-core, near-zero spawn overhead). The NSCT and
+  TICT transforms (and `conv2d`) expose `threading::ThreadingPolicy` kwargs:
+  `Auto` (default), `Enabled`, `Disabled`; the CT and STICT do not.
   `Auto` enables threading for complex types only. Load the `julia-threading` skill
   before adding or modifying threaded loops.  The FFT-bound workspace paths
-  (NSCT, TICT) thread differently: one `@batch` task per thread runs a
+  (NSCT, TICT) thread differently: one `@batch` task per thread
+  (`_batch_chunks`, with MultiscaleFilterBanks' `_chunk`/`_chunked_sum!`; Polyester
+  because `Threads.@threads` allocates ~4.5 KB per call) runs a
   contiguous chunk of the independent subband FFTs with its own buffer (and,
   for the inverse, its own partial sum).  FFTW's own threads split one FFT and
   gain ~nothing at 256²; this gains ~3.5× on 4 threads.  Plans stay

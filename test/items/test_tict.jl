@@ -126,7 +126,7 @@ end
         out = similar(x)
         run(th) = (
             tict_forward!(ct, x, p; workspace = wt, threading = th); tict_inverse!(out, ct, p; workspace = wt, threading = th);
-            stict_forward!(cs, x, p; workspace = ws, threading = th); stict_inverse!(out, cs, p; workspace = ws, threading = th)
+            stict_forward!(cs, x, p; workspace = ws); stict_inverse!(out, cs, p; workspace = ws)
         )
         run(Disabled())
         @test (@allocated run(Disabled())) == 0
@@ -154,7 +154,5 @@ end
     @test_throws ArgumentError tict_inverse!(zeros(Float32, 32, 32), tict_forward(zeros(32, 32), p), p; workspace = ws)
     sws = make_stict_workspace(p, (32, 32))
     @test_throws ArgumentError stict_inverse(similar_stict_coefficients(p, (32, 32); Td = Float32), p; workspace = sws)
-    haar = QuincunxFilterPair([0.5 0.5], [1.0 1.0], (1, 1), (1, 2))
-    @test_throws ArgumentError tict_forward(zeros(32, 32), ContourletParams(J = 1, L_array = [2], dfb_filters = haar))
     @test_throws ArgumentError stict_forward(zeros(20, 20), ContourletParams(J = 1, L_array = [4]))
 end

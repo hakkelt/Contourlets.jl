@@ -237,8 +237,8 @@ The `!` and non-`!` entry points take identical arguments; the only difference
 is the leading destination. [`make_workspace`](@ref) (CT) and
 [`make_nsct_workspace`](@ref) (NSCT) build the scratch,
 [`similar_coefficients`](@ref) / [`similar_nsct_coefficients`](@ref) the
-coefficient container, and [`estimate_workspace_size`](@ref) reports the
-footprint before you commit to it.
+coefficient container, and `Base.summarysize(ws)` reports a workspace's
+actual memory footprint.
 
 ```@example guide2d
 ws         = make_nsct_workspace(ns_params, size(img))   # prewarm = true by default

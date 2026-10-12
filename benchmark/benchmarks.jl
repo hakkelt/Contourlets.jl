@@ -145,10 +145,7 @@ for sz in TEST_SIZES
             p_ct_gpu = ContourletParams(
                 J = 3, L_array = [2, 3, 4],
                 lp_filters = FilterPair{Tf}(Tf.(CDF97.h), Tf.(CDF97.g)),
-                dfb_filters = QuincunxFilterPair{Tf}(
-                    Tf.(Q2345.h_q), Tf.(Q2345.g_q),
-                    Q2345.c_h, Q2345.c_g, Tf.(Q2345.f_ladder)
-                )
+                dfb_filters = QuincunxFilterPair{Tf}(Tf.(Q2345.f_ladder))
             )
             ws_ct_gpu = make_workspace(img_gpu, p_ct_gpu)
             coeffs_ct_gpu_alloc = similar_coefficients(p_ct_gpu, (sz, sz); Td = T, M = typeof(img_gpu))
@@ -177,10 +174,7 @@ for sz in TEST_SIZES
             p_nsct_gpu = ContourletParams(
                 J = 3, L_array = [2, 3, 4],
                 lp_filters = FilterPair{Tf}(Tf.(CDF97.h), Tf.(CDF97.g)),
-                dfb_filters = QuincunxFilterPair{Tf}(
-                    Tf.(Q2345.h_q), Tf.(Q2345.g_q),
-                    Q2345.c_h, Q2345.c_g, Tf.(Q2345.f_ladder)
-                )
+                dfb_filters = QuincunxFilterPair{Tf}(Tf.(Q2345.f_ladder))
             )
             ws_nsct_gpu = make_nsct_workspace(img_gpu, p_nsct_gpu)
             coeffs_nsct_gpu_alloc = similar_nsct_coefficients(p_nsct_gpu, (sz, sz); Td = T, M = typeof(img_gpu))

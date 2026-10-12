@@ -36,18 +36,17 @@ module ContourletsCUDAExt
 # (The volume transforms, now in Surfacelets.jl, are deliberately not captured:
 # they are a few full-volume FFTs, and their streaming callbacks run host code.)
 
-using Contourlets: Contourlets, ContourletWorkspace, ContourletCoefficients, ThreadingPolicy, Auto
+using Contourlets: Contourlets, ContourletWorkspace, ContourletCoefficients
 using CUDA: CUDA
 
 function Contourlets._ct_forward_ws!(
         coeffs::ContourletCoefficients{T},
         image::AbstractMatrix,
-        ws::ContourletWorkspace{T, Tf, M};
-        threading::ThreadingPolicy = Auto()
+        ws::ContourletWorkspace{T, Tf, M}
     ) where {T, Tf <: AbstractFloat, M <: CUDA.CuMatrix{T}}
     # Only capture when the image is device-resident (same stream domain).
     if !(image isa CUDA.CuArray)
-        Contourlets._ct_forward_inner!(coeffs, image, ws; threading = threading)
+        Contourlets._ct_forward_inner!(coeffs, image, ws)
         return coeffs
     end
 
@@ -63,7 +62,7 @@ function Contourlets._ct_forward_ws!(
 
     # Miss: warm the arena then capture.
     # Pass 1 — eager execution; warms the ScratchArena and writes a valid result.
-    Contourlets._ct_forward_inner!(coeffs, image, ws; threading = threading)
+    Contourlets._ct_forward_inner!(coeffs, image, ws)
 
     # Pre-build device LP filter vectors OUTSIDE CUDA.capture().  These are
     # regular pool allocations; passing them via _with_filter_cache means
@@ -79,7 +78,7 @@ function Contourlets._ct_forward_ws!(
     Contourlets._arena_reset!(ws.fwd_scratch)
     graph = CUDA.capture() do
         Contourlets._with_filter_cache(filter_cache) do
-            Contourlets._ct_forward_inner!(coeffs, image, ws; threading = threading)
+            Contourlets._ct_forward_inner!(coeffs, image, ws)
         end
     end
     exec = CUDA.instantiate(graph)
@@ -92,11 +91,10 @@ end
 function Contourlets._ct_inverse_ws!(
         image::AbstractMatrix{T},
         coeffs::ContourletCoefficients{T},
-        ws::ContourletWorkspace{T, Tf, M};
-        threading::ThreadingPolicy = Auto()
+        ws::ContourletWorkspace{T, Tf, M}
     ) where {T, Tf <: AbstractFloat, M <: CUDA.CuMatrix{T}}
     if !(image isa CUDA.CuArray)
-        Contourlets._ct_inverse_inner!(image, coeffs, ws; threading = threading)
+        Contourlets._ct_inverse_inner!(image, coeffs, ws)
         return image
     end
 
@@ -110,7 +108,7 @@ function Contourlets._ct_inverse_ws!(
     end
 
     # Pass 1 — eager execution; warms the ScratchArena and writes a valid result.
-    Contourlets._ct_inverse_inner!(image, coeffs, ws; threading = threading)
+    Contourlets._ct_inverse_inner!(image, coeffs, ws)
 
     fp = ws.params.lp_filters
     h_d = CUDA.cu(Tf.(fp.h))
@@ -121,7 +119,7 @@ function Contourlets._ct_inverse_ws!(
     Contourlets._arena_reset!(ws.inv_scratch)
     graph = CUDA.capture() do
         Contourlets._with_filter_cache(filter_cache) do
-            Contourlets._ct_inverse_inner!(image, coeffs, ws; threading = threading)
+            Contourlets._ct_inverse_inner!(image, coeffs, ws)
         end
     end
     exec = CUDA.instantiate(graph)

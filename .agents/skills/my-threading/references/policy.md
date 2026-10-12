@@ -44,11 +44,11 @@ the compiler eliminates the dead branch entirely — zero runtime overhead.
 Always thread the `threading` kwarg through to inner calls that do hot work:
 
 ```julia
-function ct_forward!(coeffs, image, params; threading=Auto())
-    _ct_inner!(coeffs, image, params, threading)  # pass it down
+function nsct_forward!(coeffs, image, params; threading=Auto())
+    _nsct_inner!(coeffs, image, params, threading)  # pass it down
 end
 
-function _ct_inner!(coeffs, image, params, threading::ThreadingPolicy)
+function _nsct_inner!(coeffs, image, params, threading::ThreadingPolicy)
     conv2d_sep!(dst, src, h, g; threading=threading)  # propagate
     ...
 end

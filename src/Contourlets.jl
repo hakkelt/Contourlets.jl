@@ -42,8 +42,8 @@ using Polyester: @batch
 using MultiscaleFilterBanks: MultiscaleFilterBanks,
     FilterPair, CDF97, upsample_filter,
     ThreadingPolicy, Auto, Enabled, Disabled,
-    _data_eltype, _filter_eltype, _use_threading, _n_fft_tasks, _chunk, _clamp_idx,
-    _nsp_atrous_filters
+    _data_eltype, _filter_eltype, _use_threading, _n_tasks, _chunk, _chunked_sum!,
+    _clamp_idx, _nsp_atrous_filters, _nsp_responses, _centred_dtft
 
 # ── Types (must come before filters which use them) ──────────────────────────
 include("types/quincunx_filter_pair.jl")
@@ -129,7 +129,6 @@ export
     similar_tict_coefficients, similar_stict_coefficients,
 
     # Workspace
-    make_workspace, make_nsct_workspace, make_tict_workspace, make_stict_workspace,
-    estimate_workspace_size
+    make_workspace, make_nsct_workspace, make_tict_workspace, make_stict_workspace
 
 end # module

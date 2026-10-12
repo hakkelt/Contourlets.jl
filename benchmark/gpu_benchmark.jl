@@ -75,10 +75,7 @@ for n in SIZES
     p = ContourletParams(
         J = 3, L_array = parabolic_levels(3),
         lp_filters = FilterPair{Float32}(Float32.(CDF97.h), Float32.(CDF97.g)),
-        dfb_filters = QuincunxFilterPair{Float32}(
-            Float32.(Q2345.h_q), Float32.(Q2345.g_q),
-            Q2345.c_h, Q2345.c_g, Float32.(Q2345.f_ladder)
-        )
+        dfb_filters = QuincunxFilterPair{Float32}(Float32.(Q2345.f_ladder))
     )
 
     ws_cpu = make_workspace(x, p)
@@ -97,10 +94,7 @@ for n in SIZES
     p = ContourletParams(
         J = 3, L_array = parabolic_levels(3),
         lp_filters = FilterPair{Float32}(Float32.(CDF97.h), Float32.(CDF97.g)),
-        dfb_filters = QuincunxFilterPair{Float32}(
-            Float32.(Q2345.h_q), Float32.(Q2345.g_q),
-            Q2345.c_h, Q2345.c_g, Float32.(Q2345.f_ladder)
-        )
+        dfb_filters = QuincunxFilterPair{Float32}(Float32.(Q2345.f_ladder))
     )
 
     ws_cpu = make_workspace(x, p)
@@ -131,10 +125,7 @@ for n in SIZES
     p = ContourletParams(
         J = 2, L_array = [2, 3],
         lp_filters = FilterPair{Float32}(Float32.(CDF97.h), Float32.(CDF97.g)),
-        dfb_filters = QuincunxFilterPair{Float32}(
-            Float32.(Q2345.h_q), Float32.(Q2345.g_q),
-            Q2345.c_h, Q2345.c_g, Float32.(Q2345.f_ladder)
-        )
+        dfb_filters = QuincunxFilterPair{Float32}(Float32.(Q2345.f_ladder))
     )
 
     ws_cpu = make_nsct_workspace(x, p)
@@ -153,10 +144,7 @@ for n in SIZES
     p = ContourletParams(
         J = 2, L_array = [2, 3],
         lp_filters = FilterPair{Float32}(Float32.(CDF97.h), Float32.(CDF97.g)),
-        dfb_filters = QuincunxFilterPair{Float32}(
-            Float32.(Q2345.h_q), Float32.(Q2345.g_q),
-            Q2345.c_h, Q2345.c_g, Float32.(Q2345.f_ladder)
-        )
+        dfb_filters = QuincunxFilterPair{Float32}(Float32.(Q2345.f_ladder))
     )
 
     ws_cpu = make_nsct_workspace(x, p)

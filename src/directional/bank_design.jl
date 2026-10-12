@@ -153,34 +153,42 @@ struct _BankChannel
     path::Vector{Int}          # fan digits t₁ t₂ … from the root
 end
 
-function _expand(ch::_BankChannel, t::_LadderTable, B::Matrix{Int}, Mchild::Matrix{Int}, fan_of_digit, p::Matrix{Float64})
-    _fan_argument!(p, t, B)
-    return map((0, 1)) do digit
-        f = fan_of_digit(digit)
-        δ = _FAN_DELAY[f + 1]
-        d = (ch.delay[1] + B[1, 1] * δ[1] + B[1, 2] * δ[2], ch.delay[2] + B[2, 1] * δ[1] + B[2, 2] * δ[2])
-        _BankChannel(
-            ch.ana .* _fan_analysis.(f, p), ch.syn .* _fan_synthesis.(f, p),
-            d, Mchild, [ch.path; digit]
-        )
-    end
-end
-
-# Grow the subtree under `ch` to depth `l` (thesis §3.3.1): level 2 is a quincunx
-# bank on Q₀ for every node; from level 3 a node reached through digit t is split by
-# the resampled bank of type t (first fan 0) or 2 + t (first fan 1), and in the even
-# types the fans swap places ("notice the ordering of frequency supports", Fig. 3.10).
-function _grow(ch::_BankChannel, t::_LadderTable, l::Int, p::Matrix{Float64})
+# Grow the subtree under `ch` to depth `l` (thesis §3.3.1), appending its leaves to
+# `leaves` in order: level 2 is a quincunx bank on Q₀ for every node; from level 3
+# a node reached through digit t is split by the resampled bank of type t (first
+# fan 0) or 2 + t (first fan 1), and in the even types the fans swap places
+# ("notice the ordering of frequency supports", Fig. 3.10).
+#
+# Only the leaves are kept: an inner node's amplitudes live in the scratch of its
+# depth (`ana[d]`, `syn[d]`, and its fan argument in `p[d]`), so a depth-l tree
+# allocates its 2^l leaves and l scratch levels, not all 2^(l+1) − 2 nodes.
+function _grow!(
+        leaves::Vector{_BankChannel}, ch::_BankChannel, t::_LadderTable, l::Int,
+        p::Vector{Matrix{Float64}}, ana::Vector{Matrix{Float64}}, syn::Vector{Matrix{Float64}}
+    )
     depth = length(ch.path)
-    depth == l && return [ch]
+    depth == l && return push!(leaves, ch)
     if depth == 1
-        kids = _expand(ch, t, _Q[1], [2 0; 0 2], identity, p)
+        B, Mchild = _Q[1], [2 0; 0 2]
+        fan_of_digit = identity
     else
         τ = ch.path[end] + 2 * ch.path[1]
         B, Mchild = _qfb_type(τ, ch.M)
-        kids = _expand(ch, t, B, Mchild, d -> iseven(τ) ? 1 - d : d, p)
+        fan_of_digit = d -> iseven(τ) ? 1 - d : d
     end
-    return vcat(_grow(kids[1], t, l, p), _grow(kids[2], t, l, p))
+    pd = _fan_argument!(p[depth], t, B)
+    for digit in (0, 1)
+        f = fan_of_digit(digit)
+        δ = _FAN_DELAY[f + 1]
+        d = (ch.delay[1] + B[1, 1] * δ[1] + B[1, 2] * δ[2], ch.delay[2] + B[2, 1] * δ[1] + B[2, 2] * δ[2])
+        leaf = depth + 1 == l
+        a = leaf ? similar(ch.ana) : ana[depth]
+        s = leaf ? similar(ch.syn) : syn[depth]
+        a .= ch.ana .* _fan_analysis.(f, pd)
+        s .= ch.syn .* _fan_synthesis.(f, pd)
+        _grow!(leaves, _BankChannel(a, s, d, Mchild, [ch.path; digit]), t, l, p, ana, syn)
+    end
+    return leaves
 end
 
 """
@@ -205,8 +213,11 @@ function _bank_channels(n1::Int, n2::Int, l::Int, f_ladder::AbstractVector; half
         _fan_analysis.(f, p), _fan_synthesis.(f, p), _FAN_DELAY[f + 1], _I2, [f]
     )
     fan1, fan0 = root(1), root(0)
-    split1 = half === :second ? [fan1] : _grow(fan1, t, l, p)
-    split0 = half === :first ? [fan0] : reverse!(_grow(fan0, t, l, p))
+    scratch() = [Matrix{Float64}(undef, n1, n2) for _ in 1:l]
+    ps, anas, syns = scratch(), scratch(), scratch()
+    grow(ch) = _grow!(_BankChannel[], ch, t, l, ps, anas, syns)
+    split1 = half === :second ? [fan1] : grow(fan1)
+    split0 = half === :first ? [fan0] : reverse!(grow(fan0))
     return vcat(split1, split0)
 end
 

@@ -1,21 +1,15 @@
 # l-level Directional Filter Bank (DFB).
 #
-# Two constructions are provided:
+# The DFB of Bamberger & Smith in the formulation of Do (2001, thesis §3.3) and
+# Do & Vetterli (2005), with the quincunx fan filters of Phoong et al. (1995)
+# (the default ladder pair is Q2345).  It is computed as the multichannel bank of
+# the thesis — each channel filters with its equivalent filter and downsamples by
+# a diagonal matrix — in the frequency domain (see `bank_design.jl`).  The 2ˡ
+# subbands tile the frequency plane into directional wedges, perfect
+# reconstruction is exact, and each subband is equivariant to circular shifts on
+# its own sampling lattice.
 #
-#  • Ladder filter pairs (the default, Q2345): the DFB of Bamberger & Smith in the
-#    formulation of Do (2001, thesis §3.3) and Do & Vetterli (2005), with the
-#    quincunx fan filters of Phoong et al. (1995).  It is computed as the
-#    multichannel bank of the thesis — each channel filters with its equivalent
-#    filter and downsamples by a diagonal matrix — in the frequency domain (see
-#    `bank_design.jl`).  The 2ˡ subbands tile the frequency plane into
-#    directional wedges, perfect reconstruction is exact, and each subband is
-#    equivariant to circular shifts on its own sampling lattice.
-#
-#  • Modulation-mode pairs (e.g. a user-supplied Haar pair): a simpler shear +
-#    1-D split tree.  It is perfect-reconstructing but only weakly directional; it
-#    is the only decimated DFB available for filter pairs that are not ladders.
-#
-# Subband sizes after l levels (input n₁ × n₂, ladder pairs):
+# Subband sizes after l levels (input n₁ × n₂):
 #   l=1: 2 subbands  n₁/2 × n₂      (quincunx lattice, stored column by column)
 #   l=2: 4 subbands  n₁/2 × n₂/2
 #   l≥3: 2^(l-1) subbands n₁/2^(l-1) × n₂/2, then 2^(l-1) subbands n₁/2 × n₂/2^(l-1)
@@ -57,17 +51,16 @@ end
 # ── Public API ────────────────────────────────────────────────────────────────
 
 """
-    dfb_decompose(bandpass, l_levels, qfp::QuincunxFilterPair; half=:both, threading=Auto())
+    dfb_decompose(bandpass, l_levels, qfp::QuincunxFilterPair; half=:both, workspace=nothing)
         -> Vector{Matrix}
 
 Decompose `bandpass` into `2^l_levels` directional subbands using an
 `l_levels`-deep DFB.
 
-For a ladder filter pair such as the default [`Q2345`](@ref) this is the directional
-filter bank of Do & Vetterli (2005): the subbands tile the frequency plane into
+This is the directional filter bank of Do & Vetterli (2005) built from the ladder
+pair `qfp` (default [`Q2345`](@ref)): the subbands tile the frequency plane into
 `2^l_levels` directional wedges.  Both image dimensions must be divisible by
-`2^max(l_levels - 1, 1)`.  For modulation-mode pairs a simpler shear-based tree is
-used (perfect-reconstructing but only weakly directional).
+`2^max(l_levels - 1, 1)`.
 
 `half = :first` or `:second` gives the half trees of Eslami & Radha (2006): only one
 of the two level-1 fans is split further, so there are `2^(l_levels-1) + 1`
@@ -91,8 +84,7 @@ function dfb_decompose(
         bandpass::AbstractMatrix, l_levels::Int,
         qfp::QuincunxFilterPair;
         half::Symbol = :both,
-        workspace = nothing,
-        threading::ThreadingPolicy = Auto()
+        workspace = nothing
     )
     l_levels >= 0 || throw(ArgumentError("l_levels must be ≥ 0"))
     _check_half(half)
@@ -100,54 +92,37 @@ function dfb_decompose(
     Td = _data_eltype(bandpass)      # data type (real or complex)
     Tf = _filter_eltype(Td)          # real filter precision
     img = Td === eltype(bandpass) ? bandpass : Td.(bandpass)
-    if is_ladder(qfp)
-        return _with_runner(workspace, img, l_levels, qfp, half, Tf) do r
-            _bank_analyze!([similar(img, s) for s in _subband_sizes(r.bank)], img, r)
-        end
+    return _with_runner(workspace, img, l_levels, qfp, half, Tf) do r
+        _bank_analyze!([similar(img, s) for s in _subband_sizes(r.bank)], img, r)
     end
-    half === :both || throw(ArgumentError("half trees need a ladder filter pair"))
-    return _dfb_split(img, l_levels, 1, _convert_qfp(Tf, qfp), _use_threading(threading, Td))
 end
 
 """
     dfb_decompose!(subbands::Vector{<:AbstractMatrix}, bandpass, l_levels, qfp::QuincunxFilterPair;
-                   half=:both, workspace=nothing, threading=Auto()) -> subbands
+                   half=:both, workspace=nothing) -> subbands
 
 In-place DFB analysis into preallocated `subbands` of the sizes
 [`dfb_subband_sizes`](@ref) gives.  A workspace from [`make_workspace`](@ref) whose
 image size and depth match supplies the precomputed filters and FFT buffers, so the
 call allocates nothing.
-
-**Keyword arguments:**
-- `threading::ThreadingPolicy`: Sets the threading strategy of the modulation-mode
-  tree. Defaults to `Auto()`, which uses SIMD (single-threaded) for Real arrays, and
-  `Polyester.@batch` (multithreaded) for Complex arrays.
 """
 function dfb_decompose!(
         subbands::Vector{<:AbstractMatrix}, bandpass::AbstractMatrix, l_levels::Int,
         qfp::QuincunxFilterPair;
         half::Symbol = :both,
-        workspace = nothing,
-        threading::ThreadingPolicy = Auto()
+        workspace = nothing
     )
     l_levels >= 0 || throw(ArgumentError("l_levels must be ≥ 0"))
     _check_half(half)
     length(subbands) == _bank_n_subbands(l_levels, half) ||
         throw(ArgumentError("subbands must hold $(_bank_n_subbands(l_levels, half)) matrices"))
     l_levels == 0 && return (copyto!(subbands[1], bandpass); subbands)
-    if is_ladder(qfp)
-        Tf = _filter_eltype(_data_eltype(bandpass))
-        return _with_runner(r -> _bank_analyze!(subbands, bandpass, r), workspace, bandpass, l_levels, qfp, half, Tf)
-    end
-    sbs = dfb_decompose(bandpass, l_levels, qfp; half = half, threading = threading)
-    for k in eachindex(sbs)
-        copyto!(subbands[k], sbs[k])
-    end
-    return subbands
+    Tf = _filter_eltype(_data_eltype(bandpass))
+    return _with_runner(r -> _bank_analyze!(subbands, bandpass, r), workspace, bandpass, l_levels, qfp, half, Tf)
 end
 
 """
-    dfb_reconstruct(subbands, qfp::QuincunxFilterPair; half=:both, threading=Auto()) -> bandpass
+    dfb_reconstruct(subbands, qfp::QuincunxFilterPair; half=:both, workspace=nothing) -> bandpass
 
 Reconstruct a bandpass image from its directional subbands (pass the same `half`
 as the analysis).
@@ -170,8 +145,7 @@ function dfb_reconstruct(
         subbands::Vector{<:AbstractMatrix},
         qfp::QuincunxFilterPair;
         half::Symbol = :both,
-        workspace = nothing,
-        threading::ThreadingPolicy = Auto()
+        workspace = nothing
     )
     n = length(subbands)
     n >= 1 || throw(ArgumentError("subbands must be non-empty"))
@@ -180,18 +154,14 @@ function dfb_reconstruct(
     l_levels = _dfb_levels_from_count(n, half)
     Td = _data_eltype(subbands[1])
     Tf = _filter_eltype(Td)
-    if is_ladder(qfp)
-        dims = _dfb_image_size(subbands, l_levels, half)
-        out = similar(subbands[1], Td, dims)
-        return _dfb_reconstruct_ladder!(out, subbands, l_levels, qfp, half, workspace, Tf)
-    end
-    half === :both || throw(ArgumentError("half trees need a ladder filter pair"))
-    return _dfb_merge(subbands, l_levels, 1, _convert_qfp(Tf, qfp), _use_threading(threading, Td))
+    dims = _dfb_image_size(subbands, l_levels, half)
+    out = similar(subbands[1], Td, dims)
+    return _dfb_reconstruct_bank!(out, subbands, l_levels, qfp, half, workspace, Tf)
 end
 
 """
     dfb_reconstruct!(bandpass::AbstractMatrix, subbands::Vector{<:AbstractMatrix}, qfp::QuincunxFilterPair;
-                     half=:both, workspace=nothing, threading=Auto()) -> bandpass
+                     half=:both, workspace=nothing) -> bandpass
 
 In-place DFB synthesis into `bandpass`.  A matching workspace from
 [`make_workspace`](@ref) makes the call allocation-free.
@@ -199,22 +169,17 @@ In-place DFB synthesis into `bandpass`.  A matching workspace from
 function dfb_reconstruct!(
         bandpass::AbstractMatrix, subbands::Vector{<:AbstractMatrix}, qfp::QuincunxFilterPair;
         half::Symbol = :both,
-        workspace = nothing,
-        threading::ThreadingPolicy = Auto()
+        workspace = nothing
     )
     _check_half(half)
     n = length(subbands)
     n == 1 && return copyto!(bandpass, subbands[1])
-    if is_ladder(qfp)
-        l_levels = _dfb_levels_from_count(n, half)
-        Tf = _filter_eltype(_data_eltype(bandpass))
-        return _dfb_reconstruct_ladder!(bandpass, subbands, l_levels, qfp, half, workspace, Tf)
-    end
-    copyto!(bandpass, dfb_reconstruct(subbands, qfp; half = half, threading = threading))
-    return bandpass
+    l_levels = _dfb_levels_from_count(n, half)
+    Tf = _filter_eltype(_data_eltype(bandpass))
+    return _dfb_reconstruct_bank!(bandpass, subbands, l_levels, qfp, half, workspace, Tf)
 end
 
-function _dfb_reconstruct_ladder!(out, subbands, l_levels, qfp, half, workspace, ::Type{Tf}) where {Tf}
+function _dfb_reconstruct_bank!(out, subbands, l_levels, qfp, half, workspace, ::Type{Tf}) where {Tf}
     return _with_runner(r -> _bank_synthesize!(out, subbands, r), workspace, out, l_levels, qfp, half, Tf)
 end
 
@@ -238,23 +203,17 @@ function _dfb_image_size(subbands, l::Int, half::Symbol)
 end
 
 """
-    dfb_subband_sizes(n1, n2, l; ladder=true, half=:both) -> Vector{Tuple{Int,Int}}
+    dfb_subband_sizes(n1, n2, l; half=:both) -> Vector{Tuple{Int,Int}}
 
 Per-subband `(rows, cols)` sizes produced by an `l`-level DFB applied to an
-`n1 × n2` bandpass image.  For the ladder (default) DFB with `l ≥ 2` the first
-`2^(l-1)` subbands are `n1/2^(l-1) × n2/2` and the remaining `2^(l-1)` are
-`n1/2 × n2/2^(l-1)`; with `l = 1` both are `n1/2 × n2` (the quincunx lattice).  A
-half tree (`half = :first`/`:second`) keeps the split fan's sizes and adds one
-`n1/2 × n2` quincunx subband for the unsplit fan.  For the modulation-mode DFB all
-subbands are equal-sized.
+`n1 × n2` bandpass image.  With `l ≥ 2` the first `2^(l-1)` subbands are
+`n1/2^(l-1) × n2/2` and the remaining `2^(l-1)` are `n1/2 × n2/2^(l-1)`; with
+`l = 1` both are `n1/2 × n2` (the quincunx lattice).  A half tree
+(`half = :first`/`:second`) keeps the split fan's sizes and adds one `n1/2 × n2`
+quincunx subband for the unsplit fan.
 """
-function dfb_subband_sizes(n1::Int, n2::Int, l::Int; ladder::Bool = true, half::Symbol = :both)
+function dfb_subband_sizes(n1::Int, n2::Int, l::Int; half::Symbol = :both)
     l <= 0 && return [(n1, n2)]
-    if !ladder
-        sub_n1 = n1 >> (l ÷ 2)
-        sub_n2 = n2 >> cld(l, 2)
-        return fill((sub_n1, sub_n2), 2^l)
-    end
     _check_half(half)
     q = (n1 >> 1, n2)
     l == 1 && return fill(q, 2)
@@ -264,54 +223,4 @@ function dfb_subband_sizes(n1::Int, n2::Int, l::Int; ladder::Bool = true, half::
     half === :first && return vcat(fill(first_sz, m), [q])
     half === :second && return vcat([q], fill(second_sz, m))
     return vcat(fill(first_sz, m), fill(second_sz, m))
-end
-
-# ── Modulation-mode shear path (modulation-mode pairs only) ───────────────────
-
-function _dfb_split(
-        img::AbstractMatrix, remaining::Int, depth::Int,
-        qfp::QuincunxFilterPair, threaded::Bool = false
-    )
-    shear_dir = isodd(depth) ? :h : :v
-    qfb_dir = isodd(depth) ? :col : :row
-    sh = shear(img, shear_dir)
-    _sb0, _sb1 = qfb_decompose(sh, qfp; dir = qfb_dir)
-    sb0 = inv_shear(_sb0, shear_dir)
-    sb1 = inv_shear(_sb1, shear_dir)
-    remaining == 1 && return [sb0, sb1]
-
-    if threaded
-        t0 = Threads.@spawn _dfb_split(sb0, remaining - 1, depth + 1, qfp, threaded)
-        r1 = _dfb_split(sb1, remaining - 1, depth + 1, qfp, threaded)
-        r0 = fetch(t0)::typeof(r1)
-        return vcat(r0, r1)
-    else
-        return vcat(
-            _dfb_split(sb0, remaining - 1, depth + 1, qfp, threaded),
-            _dfb_split(sb1, remaining - 1, depth + 1, qfp, threaded)
-        )
-    end
-end
-
-function _dfb_merge(
-        sbs::Vector{<:AbstractMatrix}, l::Int, depth::Int,
-        qfp::QuincunxFilterPair, threaded::Bool = false
-    )
-    shear_dir = isodd(depth) ? :h : :v
-    qfb_dir = isodd(depth) ? :col : :row
-    half = length(sbs) ÷ 2
-    if l == 1
-        sb0, sb1 = sbs[1], sbs[2]
-    elseif threaded
-        t0 = Threads.@spawn _dfb_merge(sbs[1:half], l - 1, depth + 1, qfp, threaded)
-        sb1 = _dfb_merge(sbs[(half + 1):end], l - 1, depth + 1, qfp, threaded)
-        sb0 = fetch(t0)::typeof(sb1)
-    else
-        sb0 = _dfb_merge(sbs[1:half], l - 1, depth + 1, qfp, threaded)
-        sb1 = _dfb_merge(sbs[(half + 1):end], l - 1, depth + 1, qfp, threaded)
-    end
-    sh0 = shear(sb0, shear_dir)
-    sh1 = shear(sb1, shear_dir)
-    rec = qfb_reconstruct(sh0, sh1, qfp; dir = qfb_dir)
-    return inv_shear(rec, shear_dir)
 end

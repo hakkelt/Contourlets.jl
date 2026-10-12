@@ -32,24 +32,40 @@ function _subband_sizes(b::_DirectionalBank)
 end
 
 """
-    _bank_runner(bank, ref; flags=FFTW.ESTIMATE)
+    _bank_runner(bank, ref; flags=FFTW.ESTIMATE, pool=Dict())
 
 Buffers and plans for a *decimated* `bank`, allocated like the array `ref`
-(host or device) with complex element type.
+(host or device) with complex element type.  Runners built with one `pool` share
+their buffers, so they must not run at the same time.
 """
-function _bank_runner(bank::_DirectionalBank, ref::AbstractArray{<:Number}; flags = FFTW.ESTIMATE)
+function _bank_runner(
+        bank::_DirectionalBank, ref::AbstractArray{<:Number}; flags = FFTW.ESTIMATE,
+        pool = _runner_pool(ref, eltype(bank.ana[1]))
+    )
     _is_decimated(bank) || throw(ArgumentError("_bank_runner serves decimated banks"))
     Tc = complex(eltype(bank.ana[1]))
-    X = fill!(similar(ref, Tc, bank.dims), zero(Tc))
-    Z = similar(X)
-    pfwd, pbwd = _inplace_plans(X, flags)
+    # Buffers and their plans come from `pool`, keyed by role and size: runners that
+    # never run at the same time (the levels of one workspace) share them.
+    buffer(role, sz) = get!(pool, (role, sz)) do
+        B = fill!(similar(ref, Tc, sz), zero(Tc))
+        (B, _inplace_plans(B, flags)...)
+    end
+    X, pfwd, pbwd = buffer(:X, bank.dims)
+    Z = first(buffer(:Z, bank.dims))
     sizes = _subband_sizes(bank)
     distinct = unique(s for (s, smp) in zip(sizes, bank.sampling) if smp != (0, 0))
-    sub = [fill!(similar(ref, Tc, s), zero(Tc)) for s in distinct]
-    plans = [_inplace_plans(S, flags) for S in sub]
+    subs = [buffer(:sub, s) for s in distinct]
     subidx = Int[smp == (0, 0) ? 0 : something(findfirst(==(s), distinct), 0) for (s, smp) in zip(sizes, bank.sampling)]
     P, Q = typeof(pfwd), typeof(pbwd)
-    return _BankRunner(bank, X, Z, pfwd, pbwd, sub, P[first(p) for p in plans], Q[last(p) for p in plans], subidx)
+    return _BankRunner(bank, X, Z, pfwd, pbwd, typeof(X)[s[1] for s in subs], P[s[2] for s in subs], Q[s[3] for s in subs], subidx)
+end
+
+# An empty buffer pool for runners on arrays like `ref` at precision `Tf`:
+# (role, size) ↦ (buffer, forward plan, unnormalised inverse plan).
+function _runner_pool(ref::AbstractArray, ::Type{Tf}) where {Tf}
+    C = typeof(similar(ref, Complex{Tf}, 0, 0))
+    P, Q = typeof.(_inplace_plans(similar(ref, Complex{Tf}, 2, 2), FFTW.ESTIMATE))
+    return Dict{Tuple{Symbol, NTuple{2, Int}}, Tuple{C, P, Q}}()
 end
 
 # In-place forward and unnormalised inverse FFT plans for `A` (FFTW flags only

@@ -39,6 +39,12 @@ function make_stict_workspace(
         params::ContourletParams{Tp}, image_size::Tuple{Int, Int};
         T::Type{<:Number} = Float64, M::Type{<:AbstractMatrix} = Matrix{promote_type(Tp, T)}
     ) where {Tp}
+    return _make_stict_workspace(params, image_size, T, M)
+end
+
+function _make_stict_workspace(
+        params::ContourletParams, image_size::Tuple{Int, Int}, ::Type{T}, ::Type{M}
+    ) where {T, M}
     Td, Tf = _tict_types(params, T)
     p = _convert_params(Tf, params)
     ref = _allocate_zeros(M, Td, image_size)
@@ -144,9 +150,9 @@ function stict_forward(
         image::AbstractMatrix, params::ContourletParams;
         workspace::Union{Nothing, STICTWorkspace} = nothing
     )
-    ws = workspace === nothing ? _own_workspace(make_stict_workspace, image, params) : workspace
+    ws = workspace === nothing ? _own_workspace(_make_stict_workspace, image, params) : workspace
     x = _check_tict_input(ws, _ws_input(ws, image))
-    coeffs = similar_stict_coefficients(ws.params, ws.image_size; Td = eltype(ws), M = typeof(similar(x)))
+    coeffs = _similar_stict_coefficients(ws.params, ws.image_size, eltype(ws), typeof(similar(x)))
     return _stict_forward_ws!(coeffs, x, ws)
 end
 
@@ -160,7 +166,7 @@ function stict_forward!(
         coeffs::TICTCoefficients, image::AbstractMatrix, params::ContourletParams;
         workspace::Union{Nothing, STICTWorkspace} = nothing
     )
-    ws = workspace === nothing ? _own_workspace(make_stict_workspace, image, params) : workspace
+    ws = workspace === nothing ? _own_workspace(_make_stict_workspace, image, params) : workspace
     _check_tict_eltype(ws, coeffs.coarse, "coefficient set")
     return _stict_forward_ws!(coeffs, _check_tict_input(ws, _ws_input(ws, image)), ws)
 end
@@ -174,7 +180,7 @@ function stict_inverse(
         coeffs::TICTCoefficients, params::ContourletParams;
         workspace::Union{Nothing, STICTWorkspace} = nothing
     )
-    ws = workspace === nothing ? _own_workspace(make_stict_workspace, coeffs.coarse, params) : workspace
+    ws = workspace === nothing ? _own_workspace(_make_stict_workspace, coeffs.coarse, params) : workspace
     _check_tict_eltype(ws, coeffs.coarse, "coefficient set")
     return _stict_inverse_ws!(similar(coeffs.coarse, eltype(ws)), coeffs, ws)
 end
@@ -188,7 +194,7 @@ function stict_inverse!(
         image::AbstractMatrix, coeffs::TICTCoefficients, params::ContourletParams;
         workspace::Union{Nothing, STICTWorkspace} = nothing
     )
-    ws = workspace === nothing ? _own_workspace(make_stict_workspace, image, params) : workspace
+    ws = workspace === nothing ? _own_workspace(_make_stict_workspace, image, params) : workspace
     _check_tict_eltype(ws, coeffs.coarse, "coefficient set")
     _check_tict_eltype(ws, image, "output image")
     return _stict_inverse_ws!(_check_tict_input(ws, image), coeffs, ws)

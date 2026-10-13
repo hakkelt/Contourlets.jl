@@ -38,7 +38,7 @@ function nsct_forward(
     )
     if workspace !== nothing
         Tw = eltype(workspace)
-        coeffs = similar_nsct_coefficients(params, size(image); Td = Tw)
+        coeffs = _similar_nsct_coefficients(params, size(image), Tw, Matrix{Tw})
         img = Tw === eltype(image) ? image : Tw.(image)
         return nsct_forward!(coeffs, img, params; workspace = workspace, threading = threading)
     end
@@ -274,7 +274,7 @@ end
 # allocates nothing.  Called from `make_nsct_workspace(...; prewarm=true)`.
 function _prewarm_nsct!(ws::NSCTWorkspace{Td, Tf, M}; threading::ThreadingPolicy = Auto()) where {Td, Tf, M}
     img = _allocate_zeros(M, Td, ws.image_size)
-    coeffs = similar_nsct_coefficients(ws.params, ws.image_size; Td = Td, M = M)
+    coeffs = _similar_nsct_coefficients(ws.params, ws.image_size, Td, M)
     nsct_forward!(coeffs, img, ws.params; workspace = ws, threading = threading)
     nsct_inverse!(img, coeffs, ws.params; workspace = ws, threading = threading)
     return ws
@@ -291,6 +291,12 @@ function similar_nsct_coefficients(
         Td::Type = Tf,
         M::Type{<:AbstractMatrix} = Matrix{Td}
     ) where {Tf}
+    return _similar_nsct_coefficients(params, image_size, Td, M)
+end
+
+function _similar_nsct_coefficients(
+        params::ContourletParams, image_size::Tuple{Int, Int}, ::Type{Td}, ::Type{M}
+    ) where {Td, M}
     J = params.J
     L = params.L_array
     n1, n2 = image_size

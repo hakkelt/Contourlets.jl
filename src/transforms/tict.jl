@@ -43,6 +43,12 @@ function make_tict_workspace(
         params::ContourletParams{Tp}, image_size::Tuple{Int, Int};
         T::Type{<:Number} = Float64, M::Type{<:AbstractMatrix} = Matrix{promote_type(Tp, T)}
     ) where {Tp}
+    return _make_tict_workspace(params, image_size, T, M)
+end
+
+function _make_tict_workspace(
+        params::ContourletParams, image_size::Tuple{Int, Int}, ::Type{T}, ::Type{M}
+    ) where {T, M}
     Td, Tf = _tict_types(params, T)
     p = _convert_params(Tf, params)
     n1, n2 = image_size
@@ -131,9 +137,9 @@ function tict_forward(
         workspace::Union{Nothing, TICTWorkspace} = nothing,
         threading::ThreadingPolicy = Auto()
     )
-    ws = workspace === nothing ? _own_workspace(make_tict_workspace, image, params) : workspace
+    ws = workspace === nothing ? _own_workspace(_make_tict_workspace, image, params) : workspace
     x = _dense_input(ws, _check_tict_input(ws, _ws_input(ws, image)))
-    coeffs = similar_tict_coefficients(ws.params, ws.image_size; Td = eltype(ws), M = typeof(similar(x)))
+    coeffs = _similar_tict_coefficients(ws.params, ws.image_size, eltype(ws), typeof(similar(x)))
     return _tict_forward_ws!(coeffs, x, ws, _use_threading(threading, eltype(ws)))
 end
 
@@ -149,7 +155,7 @@ function tict_forward!(
         workspace::Union{Nothing, TICTWorkspace} = nothing,
         threading::ThreadingPolicy = Auto()
     )
-    ws = workspace === nothing ? _own_workspace(make_tict_workspace, image, params) : workspace
+    ws = workspace === nothing ? _own_workspace(_make_tict_workspace, image, params) : workspace
     _check_tict_eltype(ws, coeffs.coarse, "coefficient set")
     x = _dense_input(ws, _check_tict_input(ws, _ws_input(ws, image)))
     return _tict_forward_ws!(coeffs, x, ws, _use_threading(threading, eltype(ws)))
@@ -165,7 +171,7 @@ function tict_inverse(
         workspace::Union{Nothing, TICTWorkspace} = nothing,
         threading::ThreadingPolicy = Auto()
     )
-    ws = workspace === nothing ? _own_workspace(make_tict_workspace, coeffs.coarse, params) : workspace
+    ws = workspace === nothing ? _own_workspace(_make_tict_workspace, coeffs.coarse, params) : workspace
     _check_tict_eltype(ws, coeffs.coarse, "coefficient set")
     return _tict_inverse_ws!(similar(coeffs.coarse, eltype(ws)), coeffs, ws, _use_threading(threading, eltype(ws)))
 end
@@ -181,7 +187,7 @@ function tict_inverse!(
         workspace::Union{Nothing, TICTWorkspace} = nothing,
         threading::ThreadingPolicy = Auto()
     )
-    ws = workspace === nothing ? _own_workspace(make_tict_workspace, image, params) : workspace
+    ws = workspace === nothing ? _own_workspace(_make_tict_workspace, image, params) : workspace
     _check_tict_eltype(ws, coeffs.coarse, "coefficient set")
     _check_tict_eltype(ws, image, "output image")
     return _tict_inverse_ws!(_check_tict_input(ws, image), coeffs, ws, _use_threading(threading, eltype(ws)))

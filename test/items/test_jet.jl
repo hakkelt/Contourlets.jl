@@ -272,12 +272,8 @@ end
     @test_opt target_modules = M nsdfb_reconstruct(nsbs, Q2345, 1)
 
     # ── Workspaces, coefficient containers and the remaining in-place paths ──
-    # Known runtime dispatch in the allocating builders: they pass type-valued keywords
-    # (`T`, `Td`, `M`: `Type{<:Number}` / `DataType`) through `similar_*coefficients`, which cannot
-    # specialise on them, and `make_*workspace` runs a warm-up through that path.  The in-place
-    # `!` paths that consume the workspaces are checked above and below without `broken`.
-    @test_opt broken = true target_modules = M make_workspace(p, (16, 16))
-    @test_opt broken = true target_modules = M make_nsct_workspace(p, (16, 16))
+    @test_opt target_modules = M make_workspace(p, (16, 16))
+    @test_opt target_modules = M make_nsct_workspace(p, (16, 16))
     @test_opt target_modules = M make_tict_workspace(p, (16, 16))
     @test_opt target_modules = M make_stict_workspace(p, (16, 16))
     @test_opt target_modules = M similar_coefficients(p, (16, 16))
@@ -288,11 +284,11 @@ end
     nsc = similar_nsct_coefficients(p, (16, 16))
     @test_opt target_modules = M nsct_forward!(nsc, x, p; workspace = nsws)
     @test_opt target_modules = M nsct_inverse!(dst, nsc, p; workspace = nsws)
-    @test_opt broken = true target_modules = M tict_forward(x, p)    # builds its own workspace (same cause)
-    @test_opt broken = true target_modules = M stict_forward(x, p)
+    @test_opt target_modules = M tict_forward(x, p)    # builds its own workspace
+    @test_opt target_modules = M stict_forward(x, p)
     @test_opt target_modules = M tict_inverse!(dst, similar_tict_coefficients(p, (16, 16)), p; workspace = make_tict_workspace(p, (16, 16)))
     tcs = tict_forward(x, p)
     scs = stict_forward(x, p)
-    @test_opt broken = true target_modules = M tict_inverse(tcs, p)
-    @test_opt broken = true target_modules = M stict_inverse(scs, p)
+    @test_opt target_modules = M tict_inverse(tcs, p)
+    @test_opt target_modules = M stict_inverse(scs, p)
 end

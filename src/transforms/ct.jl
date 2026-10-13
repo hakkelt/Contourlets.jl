@@ -43,7 +43,7 @@ function ct_forward(
     )
     if workspace !== nothing
         Tw = eltype(workspace)
-        coeffs = similar_coefficients(params, size(image); Td = Tw)
+        coeffs = _similar_coefficients(params, size(image), Tw, Matrix{Tw})
         img = Tw === eltype(image) ? image : Tw.(image)
         return ct_forward!(coeffs, img, params; workspace = workspace)
     end
@@ -295,7 +295,7 @@ end
 # `make_workspace(...; prewarm=true)`.
 function _prewarm_ct!(ws::CTWorkspace{Td, Tf, M}) where {Td, Tf, M}
     img = _allocate_zeros(M, Td, ws.image_size)
-    coeffs = similar_coefficients(ws.params, ws.image_size; Td = Td, M = M)
+    coeffs = _similar_coefficients(ws.params, ws.image_size, Td, M)
     ct_forward!(coeffs, img, ws.params; workspace = ws)
     ct_inverse!(img, coeffs, ws.params; workspace = ws)
     return ws
@@ -314,6 +314,14 @@ function similar_coefficients(
         Td::Type = Tf,
         M::Type{<:AbstractMatrix} = Matrix{Td}
     ) where {Tf}
+    return _similar_coefficients(params, image_size, Td, M)
+end
+
+# Positional form: the data and matrix types are type parameters, so the builder
+# specialises on them (keyword arguments of type `Type` do not).
+function _similar_coefficients(
+        params::ContourletParams, image_size::Tuple{Int, Int}, ::Type{Td}, ::Type{M}
+    ) where {Td, M}
     J = params.J
     L = params.L_array
     n1, n2 = image_size

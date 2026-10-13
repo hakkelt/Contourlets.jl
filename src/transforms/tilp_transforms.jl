@@ -38,7 +38,7 @@
 # Half tree of each TILP channel (see above).
 const _TILP_HALVES = (:both, :second, :first, :both)
 
-_tict_types(params::ContourletParams{Tp}, T::Type) where {Tp} = (Td = promote_type(Tp, T); (Td, _filter_eltype(Td)))
+_tict_types(params::ContourletParams{Tp}, ::Type{T}) where {Tp, T} = (Td = promote_type(Tp, T); (Td, _filter_eltype(Td)))
 
 # ── Coefficient containers ────────────────────────────────────────────────────
 
@@ -53,6 +53,12 @@ function similar_tict_coefficients(
         params::ContourletParams{Tf}, image_size::Tuple{Int, Int};
         Td::Type = Tf, M::Type{<:AbstractMatrix} = Matrix{Td}
     ) where {Tf}
+    return _similar_tict_coefficients(params, image_size, Td, M)
+end
+
+function _similar_tict_coefficients(
+        params::ContourletParams, image_size::Tuple{Int, Int}, ::Type{Td}, ::Type{M}
+    ) where {Td, M}
     z() = _allocate_zeros(M, Td, image_size)
     subbands = [[[z() for _ in 1:_tict_n_subbands(l, c)] for c in 1:4] for l in params.L_array]
     return TICTCoefficients(z(), subbands)
@@ -68,6 +74,12 @@ function similar_stict_coefficients(
         params::ContourletParams{Tf}, image_size::Tuple{Int, Int};
         Td::Type = Tf, M::Type{<:AbstractMatrix} = Matrix{Td}
     ) where {Tf}
+    return _similar_stict_coefficients(params, image_size, Td, M)
+end
+
+function _similar_stict_coefficients(
+        params::ContourletParams, image_size::Tuple{Int, Int}, ::Type{Td}, ::Type{M}
+    ) where {Td, M}
     z(dims) = _allocate_zeros(M, Td, dims)
     n1, n2 = image_size
     subbands = [
@@ -102,10 +114,10 @@ end
 
 # Workspace at the data's own precision: like `nsct_forward`, the allocating forms
 # never promote the data to the precision of `params`.
-function _own_workspace(make, x::AbstractMatrix, params::ContourletParams)
+function _own_workspace(make::F, x::AbstractMatrix, params::ContourletParams) where {F}
     Td = _data_eltype(x)
     p = _convert_params(_filter_eltype(Td), params)
-    return make(p, size(x); T = Td, M = typeof(similar(x, Td, 0, 0)))
+    return make(p, size(x), Td, typeof(similar(x, Td, 0, 0)))
 end
 
 # Input in the workspace's data type (a copy only when the types differ).

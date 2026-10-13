@@ -77,9 +77,9 @@ only the pyramid filter machinery, which lives in
 [MultiscaleFilterBanks.jl](https://github.com/hakkelt/MultiscaleFilterBanks.jl)
 and is re-exported here.
 
-That core package is not registered yet, and is expected as a sibling checkout
-wired in through `[sources]`.  On Julia 1.10, which does not read `[sources]`,
-run `julia --project=. dev/bootstrap.jl` once instead.
+To work against a local checkout of the core package instead, put it next to
+this one and run `julia --project=. dev/bootstrap.jl` once; it
+`Pkg.develop`s the sibling checkout into every environment of the workspace.
 
 ## References
 

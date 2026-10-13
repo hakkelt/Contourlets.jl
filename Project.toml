@@ -14,9 +14,6 @@ LoopVectorization = "bdcacae8-1622-11e9-2a5c-532679323890"
 MultiscaleFilterBanks = "6efc46e8-ef8d-4233-93b5-7ad1cba20951"
 PrecompileTools = "aea7be01-6a6a-4083-8856-8a6e6704d82a"
 
-[sources]
-MultiscaleFilterBanks = {path = "../MultiscaleFilterBanks"}
-
 [weakdeps]
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 GPUArrays = "0c68f7d7-f131-5f86-a1c3-88cf8149b2d7"

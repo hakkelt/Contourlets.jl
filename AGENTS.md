@@ -32,9 +32,9 @@ mask-bank engine that runs the NSCT and TICT workspaces (`_MaskBankEngine`,
 All are re-exported (public names) or imported (internals) in
 `src/Contourlets.jl`.
 
-**First checkout**: `MultiscaleFilterBanks.jl` is unregistered and expected as a
-sibling directory, wired in through `[sources]`. On Julia 1.10, which does not
-read `[sources]`, run `julia --project=. dev/bootstrap.jl` once instead.
+**First checkout**: CI resolves `MultiscaleFilterBanks.jl` from the registry. To
+develop against a sibling checkout, run `julia --project=. dev/bootstrap.jl`
+once; it `Pkg.develop`s the checkout into every environment of the workspace.
 
 ## Quick Start
 

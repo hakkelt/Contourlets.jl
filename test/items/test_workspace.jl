@@ -148,21 +148,21 @@ end
     p = ContourletParams(J = 3, L_array = [0, 2, 3])
     ws = make_nsct_workspace(p, (32, 32))
     @test length(ws.engine.buffers) == min(Threads.nthreads(), length(ws.engine.items))
-    c_ser = nsct_forward!(similar_nsct_coefficients(p, (32, 32)), x, p; workspace = ws, threading = Disabled())
-    c_par = nsct_forward!(similar_nsct_coefficients(p, (32, 32)), x, p; workspace = ws, threading = Enabled())
+    c_ser = nsct_forward!(similar_nsct_coefficients(p, (32, 32)), x, p; workspace = ws, threaded = false)
+    c_par = nsct_forward!(similar_nsct_coefficients(p, (32, 32)), x, p; workspace = ws, threaded = true)
     @test all(c_ser.subbands[j][k] == c_par.subbands[j][k] for j in 1:3 for k in eachindex(c_ser.subbands[j]))
     @test c_ser.coarse == c_par.coarse
-    y_ser = nsct_inverse!(similar(x), c_ser, p; workspace = ws, threading = Disabled())
-    y_par = nsct_inverse!(similar(x), c_ser, p; workspace = ws, threading = Enabled())
+    y_ser = nsct_inverse!(similar(x), c_ser, p; workspace = ws, threaded = false)
+    y_par = nsct_inverse!(similar(x), c_ser, p; workspace = ws, threaded = true)
     @test y_par ≈ y_ser atol = 1.0e-13
     @test y_par ≈ x atol = 1.0e-12
 
     wt = make_tict_workspace(p, (32, 32))
-    t_ser = tict_forward!(similar_tict_coefficients(p, (32, 32)), x, p; workspace = wt, threading = Disabled())
-    t_par = tict_forward!(similar_tict_coefficients(p, (32, 32)), x, p; workspace = wt, threading = Enabled())
+    t_ser = tict_forward!(similar_tict_coefficients(p, (32, 32)), x, p; workspace = wt, threaded = false)
+    t_par = tict_forward!(similar_tict_coefficients(p, (32, 32)), x, p; workspace = wt, threaded = true)
     @test all(t_ser.subbands[i][c][k] == t_par.subbands[i][c][k] for i in 1:3 for c in 1:4 for k in eachindex(t_ser.subbands[i][c]))
-    z_par = tict_inverse!(similar(x), t_ser, p; workspace = wt, threading = Enabled())
-    @test z_par ≈ tict_inverse!(similar(x), t_ser, p; workspace = wt, threading = Disabled()) atol = 1.0e-13
+    z_par = tict_inverse!(similar(x), t_ser, p; workspace = wt, threaded = true)
+    @test z_par ≈ tict_inverse!(similar(x), t_ser, p; workspace = wt, threaded = false) atol = 1.0e-13
     @test z_par ≈ x atol = 1.0e-12
 end
 

@@ -41,9 +41,8 @@ using FastBroadcast: @..
 
 using MultiscaleFilterBanks: MultiscaleFilterBanks,
     FilterPair, CDF97, upsample_filter,
-    ThreadingPolicy, Auto, Enabled, Disabled,
-    _data_eltype, _filter_eltype, _use_threading, _with_fftw_threads, _clamp_idx, _nsp_atrous_filters, _nsp_responses, _centred_dtft,
-    _MaskItem, _MaskBankEngine, _mask_bank_forward!, _mask_bank_inverse!
+    data_eltype, filter_eltype, use_threading, with_fftw_threads, clamp_idx, nsp_atrous_filters, nsp_responses, centred_dtft,
+    MaskItem, MaskBankEngine, mask_bank_forward!, mask_bank_inverse!
 
 # ── Types (must come before filters which use them) ──────────────────────────
 include("types/quincunx_filter_pair.jl")
@@ -93,7 +92,6 @@ include("precompile.jl")
 export
     # Re-exported from MultiscaleFilterBanks
     FilterPair, CDF97, upsample_filter,
-    ThreadingPolicy, Auto, Enabled, Disabled,
 
     # Types
     QuincunxFilterPair,

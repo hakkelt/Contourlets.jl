@@ -266,7 +266,7 @@ end
             cos(2π * 0.42 * (cos(deg * π / 180) * j + sin(deg * π / 180) * i))
                 for i in 1:n, j in 1:n
         ]
-        e = [sum(abs2, s) for s in nsct_forward(x, p; threading = Disabled()).subbands[1]]
+        e = [sum(abs2, s) for s in nsct_forward(x, p; threaded = false).subbands[1]]
         @test maximum(e) > 0.5 * sum(e)
     end
 end
@@ -277,9 +277,9 @@ end
     n = 32
     x = randn(n, n)
     p = ContourletParams(J = 1, L_array = [3])
-    c0 = nsct_forward(x, p; threading = Disabled())
+    c0 = nsct_forward(x, p; threaded = false)
     for shift in ((3, 0), (0, 5), (2, 7))
-        cs = nsct_forward(circshift(x, shift), p; threading = Disabled())
+        cs = nsct_forward(circshift(x, shift), p; threaded = false)
         # LP residual
         @test maximum(abs, c0.coarse .- circshift(cs.coarse, .-shift)) < 1.0e-10
         # Directional subbands

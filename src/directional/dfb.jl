@@ -89,8 +89,8 @@ function dfb_decompose(
     l_levels >= 0 || throw(ArgumentError("l_levels must be ≥ 0"))
     _check_half(half)
     l_levels == 0 && return [copy(bandpass)]
-    Td = _data_eltype(bandpass)      # data type (real or complex)
-    Tf = _filter_eltype(Td)          # real filter precision
+    Td = data_eltype(bandpass)      # data type (real or complex)
+    Tf = filter_eltype(Td)          # real filter precision
     img = Td === eltype(bandpass) ? bandpass : Td.(bandpass)
     return _with_runner(workspace, img, l_levels, qfp, half, Tf) do r
         _bank_analyze!([similar(img, s) for s in _subband_sizes(r.bank)], img, r)
@@ -117,7 +117,7 @@ function dfb_decompose!(
     length(subbands) == _bank_n_subbands(l_levels, half) ||
         throw(ArgumentError("subbands must hold $(_bank_n_subbands(l_levels, half)) matrices"))
     l_levels == 0 && return (copyto!(subbands[1], bandpass); subbands)
-    Tf = _filter_eltype(_data_eltype(bandpass))
+    Tf = filter_eltype(data_eltype(bandpass))
     return _with_runner(r -> _bank_analyze!(subbands, bandpass, r), workspace, bandpass, l_levels, qfp, half, Tf)
 end
 
@@ -152,8 +152,8 @@ function dfb_reconstruct(
     _check_half(half)
     n == 1 && return copy(subbands[1])
     l_levels = _dfb_levels_from_count(n, half)
-    Td = _data_eltype(subbands[1])
-    Tf = _filter_eltype(Td)
+    Td = data_eltype(subbands[1])
+    Tf = filter_eltype(Td)
     dims = _dfb_image_size(subbands, l_levels, half)
     out = similar(subbands[1], Td, dims)
     return _dfb_reconstruct_bank!(out, subbands, l_levels, qfp, half, workspace, Tf)
@@ -175,7 +175,7 @@ function dfb_reconstruct!(
     n = length(subbands)
     n == 1 && return copyto!(bandpass, subbands[1])
     l_levels = _dfb_levels_from_count(n, half)
-    Tf = _filter_eltype(_data_eltype(bandpass))
+    Tf = filter_eltype(data_eltype(bandpass))
     return _dfb_reconstruct_bank!(bandpass, subbands, l_levels, qfp, half, workspace, Tf)
 end
 

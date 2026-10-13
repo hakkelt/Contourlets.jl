@@ -1,7 +1,7 @@
 # QuincunxFilterPair: the quincunx ladder filter pair of the DFB stage, with its
 # element-type conversion.
 #
-# `FilterPair` and the element-type convention (`_data_eltype` / `_filter_eltype`)
+# `FilterPair` and the element-type convention (`data_eltype` / `filter_eltype`)
 # come from MultiscaleFilterBanks.jl, the shared core: filters are always real
 # (`Tf <: AbstractFloat`) while image data may be real or complex (`Td <: Number`),
 # and the transforms thread the two independently so complex images are filtered

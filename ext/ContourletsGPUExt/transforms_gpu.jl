@@ -33,8 +33,8 @@ function Contourlets.ct_forward(
         img = Tw === eltype(image) ? image : Tw.(image)
         return ct_forward!(coeffs, img, params; workspace = workspace)
     end
-    Td = Contourlets._data_eltype(image)        # data type (real or complex)
-    Tf = Contourlets._filter_eltype(Td)         # real filter precision
+    Td = Contourlets.data_eltype(image)        # data type (real or complex)
+    Tf = Contourlets.filter_eltype(Td)         # real filter precision
     p = Contourlets._convert_params(Tf, params)
     fp, qfp = p.lp_filters, p.dfb_filters
     J, L = p.J, p.L_array
@@ -68,7 +68,7 @@ function Contourlets.ct_inverse(
         image = Contourlets._allocate_zeros(M, Tw, workspace.image_size)
         return ct_inverse!(image, coeffs, params; workspace = workspace)
     end
-    Tf = Contourlets._filter_eltype(T)
+    Tf = Contourlets.filter_eltype(T)
     p = Contourlets._convert_params(Tf, params)
     fp, qfp = p.lp_filters, p.dfb_filters
     J = p.J
@@ -90,17 +90,17 @@ GPU Nonsubsampled Contourlet Transform forward pass (GPU pyramid + GPU NSDFB).
 function Contourlets.nsct_forward(
         image::_AbstractGPUMatrix, params::ContourletParams;
         workspace::Union{Contourlets.NSCTWorkspace, Nothing} = nothing,
-        threading::Contourlets.ThreadingPolicy = Contourlets.Auto()
+        threaded::Union{Bool, Nothing} = nothing
     )
     if workspace !== nothing
         Tw = eltype(workspace)
         M = Contourlets._ws_matrix_type(workspace)
         coeffs = Contourlets.similar_nsct_coefficients(params, size(image); Td = Tw, M = M)
         img = Tw === eltype(image) ? image : Tw.(image)
-        return nsct_forward!(coeffs, img, params; workspace = workspace, threading = threading)
+        return nsct_forward!(coeffs, img, params; workspace = workspace, threaded = threaded)
     end
-    Td = Contourlets._data_eltype(image)        # data type (real or complex)
-    Tf = Contourlets._filter_eltype(Td)         # real filter precision
+    Td = Contourlets.data_eltype(image)        # data type (real or complex)
+    Tf = Contourlets.filter_eltype(Td)         # real filter precision
     p = Contourlets._convert_params(Tf, params)
     fp, qfp = p.lp_filters, p.dfb_filters
     J, L = p.J, p.L_array

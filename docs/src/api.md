@@ -46,15 +46,6 @@ STICTWorkspace
 ```
 
 
-## Threading
-
-```@docs
-ThreadingPolicy
-Auto
-Enabled
-Disabled
-```
-
 ## Workspace
 
 ```@docs

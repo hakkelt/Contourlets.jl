@@ -48,7 +48,7 @@ _nsdfb_upsampling(tree_level::Int) = max(0, tree_level - 2)
 function _ns_plans(x::AbstractMatrix; measured::Bool = false)
     X = _ns_spectrum(x)
     (measured && x isa Array) || return (X, _ns_plan_pair(x, X)...)
-    return _with_fftw_threads(1) do
+    return with_fftw_threads(1) do
         (X, _ns_plan_pair(x, X; flags = FFTW.MEASURE)...)
     end
 end
@@ -112,8 +112,8 @@ function nsdfb_decompose(
     tree_level >= 1 || throw(ArgumentError("tree_level must be ≥ 1"))
     _check_half(half)
     l_levels == 0 && return [copy(bandpass)]
-    Td = _data_eltype(bandpass)
-    Tf = _filter_eltype(Td)
+    Td = data_eltype(bandpass)
+    Tf = filter_eltype(Td)
     img = Td === eltype(bandpass) ? bandpass : Td.(bandpass)
     bank = _nsdfb_bank(img, l_levels, qfp, tree_level, half, Tf)
     X, pfwd, pinv = _ns_plans(img)
@@ -157,8 +157,8 @@ function nsdfb_reconstruct(
     n >= 1 || throw(ArgumentError("subbands must be non-empty"))
     n == 1 && return copy(subbands[1])
     l_levels = _dfb_levels_from_count(n, half)
-    Td = _data_eltype(subbands[1])
-    Tf = _filter_eltype(Td)
+    Td = data_eltype(subbands[1])
+    Tf = filter_eltype(Td)
     bank = _nsdfb_bank(subbands[1], l_levels, qfp, tree_level, half, Tf)
     ref = Td === eltype(subbands[1]) ? subbands[1] : Td.(subbands[1])
     X, pfwd, pinv = _ns_plans(ref)

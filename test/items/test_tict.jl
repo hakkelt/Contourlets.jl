@@ -125,18 +125,18 @@ end
         cs = similar_stict_coefficients(p, size(x); Td = eltype(x))
         out = similar(x)
         run(th) = (
-            tict_forward!(ct, x, p; workspace = wt, threading = th); tict_inverse!(out, ct, p; workspace = wt, threading = th);
+            tict_forward!(ct, x, p; workspace = wt, threaded = th); tict_inverse!(out, ct, p; workspace = wt, threaded = th);
             stict_forward!(cs, x, p; workspace = ws); stict_inverse!(out, cs, p; workspace = ws)
         )
-        run(Disabled())
-        @test (@allocated run(Disabled())) == 0
+        run(false)
+        @test (@allocated run(false)) == 0
         @test maximum(abs, out .- x) < 1.0e-12
         # Threaded, `@batch` boxes the captured workspace: a few hundred bytes per
         # call.  Where it may not run (a second interactive thread, as in some test
         # runners) the loops fall back to `Threads.@threads`: a few KB.
-        run(Enabled())
+        run(true)
         bound = Contourlets.MultiscaleFilterBanks._batch_safe() ? 1000 : 8192
-        @test (@allocated run(Enabled())) < bound
+        @test (@allocated run(true)) < bound
         @test maximum(abs, out .- x) < 1.0e-12
         ref = tict_forward(x, p)
         tict_forward!(ct, x, p; workspace = wt)
@@ -169,7 +169,7 @@ end
     @test all(iszero, view(out, 1:2, :))
     # A dense input still allocates nothing.
     let c = c, xd = xd, p = p, ws = ws
-        run() = tict_forward!(c, xd, p; workspace = ws, threading = Disabled())
+        run() = tict_forward!(c, xd, p; workspace = ws, threaded = false)
         run()
         @test (@allocated run()) == 0
     end

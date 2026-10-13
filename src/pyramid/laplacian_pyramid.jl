@@ -30,8 +30,8 @@ julia> size(c), size(bp) == size(x)
 ```
 """
 function lp_decompose(image::AbstractMatrix, fp::FilterPair)
-    Td = _data_eltype(image)   # data type (preserves complex)
-    Tf = _filter_eltype(Td)    # real filter precision
+    Td = data_eltype(image)   # data type (preserves complex)
+    Tf = filter_eltype(Td)    # real filter precision
     # Convert only when the element type actually differs (T.(x) always copies).
     im = Td === eltype(image) ? image : Td.(image)
     h = Tf === eltype(fp) ? fp.h : Tf.(fp.h)
@@ -58,7 +58,7 @@ function lp_decompose!(
     )
     all(iseven, size(image)) ||
         throw(ArgumentError("lp_decompose! requires even image dimensions; use lp_decompose"))
-    Tf = _filter_eltype(eltype(image))
+    Tf = filter_eltype(eltype(image))
     h = Tf === eltype(fp) ? fp.h : Tf.(fp.h)
     g = Tf === eltype(fp) ? fp.g : Tf.(fp.g)
     conv2d_sep!(tmp, image, h, h; tmp = tmp2)
@@ -95,7 +95,7 @@ function lp_reconstruct(
         fp::FilterPair
     )
     Td = promote_type(eltype(coarse), eltype(bandpass))  # data type
-    Tf = _filter_eltype(Td)                              # real filter precision
+    Tf = filter_eltype(Td)                              # real filter precision
     g = Tf === eltype(fp) ? fp.g : Tf.(fp.g)
     coarse_T = Td === eltype(coarse) ? coarse : Td.(coarse)
     bandpass_T = Td === eltype(bandpass) ? bandpass : Td.(bandpass)
@@ -116,7 +116,7 @@ function lp_reconstruct!(
         tmp::AbstractMatrix = similar(image),
         tmp2::AbstractMatrix = similar(image)
     )
-    Tf = _filter_eltype(eltype(image))
+    Tf = filter_eltype(eltype(image))
     g = Tf === eltype(fp) ? fp.g : Tf.(fp.g)
     rect_upsample!(tmp, coarse)
     conv2d_sep!(image, tmp, g, g; tmp = tmp2)

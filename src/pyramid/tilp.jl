@@ -40,8 +40,8 @@ const _TILP_SHIFTS = ((0, 0), (1, 0), (0, 1), (1, 1))
 # Per-axis factors of one level at frequencies θ: the 1-D filters and the 1-D
 # polyphase factors ½ Σ_a e^{±j(θ+a)k} f(θ+a) of the coset shift k ∈ {0, 1}.
 function _tilp_axis(fp::FilterPair, θ::Float64)
-    h, hπ = _centred_dtft(fp.h, θ), _centred_dtft(fp.h, θ + π)
-    g, gπ = _centred_dtft(fp.g, θ), _centred_dtft(fp.g, θ + π)
+    h, hπ = centred_dtft(fp.h, θ), centred_dtft(fp.h, θ + π)
+    g, gπ = centred_dtft(fp.g, θ), centred_dtft(fp.g, θ + π)
     gpoly = ((g + gπ) / 2, cis(θ) * (g - gπ) / 2)       # k = 0, 1
     hpoly = ((h + hπ) / 2, cis(-θ) * (h - hπ) / 2)
     return h, g, gpoly, hpoly

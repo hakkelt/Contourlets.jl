@@ -69,27 +69,27 @@ resolution, so its redundancy is `1 + Σ_j 2^{L_j}` rather than ≈ 4/3.
 
 ## Threading
 
-The NSCT and TICT transforms take a `threading` keyword (the CT and the STICT
-run their stages one after another and take none).  It is a [`ThreadingPolicy`](@ref) —
-`Auto()` (the default), `Enabled()` or `Disabled()` — and the default is a hybrid:
+The NSCT and TICT transforms take a `threaded` keyword (the CT and the STICT
+run their stages one after another and take none): `true`, `false`, or `nothing`
+(the default), which lets the transform decide.  The default is a hybrid:
 
 | Data | Default | Why |
 |---|---|---|
 | Real (`Float32`/`Float64`) | single-threaded `LoopVectorization.@turbo` | the inner loops vectorise cleanly; SIMD beats thread-spawn overhead |
 | Complex | multi-threaded `Polyester.@batch` | the loops do not vectorise; `@batch` spawns at near-zero cost |
 
-`Enabled()` and `Disabled()` override that choice.  The NSCT and TICT workspace
+`threaded = true` and `threaded = false` override that choice.  The NSCT and TICT workspace
 paths are FFT-bound instead: there, threading runs the independent subband FFTs
 in one task per Julia thread (FFTW's own threads, which split a single FFT, gain
 little at image sizes).  Real data stays single-threaded by default there too;
-pass `threading = Enabled()` to use the cores:
+pass `threaded = true` to use the cores:
 
 ```@example perf
 p_t = ContourletParams(J = 3, L_array = [2, 3, 4])
 ws_t = make_tict_workspace(p_t, (256, 256))
 buf_t = similar_tict_coefficients(p_t, (256, 256))
-t_serial = @belapsed tict_forward!($buf_t, $img, $p_t; workspace = $ws_t, threading = Disabled())
-t_threaded = @belapsed tict_forward!($buf_t, $img, $p_t; workspace = $ws_t, threading = Enabled())
+t_serial = @belapsed tict_forward!($buf_t, $img, $p_t; workspace = $ws_t, threaded = false)
+t_threaded = @belapsed tict_forward!($buf_t, $img, $p_t; workspace = $ws_t, threaded = true)
 println("tict_forward! serial   : $(round(t_serial * 1e3; digits = 1)) ms")
 println("tict_forward! threaded : $(round(t_threaded * 1e3; digits = 1)) ms on $(Threads.nthreads()) thread(s)")
 ```

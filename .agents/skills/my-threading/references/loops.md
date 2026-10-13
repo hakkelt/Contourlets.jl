@@ -69,4 +69,4 @@ function _conv_plain!(dst, src, h)
 end
 ```
 
-Used when `threading = Disabled()` or when benchmarking threading overhead.
+Used when `threaded = false` or when benchmarking threading overhead.

@@ -263,7 +263,7 @@ buys.
 
 !!! note "Threading"
     A host NSCT or TICT workspace keeps one FFT buffer per Julia thread, and with
-    threading on (`threading = Enabled()`, or the default for complex data) the
+    threading on (`threaded = true`, or the default for complex data) the
     `!` transforms split their independent subband FFTs between the threads.  The
     choice is made per call.
 

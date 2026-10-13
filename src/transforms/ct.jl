@@ -48,8 +48,8 @@ function ct_forward(
         return ct_forward!(coeffs, img, params; workspace = workspace)
     end
     # No-workspace: direct construction keeps the return type concrete (type-stable).
-    Td = _data_eltype(image)
-    Tf = _filter_eltype(Td)
+    Td = data_eltype(image)
+    Tf = filter_eltype(Td)
     img = Td === eltype(image) ? image : Td.(image)
     J = params.J
     L = params.L_array
@@ -113,7 +113,7 @@ function _ct_forward_noworkspace!(
         params::ContourletParams
     )
     Td = eltype(coeffs.coarse)
-    Tf = _filter_eltype(Td)
+    Tf = filter_eltype(Td)
     img = Td === eltype(image) ? image : Td.(image)
     J = params.J
     L = params.L_array
@@ -243,7 +243,7 @@ function _ct_inverse_alloc(
         coeffs::ContourletCoefficients,
         params::ContourletParams
     )
-    Tf = _filter_eltype(eltype(coeffs.coarse))
+    Tf = filter_eltype(eltype(coeffs.coarse))
     p_out = _convert_params(Tf, params)
     J = p_out.J
     fp = p_out.lp_filters

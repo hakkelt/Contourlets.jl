@@ -1,6 +1,6 @@
 ---
 name: my-threading
-description: Work with the dual-path threading architecture (LoopVectorization @turbo for real data, Polyester @batch for complex data). Use when adding threaded loops, modifying ThreadingPolicy dispatch, or diagnosing threading-related performance issues.
+description: Work with the dual-path threading architecture (LoopVectorization @turbo for real data, Polyester @batch for complex data). Use when adding threaded loops, modifying the `threaded` keyword resolution, or diagnosing threading-related performance issues.
 ---
 
 # Threading Architecture
@@ -20,19 +20,19 @@ mutually exclusive. `Polyester`'s near-zero spawn overhead makes multi-core
 ## Public API
 
 ```julia
-# The transforms that thread (NSCT, TICT, STICT) accept a threading kwarg:
-nsct_forward(image, params; threading=Auto())     # default
-nsct_forward(image, params; threading=Enabled())  # force multi-core
-nsct_forward(image, params; threading=Disabled()) # force single-thread
+# The transforms that thread (NSCT, TICT, STICT) accept a `threaded` keyword:
+nsct_forward(image, params; threaded = nothing)     # default
+nsct_forward(image, params; threaded = true)  # force multi-core
+nsct_forward(image, params; threaded = false) # force single-thread
 
-# Same for nsct_inverse!, tict_forward!, etc.  The CT takes no threading kwarg.
+# Same for nsct_inverse!, tict_forward!, etc.  The CT takes no `threaded` keyword.
 ```
 
-`ThreadingPolicy` types are exported: `Auto`, `Enabled`, `Disabled`.
+`threaded::Union{Bool, Nothing}`: `nothing` lets the transform decide.
 
 ## Reference Files
 
-- **[Policy dispatch](references/policy.md)** — `_use_threading`, how `Auto` resolves per type
+- **[Policy dispatch](references/policy.md)** — `use_threading`, how `threaded = nothing` resolves per type
 - **[Writing threaded loops](references/loops.md)** — `@turbo` vs `@batch`, placement, guards
 - **[Adding threading to a new function](references/adding.md)** — step-by-step checklist
 
@@ -40,9 +40,9 @@ nsct_forward(image, params; threading=Disabled()) # force single-thread
 
 ```julia
 using Contourlets
-# Auto selects correctly:
-Contourlets._use_threading(Auto(), Float64)    # → false (SIMD path)
-Contourlets._use_threading(Auto(), ComplexF64) # → true  (batch path)
+# the default selects correctly:
+Contourlets.use_threading(nothing, Float64)    # → false (SIMD path)
+Contourlets.use_threading(nothing, ComplexF64) # → true  (batch path)
 ```
 
 ## Key Invariants
@@ -50,9 +50,9 @@ Contourlets._use_threading(Auto(), ComplexF64) # → true  (batch path)
 - Never put `@turbo` on a loop that operates on complex arrays — it will error or silently produce wrong results.
 - Never spawn `Base.Threads.@spawn` tasks inside hot recursive paths — task creation overhead dominates.
 - `@batch` (Polyester) reuses a persistent thread pool; it is safe to call recursively and in tight loops.
-- `Disabled()` must suppress both `@turbo` and `@batch` — fall back to a plain `for` loop.
+- `threaded = false` must suppress both `@turbo` and `@batch` — fall back to a plain `for` loop.
 
 ## Related Skills
 
-- `julia-perf` — diagnosing whether threading is helping or hurting (use `@btime` with `threading=Disabled()` vs `Auto()`)
-- `my-gpu-ext` — GPU transforms ignore `ThreadingPolicy` (kernels run on device threads)
+- `julia-perf` — diagnosing whether threading is helping or hurting (use `@btime` with `threaded = false` vs the default)
+- `my-gpu-ext` — GPU transforms ignore `threaded` (kernels run on device threads)

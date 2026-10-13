@@ -61,7 +61,7 @@ masks on the input's spectrum and one nonsubsampled directional bank per level, 
     An `NSCTWorkspace` is **not thread-safe**; create one per concurrent caller.
     (A single call may still split its own subband FFTs between threads.)
 """
-struct NSCTWorkspace{Td <: Number, Tf <: AbstractFloat, M <: AbstractMatrix{Td}, E <: _MaskBankEngine}
+struct NSCTWorkspace{Td <: Number, Tf <: AbstractFloat, M <: AbstractMatrix{Td}, E <: MaskBankEngine}
     params::ContourletParams{Tf}
     image_size::Tuple{Int, Int}
 
@@ -179,7 +179,7 @@ function make_workspace(
         prewarm::Bool = true
     ) where {Tp}
     Td = promote_type(Tp, T)         # data buffer type (may be complex)
-    Tf = _filter_eltype(Td)          # real filter precision
+    Tf = filter_eltype(Td)          # real filter precision
     p2 = _convert_params(Tf, params)
     bp_dims = _bandpass_dims(image_size, p2.J)
     ref = _allocate_zeros(M, Td, (1, 1))
@@ -197,7 +197,7 @@ end
 
 """
     make_nsct_workspace(params::ContourletParams, image_size::Tuple{Int,Int}; T=Float64,
-                        threading=Auto()) -> NSCTWorkspace
+                        threaded=nothing) -> NSCTWorkspace
     make_nsct_workspace(T::Type, image_size::Tuple{Int,Int}, params::ContourletParams)
                         -> NSCTWorkspace
 
@@ -208,7 +208,7 @@ The second form is a convenience overload with the element type as the first pos
 !!! note "Threading"
     A host workspace holds one FFT buffer per Julia thread, and `nsct_forward!` /
     `nsct_inverse!` split their independent subband FFTs between threads when their
-    own `threading` policy says so, call by call.  The `threading` kwarg here only
+    own `threaded` keyword says so, call by call.  The `threaded` keyword here only
     applies to the warm-up pass.
 """
 make_nsct_workspace(
@@ -234,10 +234,10 @@ function make_nsct_workspace(
         T::Type{<:Number} = Float64,
         M::Type{<:AbstractMatrix} = Matrix{promote_type(Tp, T)},
         prewarm::Bool = true,
-        threading::ThreadingPolicy = Auto()
+        threaded::Union{Bool, Nothing} = nothing
     ) where {Tp}
     Td = promote_type(Tp, T)         # data buffer type (may be complex)
-    Tf = _filter_eltype(Td)          # real filter precision
+    Tf = filter_eltype(Td)          # real filter precision
     p2 = _convert_params(Tf, params)
     J = p2.J
     # Precompute the NSDFB equivalent filters (the bank depends on the pyramid level
@@ -261,9 +261,9 @@ function make_nsct_workspace(
     ana, syn = _nsp_masks(Tf, p2.lp_filters, image_size, J; rows = axes(X, 1))
     ana = [_like(X, a) for a in ana]
     syn = [_like(X, a) for a in syn]
-    items = [_MaskItem((j, k), j, j, k) for j in 1:J for k in eachindex(banks[j].ana)]
-    engine = _MaskBankEngine(ana[1:J], syn[1:J], ana[J + 1], syn[J + 1], banks, items, X, pfwd, pinv)
+    items = [MaskItem((j, k), j, j, k) for j in 1:J for k in eachindex(banks[j].ana)]
+    engine = MaskBankEngine(ana[1:J], syn[1:J], ana[J + 1], syn[J + 1], banks, items, X, pfwd, pinv)
     ws = NSCTWorkspace{Td, Tf, M, typeof(engine)}(p2, image_size, ScratchArena{M}(), ScratchArena{M}(), engine)
-    prewarm && _prewarm_nsct!(ws; threading = threading)
+    prewarm && _prewarm_nsct!(ws; threaded = threaded)
     return ws
 end

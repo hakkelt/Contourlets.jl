@@ -22,13 +22,13 @@ frequency partition a volume needs cannot be critically sampled at all. The two
 packages share only the pyramid filter machinery.
 
 The shared surface with the core is small and explicit: `FilterPair`, `CDF97`,
-`upsample_filter`, the threading policy types, and the internals `_data_eltype`,
-`_filter_eltype`, `_use_threading`, the scoped FFTW thread count
-(`_with_fftw_threads`), `_clamp_idx`, `_nsp_atrous_filters`, and the
-pyramid's frequency responses (`_nsp_responses`, `_centred_dtft`), and the
-mask-bank engine that runs the NSCT and TICT workspaces (`_MaskBankEngine`,
-`_MaskItem`, `_mask_bank_forward!`, `_mask_bank_inverse!`; this package adds
-`_subband` methods for its coefficient sets in `src/workspace/mask_bank.jl`).
+`upsample_filter`, and the internals `data_eltype`,
+`filter_eltype`, `use_threading`, the scoped FFTW thread count
+(`with_fftw_threads`), `clamp_idx`, `nsp_atrous_filters`, and the
+pyramid's frequency responses (`nsp_responses`, `centred_dtft`), and the
+mask-bank engine that runs the NSCT and TICT workspaces (`MaskBankEngine`,
+`MaskItem`, `mask_bank_forward!`, `mask_bank_inverse!`; this package adds
+`mask_bank_subband` methods for its coefficient sets in `src/workspace/mask_bank.jl`).
 All are re-exported (public names) or imported (internals) in
 `src/Contourlets.jl`.
 
@@ -61,11 +61,11 @@ Conventions that are non-obvious or specific to this package's API contract:
   derived from it. Filter constants are defined once in `src/filters/` and
   referenced by value — never rebuild filter arrays inside hot loops.
 - **Element types: real filters, real-or-complex data.** `FilterPair` and the
-  `_data_eltype`/`_filter_eltype` helpers come from MultiscaleFilterBanks.
+  `data_eltype`/`filter_eltype` helpers come from MultiscaleFilterBanks.
   Filters are always real
   (`FilterPair`/`QuincunxFilterPair`/`ContourletParams` are `Tf <: AbstractFloat`);
   image data may be complex (`Td <: Number`). The two flow independently —
-  `Td = _data_eltype(image)`, `Tf = _filter_eltype(Td) = real(float(Td))` — so a
+  `Td = data_eltype(image)`, `Tf = filter_eltype(Td) = real(float(Td))` — so a
   complex image is filtered as complex·real (never complex·complex). Multiply
   kernels (`conv2d_sep!`, `conv2d` direct, `_sefilter2`, `_nsqfb_*`, `qfb`) take
   `src::{Td}` / filter `::{Tf}` separately and accumulate in `Td`; coefficient and
@@ -77,8 +77,8 @@ Conventions that are non-obvious or specific to this package's API contract:
   `f!(dst, args..., params; workspace=nothing)` writes into `dst`, and
   `f(args..., params; workspace=nothing)` allocates and returns the result — the
   **only** difference is whether the caller supplies the output container.  The
-  transforms that thread (NSCT, TICT) also take `threading=Auto()` on both
-  variants; the CT and the STICT have nothing to thread and take no `threading`
+  transforms that thread (NSCT, TICT) also take `threaded = nothing` on both
+  variants; the CT and the STICT have nothing to thread and take no `threaded`
   keyword.  Both
   variants accept the same optional `workspace` kwarg for reusing scratch buffers; pass a `CTWorkspace` from
   `make_workspace` (or an `NSCTWorkspace` from `make_nsct_workspace`) to eliminate per-call allocation in the
@@ -197,17 +197,17 @@ output.
 - **Hybrid Threading Architecture** — real data (`Float32`/`Float64`) uses
   `LoopVectorization.@turbo` (SIMD, single thread); complex data uses
   `Polyester.@batch` (multi-core, near-zero spawn overhead). The NSCT and
-  TICT transforms (and `conv2d`) expose `threading::ThreadingPolicy` kwargs:
-  `Auto` (default), `Enabled`, `Disabled`; the CT and STICT do not.
-  `Auto` enables threading for complex types only. Load the `my-threading` skill
+  TICT transforms (and `conv2d`) expose a `threaded::Union{Bool, Nothing}`
+  keyword: `nothing` (default), `true`, `false`; the CT and STICT do not.
+  `nothing` enables threading for complex types only. Load the `my-threading` skill
   before adding or modifying threaded loops.  The FFT-bound workspace paths
   (NSCT, TICT) thread differently: one `@batch` task per thread
-  (MultiscaleFilterBanks' `_foreach_chunk`/`_chunked_sum!`) runs a
+  (MultiscaleFilterBanks' `foreach_chunk`/`chunked_sum!`) runs a
   contiguous chunk of the independent subband FFTs with its own buffer (and,
   for the inverse, its own partial sum).  FFTW's own threads split one FFT and
   gain ~nothing at 256²; this gains ~3.5× on 4 threads.  Plans stay
   single-threaded, and the choice is per call.  Never call
-  `FFTW.set_num_threads` directly: plan inside `_with_fftw_threads`, which
+  `FFTW.set_num_threads` directly: plan inside `with_fftw_threads`, which
   restores the count and yields to a caller's NestedThreading budget.
 - **Same-size products use FastBroadcast's `@..`.** Base's broadcast checks every
   axis for a singleton at run time, which keeps the mask products of the

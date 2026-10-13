@@ -154,12 +154,9 @@ end
     p = ContourletParams(J = 2, L_array = [1, 2])
 
     # ── Threading policies ───────────────────────────────────────────────────
-    @test_call target_modules = M Auto()
-    @test_call target_modules = M Enabled()
-    @test_call target_modules = M Disabled()
     @test_call target_modules = M FilterPair(CDF97.h, CDF97.g)
-    @test_call target_modules = M ct_forward(x, p; threading = Disabled())
-    @test_call target_modules = M nsct_forward(x, p; threading = Enabled())
+    @test_call target_modules = M ct_forward(x, p; threaded = false)
+    @test_call target_modules = M nsct_forward(x, p; threaded = true)
 
     # ── Primitives (in place) ────────────────────────────────────────────────
     y = rect_downsample(x)
@@ -204,12 +201,12 @@ end
     tc, stc = similar_tict_coefficients(p, (16, 16)), similar_stict_coefficients(p, (16, 16))
     rec = similar(x)
     @test_call target_modules = M tict_forward!(tc, x, p; workspace = tws)
-    @test_call target_modules = M tict_forward!(tc, x, p; workspace = tws, threading = Disabled())
+    @test_call target_modules = M tict_forward!(tc, x, p; workspace = tws, threaded = false)
     @test_call target_modules = M tict_inverse!(rec, tc, p; workspace = tws)
     @test_call target_modules = M stict_forward!(stc, x, p; workspace = sws)
     @test_call target_modules = M stict_inverse!(rec, stc, p; workspace = sws)
     @test_call target_modules = M nsct_forward!(
-        similar_nsct_coefficients(p, (16, 16)), x, p; workspace = make_nsct_workspace(p, (16, 16)), threading = Disabled()
+        similar_nsct_coefficients(p, (16, 16)), x, p; workspace = make_nsct_workspace(p, (16, 16)), threaded = false
     )
 end
 
@@ -231,9 +228,6 @@ end
     @test_opt target_modules = M upsample_filter([1.0, 2.0, 3.0], 2)
     @test_opt target_modules = M upsample_kernel([1.0 2.0; 3.0 4.0], 2)
     @test_opt target_modules = M check_pr_condition(Q2345)
-    @test_opt target_modules = M Auto()
-    @test_opt target_modules = M Enabled()
-    @test_opt target_modules = M Disabled()
 
     # ── Primitives ───────────────────────────────────────────────────────────
     @test_opt target_modules = M Contourlets.conv2d(x, k)

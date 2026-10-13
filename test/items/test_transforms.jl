@@ -180,30 +180,24 @@ end
     @test ls[1] >= ls[end]   # finer scale ≥ coarser scale in direction count
 end
 
-@testitem "Enabled threading policy" tags = [:ct] begin
-    @test Contourlets._use_threading(Enabled(), Float64) === true
-    @test Contourlets._use_threading(Enabled(), ComplexF64) === true
+@testitem "threaded keyword resolution" tags = [:ct] begin
+    for T in (Float32, Float64, ComplexF32, ComplexF64)
+        @test Contourlets.use_threading(true, T) === true
+        @test Contourlets.use_threading(false, T) === false
+    end
+    @test Contourlets.use_threading(nothing, Float64) === false
+    @test Contourlets.use_threading(nothing, ComplexF64) === true
+    @test Contourlets.use_threading(nothing, Float32) === false
+    @test Contourlets.use_threading(nothing, ComplexF32) === true
 end
 
-@testitem "Disabled threading policy" tags = [:ct] begin
-    @test Contourlets._use_threading(Disabled(), Float64) === false
-    @test Contourlets._use_threading(Disabled(), ComplexF64) === false
-end
-
-@testitem "Auto threading policy dispatch" tags = [:ct] begin
-    @test Contourlets._use_threading(Auto(), Float64) === false
-    @test Contourlets._use_threading(Auto(), ComplexF64) === true
-    @test Contourlets._use_threading(Auto(), Float32) === false
-    @test Contourlets._use_threading(Auto(), ComplexF32) === true
-end
-
-@testitem "NSCT with threading=Enabled() and Real data" tags = [:nsct] begin
+@testitem "NSCT with threaded = true and Real data" tags = [:nsct] begin
     using Random
     Random.seed!(91)
     x = randn(32, 32)
     p = ContourletParams(J = 2, L_array = [2, 3])
-    nc = nsct_forward(x, p; threading = Enabled())
-    rec = nsct_inverse(nc, p; threading = Enabled())
+    nc = nsct_forward(x, p; threaded = true)
+    rec = nsct_inverse(nc, p; threaded = true)
     @test maximum(abs, rec .- x) < 1.0e-12
 end
 

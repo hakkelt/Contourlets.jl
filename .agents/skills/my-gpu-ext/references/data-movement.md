@@ -31,8 +31,8 @@ coeffs_gpu = Adapt.adapt(CuArray, coeffs_cpu)   # CUDA example
 ## Type Conversions
 
 ```julia
-Td = Contourlets._data_eltype(image)      # data type (real or complex)
-Tf = Contourlets._filter_eltype(Td)       # = real(float(Td))
+Td = Contourlets.data_eltype(image)      # data type (real or complex)
+Tf = Contourlets.filter_eltype(Td)       # = real(float(Td))
 
 # Convert a CPU filter to the right precision before uploading
 h_d = _ensure_gpu(backend, Tf.(fp.h))

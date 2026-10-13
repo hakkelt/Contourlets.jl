@@ -1,34 +1,24 @@
-# ThreadingPolicy Dispatch
+# The `threaded` Keyword
 
-## Type Definitions (MultiscaleFilterBanks.jl, `src/threading.jl`)
+## Resolution (MultiscaleFilterBanks.jl, `src/threading.jl`)
 
-The policy types, `_use_threading`, and the FFT-loop task split
-(`_n_fft_tasks`, `_chunk`) live in the shared core and are imported in
-`src/Contourlets.jl`.
+`use_threading` and the FFT-loop task split (`_n_fft_tasks`, `_chunk`) live in
+the shared core and are imported in `src/Contourlets.jl`.
 
 ```julia
-abstract type ThreadingPolicy end
-struct Auto    <: ThreadingPolicy end
-struct Enabled <: ThreadingPolicy end
-struct Disabled <: ThreadingPolicy end
+@inline use_threading(threaded::Bool, ::Type) = threaded
+@inline use_threading(::Nothing, ::Type{T}) where {T} = !(T <: Real)
 ```
 
-## `_use_threading` Resolution
+`threaded = nothing` (the default) enables threading exactly when `T` is not a
+real type — i.e., for all complex types. `Real` data takes the `@turbo` SIMD path
+instead.
+
+## Using `use_threading` in a Function
 
 ```julia
-@inline _use_threading(::Enabled,  ::Type{T}) where {T} = true
-@inline _use_threading(::Disabled, ::Type{T}) where {T} = false
-@inline _use_threading(::Auto,     ::Type{T}) where {T} = !(T <: Real)
-```
-
-`Auto` enables threading exactly when `T` is not a real type — i.e., for all
-complex types. `Real` data takes the `@turbo` SIMD path instead.
-
-## Using `_use_threading` in a Function
-
-```julia
-function my_filtered_op!(dst, src, h, threading::ThreadingPolicy = Auto())
-    if _use_threading(threading, eltype(src))
+function my_filtered_op!(dst, src, h, threaded::Union{Bool, Nothing} = nothing)
+    if use_threading(threaded, eltype(src))
         _my_op_batch!(dst, src, h)    # Polyester @batch loop
     else
         _my_op_turbo!(dst, src, h)    # LoopVectorization @turbo loop
@@ -36,22 +26,22 @@ function my_filtered_op!(dst, src, h, threading::ThreadingPolicy = Auto())
 end
 ```
 
-The branch is `@inline`-ed and the policy type is concrete at the call site, so
-the compiler eliminates the dead branch entirely — zero runtime overhead.
+Call `use_threading` once at function entry; the branch costs nothing next to
+the loops it selects.
 
-## Propagating the Policy
+## Propagating the Keyword
 
-Always thread the `threading` kwarg through to inner calls that do hot work:
+Always pass the `threaded` keyword through to inner calls that do hot work:
 
 ```julia
-function nsct_forward!(coeffs, image, params; threading=Auto())
-    _nsct_inner!(coeffs, image, params, threading)  # pass it down
+function nsct_forward!(coeffs, image, params; threaded = nothing)
+    _nsct_inner!(coeffs, image, params, threaded)  # pass it down
 end
 
-function _nsct_inner!(coeffs, image, params, threading::ThreadingPolicy)
-    conv2d_sep!(dst, src, h, g; threading=threading)  # propagate
+function _nsct_inner!(coeffs, image, params, threaded::Union{Bool, Nothing})
+    conv2d_sep!(dst, src, h, g; threaded = threaded)  # propagate
     ...
 end
 ```
 
-Never default to `Auto()` in internal functions — always accept it as a parameter.
+Never default to `nothing` in internal functions — always accept it as a parameter.

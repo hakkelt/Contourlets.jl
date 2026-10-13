@@ -16,7 +16,7 @@ using LinearAlgebra: mul!
 # Boundary extension helpers (type-parameterised for zero overhead)
 # ────────────────────────────────────────────────────────────────────────────────
 
-# `_clamp_idx` comes from MultiscaleFilterBanks: it takes the boundary mode B as a
+# `clamp_idx` comes from MultiscaleFilterBanks: it takes the boundary mode B as a
 # type parameter so the compiler emits fully specialised code with no dispatch
 # overhead per call.
 
@@ -24,8 +24,8 @@ using LinearAlgebra: mul!
         src::AbstractMatrix{T}, i::Int, j::Int, n1::Int, n2::Int,
         bv::Val{B}
     )::T where {T, B}
-    ii = _clamp_idx(i, n1, bv)
-    jj = _clamp_idx(j, n2, bv)
+    ii = clamp_idx(i, n1, bv)
+    jj = clamp_idx(j, n2, bv)
     (B === :zero && (ii < 1 || ii > n1 || jj < 1 || jj > n2)) && return zero(T)
     return @inbounds src[ii, jj]
 end
@@ -106,15 +106,15 @@ function _build_fft_plan(
         src_size::Tuple{Int, Int},
         kernel_size::Tuple{Int, Int},
         ::Type{T},
-        threading::ThreadingPolicy = Auto()
+        threaded::Union{Bool, Nothing} = nothing
     ) where {T <: AbstractFloat}
     n1, n2 = src_size
     k1, k2 = kernel_size
     p1 = nextprod([2, 3, 5], n1 + k1 - 1)
     p2 = nextprod([2, 3, 5], n2 + k2 - 1)
     buf = zeros(T, p1, p2)
-    threaded = _use_threading(threading, T)
-    fwd, inv = _with_fftw_threads(threaded ? Threads.nthreads() : 1) do
+    nthreads = use_threading(threaded, T) ? Threads.nthreads() : 1
+    fwd, inv = with_fftw_threads(nthreads) do
         f = plan_rfft(buf; flags = FFTW.MEASURE)
         f, plan_irfft(f * buf, p1; flags = FFTW.MEASURE)
     end
@@ -205,7 +205,7 @@ function conv2d!(
             ceil(Int, size(kernel, 2) / 2),
         );
         boundary::Symbol = :symmetric,
-        threading::ThreadingPolicy = Auto()
+        threaded::Union{Bool, Nothing} = nothing
     ) where {Td <: Number, Tf <: AbstractFloat}
     size(dst) == size(src) || throw(DimensionMismatch("dst and src must have the same size"))
     # The FFTW backend is real-only (plan_rfft) and needs data == kernel type, so
@@ -214,7 +214,7 @@ function conv2d!(
     if length(kernel) <= 25 || !(Td <: AbstractFloat && Td === Tf)
         _conv2d_direct!(dst, src, kernel, origin; boundary = boundary)
     else
-        ws = _make_fftw_workspace(size(src), size(kernel), Td, threading)
+        ws = _make_fftw_workspace(size(src), size(kernel), Td, threaded)
         _conv2d_fftw!(dst, src, kernel, origin, ws; boundary = boundary)
     end
     return dst
@@ -240,10 +240,10 @@ function conv2d(
             ceil(Int, size(kernel, 2) / 2),
         );
         boundary::Symbol = :symmetric,
-        threading::ThreadingPolicy = Auto()
+        threaded::Union{Bool, Nothing} = nothing
     ) where {Td <: Number, Tf <: AbstractFloat}
     dst = similar(src)
-    return conv2d!(dst, src, kernel, origin; boundary = boundary, threading = threading)
+    return conv2d!(dst, src, kernel, origin; boundary = boundary, threaded = threaded)
 end
 
 # ────────────────────────────────────────────────────────────────────────────────
@@ -256,9 +256,9 @@ function _make_fftw_workspace(
         src_size::Tuple{Int, Int},
         kernel_size::Tuple{Int, Int},
         ::Type{T},
-        threading::ThreadingPolicy = Auto()
+        threaded::Union{Bool, Nothing} = nothing
     ) where {T <: AbstractFloat}
-    fwd, inv, (p1, p2) = _build_fft_plan(src_size, kernel_size, T, threading)
+    fwd, inv, (p1, p2) = _build_fft_plan(src_size, kernel_size, T, threaded)
     pad_src = zeros(T, p1, p2)
     pad_ker = zeros(T, p1, p2)
     Nc = p1 ÷ 2 + 1

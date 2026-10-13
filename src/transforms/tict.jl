@@ -12,7 +12,7 @@
 Precomputed TILP masks, directional filters, FFT buffers and plans of a TICT at
 one image size and element type.  Build with [`make_tict_workspace`](@ref).
 """
-struct TICTWorkspace{Td <: Number, Tf <: AbstractFloat, M <: AbstractMatrix, E <: _MaskBankEngine}
+struct TICTWorkspace{Td <: Number, Tf <: AbstractFloat, M <: AbstractMatrix, E <: MaskBankEngine}
     params::ContourletParams{Tf}
     image_size::NTuple{2, Int}
     # Staging buffers for an input or output that is not of the dense type `M`
@@ -67,11 +67,11 @@ function _make_tict_workspace(
     banks = B[bank(l, h) for l in p.L_array for h in _TILP_HALVES]
     g(i, c) = 4 * (i - 1) + c                   # pyramid mask and bank of channel c of level i
     items = [
-        _MaskItem((i, c, k), g(i, c), g(i, c), k)
+        MaskItem((i, c, k), g(i, c), g(i, c), k)
             for (i, l) in enumerate(p.L_array) for c in 1:4 for k in 1:_tict_n_subbands(l, c)
     ]
     X, pfwd, pinv = _ns_plans(ref; measured = true)
-    engine = _MaskBankEngine(
+    engine = MaskBankEngine(
         reduce(vcat, masks.ana), reduce(vcat, masks.syn), masks.coarse_ana, masks.coarse_syn,
         banks, items, X, pfwd, pinv
     )
@@ -88,13 +88,13 @@ _ws_matrix_type(::TICTWorkspace{Td, Tf, M}) where {Td, Tf, M} = M
 # independent subband FFTs run in one task per FFT buffer with `threaded` (host
 # workspaces only).
 _tict_forward_ws!(coeffs::TICTCoefficients, x::AbstractMatrix, ws::TICTWorkspace, threaded::Bool = false) =
-    _mask_bank_forward!(coeffs, x, ws.engine, threaded)
+    mask_bank_forward!(coeffs, x, ws.engine, threaded)
 
 _tict_inverse_ws!(x::AbstractMatrix, coeffs::TICTCoefficients, ws::TICTWorkspace, threaded::Bool = false) =
-    _dense_output!(x, ws, y -> _mask_bank_inverse!(y, coeffs, ws.engine, threaded))
+    _dense_output!(x, ws, y -> mask_bank_inverse!(y, coeffs, ws.engine, threaded))
 
 """
-    tict_forward(image, params::ContourletParams; workspace=nothing, threading=Auto())
+    tict_forward(image, params::ContourletParams; workspace=nothing, threaded=nothing)
         -> TICTCoefficients
 
 Translation-invariant contourlet transform of Eslami & Radha (2006).  A
@@ -112,8 +112,8 @@ the directional stage's translation invariance for a redundancy of `4J + 1`.
 `params.lp_filters` must be biorthogonal (as [`CDF97`](@ref) is) and
 `params.dfb_filters` a ladder pair such as [`Q2345`](@ref).  Pass a workspace from
 [`make_tict_workspace`](@ref) to reuse the precomputed filters.  With threading
-on (`Enabled()`, or `Auto()` for complex data) the independent subband FFTs run
-in one task per Julia thread; device arrays ignore it.
+on (`threaded = true`, or the default `threaded = nothing` for complex data) the
+independent subband FFTs run in one task per Julia thread; device arrays ignore it.
 
 # Examples
 ```jldoctest
@@ -135,16 +135,16 @@ true
 function tict_forward(
         image::AbstractMatrix, params::ContourletParams;
         workspace::Union{Nothing, TICTWorkspace} = nothing,
-        threading::ThreadingPolicy = Auto()
+        threaded::Union{Bool, Nothing} = nothing
     )
     ws = workspace === nothing ? _own_workspace(_make_tict_workspace, image, params) : workspace
     x = _dense_input(ws, _check_tict_input(ws, _ws_input(ws, image)))
     coeffs = _similar_tict_coefficients(ws.params, ws.image_size, eltype(ws), typeof(similar(x)))
-    return _tict_forward_ws!(coeffs, x, ws, _use_threading(threading, eltype(ws)))
+    return _tict_forward_ws!(coeffs, x, ws, use_threading(threaded, eltype(ws)))
 end
 
 """
-    tict_forward!(coeffs, image, params; workspace=nothing, threading=Auto()) -> coeffs
+    tict_forward!(coeffs, image, params; workspace=nothing, threaded=nothing) -> coeffs
 
 In-place [`tict_forward`](@ref) into coefficients from
 [`similar_tict_coefficients`](@ref).  With a workspace it allocates nothing
@@ -153,31 +153,31 @@ In-place [`tict_forward`](@ref) into coefficients from
 function tict_forward!(
         coeffs::TICTCoefficients, image::AbstractMatrix, params::ContourletParams;
         workspace::Union{Nothing, TICTWorkspace} = nothing,
-        threading::ThreadingPolicy = Auto()
+        threaded::Union{Bool, Nothing} = nothing
     )
     ws = workspace === nothing ? _own_workspace(_make_tict_workspace, image, params) : workspace
     _check_tict_eltype(ws, coeffs.coarse, "coefficient set")
     x = _dense_input(ws, _check_tict_input(ws, _ws_input(ws, image)))
-    return _tict_forward_ws!(coeffs, x, ws, _use_threading(threading, eltype(ws)))
+    return _tict_forward_ws!(coeffs, x, ws, use_threading(threaded, eltype(ws)))
 end
 
 """
-    tict_inverse(coeffs::TICTCoefficients, params; workspace=nothing, threading=Auto()) -> image
+    tict_inverse(coeffs::TICTCoefficients, params; workspace=nothing, threaded=nothing) -> image
 
 Inverse of [`tict_forward`](@ref): exact reconstruction (to rounding error).
 """
 function tict_inverse(
         coeffs::TICTCoefficients, params::ContourletParams;
         workspace::Union{Nothing, TICTWorkspace} = nothing,
-        threading::ThreadingPolicy = Auto()
+        threaded::Union{Bool, Nothing} = nothing
     )
     ws = workspace === nothing ? _own_workspace(_make_tict_workspace, coeffs.coarse, params) : workspace
     _check_tict_eltype(ws, coeffs.coarse, "coefficient set")
-    return _tict_inverse_ws!(similar(coeffs.coarse, eltype(ws)), coeffs, ws, _use_threading(threading, eltype(ws)))
+    return _tict_inverse_ws!(similar(coeffs.coarse, eltype(ws)), coeffs, ws, use_threading(threaded, eltype(ws)))
 end
 
 """
-    tict_inverse!(image, coeffs, params; workspace=nothing, threading=Auto()) -> image
+    tict_inverse!(image, coeffs, params; workspace=nothing, threaded=nothing) -> image
 
 In-place [`tict_inverse`](@ref).  With a workspace it allocates nothing (a few
 hundred bytes for the tasks when threading is on).
@@ -185,10 +185,10 @@ hundred bytes for the tasks when threading is on).
 function tict_inverse!(
         image::AbstractMatrix, coeffs::TICTCoefficients, params::ContourletParams;
         workspace::Union{Nothing, TICTWorkspace} = nothing,
-        threading::ThreadingPolicy = Auto()
+        threaded::Union{Bool, Nothing} = nothing
     )
     ws = workspace === nothing ? _own_workspace(_make_tict_workspace, image, params) : workspace
     _check_tict_eltype(ws, coeffs.coarse, "coefficient set")
     _check_tict_eltype(ws, image, "output image")
-    return _tict_inverse_ws!(_check_tict_input(ws, image), coeffs, ws, _use_threading(threading, eltype(ws)))
+    return _tict_inverse_ws!(_check_tict_input(ws, image), coeffs, ws, use_threading(threaded, eltype(ws)))
 end

@@ -118,8 +118,8 @@ for sz in TEST_SIZES
         SUITE["NSCT"][sz_str]["inverse!"] = @benchmarkable nsct_inverse!($img_out_nsct, $coeffs_nsct, $p_nsct; workspace = $ws_nsct)
 
         # Subband FFTs split between threads (one task per Julia thread)
-        SUITE["NSCT"][sz_str]["forward! threaded"] = @benchmarkable nsct_forward!($coeffs_nsct_alloc, $img, $p_nsct; workspace = $ws_nsct, threading = Enabled())
-        SUITE["NSCT"][sz_str]["inverse! threaded"] = @benchmarkable nsct_inverse!($img_out_nsct, $coeffs_nsct, $p_nsct; workspace = $ws_nsct, threading = Enabled())
+        SUITE["NSCT"][sz_str]["forward! threaded"] = @benchmarkable nsct_forward!($coeffs_nsct_alloc, $img, $p_nsct; workspace = $ws_nsct, threaded = true)
+        SUITE["NSCT"][sz_str]["inverse! threaded"] = @benchmarkable nsct_inverse!($img_out_nsct, $coeffs_nsct, $p_nsct; workspace = $ws_nsct, threaded = true)
 
         # TICT / STICT (Eslami & Radha): workspace paths, same parameters as the NSCT
         for (name, mk, sim, fwd!, inv!) in (
@@ -135,8 +135,8 @@ for sz in TEST_SIZES
         ws_tt = make_tict_workspace(p_nsct, (sz, sz); T = T)
         coeffs_tt = similar_tict_coefficients(p_nsct, (sz, sz); Td = T)
         img_out_tt = similar(img)
-        SUITE["TICT"][sz_str]["forward! threaded"] = @benchmarkable tict_forward!($coeffs_tt, $img, $p_nsct; workspace = $ws_tt, threading = Enabled())
-        SUITE["TICT"][sz_str]["inverse! threaded"] = @benchmarkable tict_inverse!($img_out_tt, $coeffs_tt, $p_nsct; workspace = $ws_tt, threading = Enabled())
+        SUITE["TICT"][sz_str]["forward! threaded"] = @benchmarkable tict_forward!($coeffs_tt, $img, $p_nsct; workspace = $ws_tt, threaded = true)
+        SUITE["TICT"][sz_str]["inverse! threaded"] = @benchmarkable tict_inverse!($img_out_tt, $coeffs_tt, $p_nsct; workspace = $ws_tt, threaded = true)
 
         # Optional GPU Benchmarks if a backend is available
         if @isdefined(GPU_BACKEND)

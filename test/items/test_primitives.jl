@@ -301,13 +301,13 @@ end
     end
 end
 
-@testitem "conv2d! large kernel Enabled() threading" tags = [:primitives] begin
+@testitem "conv2d! large kernel threaded = true" tags = [:primitives] begin
     using Random
     Random.seed!(102)
     x = randn(32, 32)
     k = randn(6, 6)   # 36 taps > 25 ⇒ FFTW path
-    out_enabled = Contourlets.conv2d(x, k; threading = Enabled())
-    out_auto = Contourlets.conv2d(x, k; threading = Auto())
+    out_enabled = Contourlets.conv2d(x, k; threaded = true)
+    out_auto = Contourlets.conv2d(x, k; threaded = nothing)
     @test size(out_enabled) == size(x)
     @test maximum(abs, out_enabled .- out_auto) < 1.0e-10
 end

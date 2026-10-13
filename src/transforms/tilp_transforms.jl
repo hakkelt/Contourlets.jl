@@ -38,7 +38,7 @@
 # Half tree of each TILP channel (see above).
 const _TILP_HALVES = (:both, :second, :first, :both)
 
-_tict_types(params::ContourletParams{Tp}, ::Type{T}) where {Tp, T} = (Td = promote_type(Tp, T); (Td, _filter_eltype(Td)))
+_tict_types(params::ContourletParams{Tp}, ::Type{T}) where {Tp, T} = (Td = promote_type(Tp, T); (Td, filter_eltype(Td)))
 
 # ── Coefficient containers ────────────────────────────────────────────────────
 
@@ -115,8 +115,8 @@ end
 # Workspace at the data's own precision: like `nsct_forward`, the allocating forms
 # never promote the data to the precision of `params`.
 function _own_workspace(make::F, x::AbstractMatrix, params::ContourletParams) where {F}
-    Td = _data_eltype(x)
-    p = _convert_params(_filter_eltype(Td), params)
+    Td = data_eltype(x)
+    p = _convert_params(filter_eltype(Td), params)
     return make(p, size(x), Td, typeof(similar(x, Td, 0, 0)))
 end
 

@@ -37,8 +37,8 @@ julia> size(sb0), size(sb0_r)
 ```
 """
 function qfb_decompose(image::AbstractMatrix, qfp::QuincunxFilterPair; dir::Symbol = :col)
-    Td = _data_eltype(image)         # data type (real or complex)
-    Tf = _filter_eltype(Td)          # real filter precision
+    Td = data_eltype(image)         # data type (real or complex)
+    Tf = filter_eltype(Td)          # real filter precision
     img = Td === eltype(image) ? image : Td.(image)
     qfpT = _convert_qfp(Tf, qfp)
     if dir === :col
@@ -94,8 +94,8 @@ function qfb_reconstruct(
         sb0::AbstractMatrix, sb1::AbstractMatrix,
         qfp::QuincunxFilterPair; dir::Symbol = :col
     )
-    Td = _data_eltype(promote_type(eltype(sb0), eltype(sb1)))  # data type
-    Tf = _filter_eltype(Td)                                    # real filter precision
+    Td = data_eltype(promote_type(eltype(sb0), eltype(sb1)))  # data type
+    Tf = filter_eltype(Td)                                    # real filter precision
     sb0T = Td === eltype(sb0) ? sb0 : Td.(sb0)
     sb1T = Td === eltype(sb1) ? sb1 : Td.(sb1)
     qfpT = _convert_qfp(Tf, qfp)

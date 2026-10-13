@@ -313,6 +313,16 @@ end
     qfb_decompose!(sb0, sb1, x, Q2345; dir = :row)
     @test maximum(abs, sb0 .- sb0_alloc) < 1.0e-14
     @test maximum(abs, sb1 .- sb1_alloc) < 1.0e-14
+    # Complex data: the transpose must not conjugate.
+    z = complex.(randn(32, 32), randn(32, 32))
+    zb0, zb1 = qfb_decompose(z, Q2345; dir = :row)
+    c0, c1 = zeros(ComplexF64, 16, 32), zeros(ComplexF64, 16, 32)
+    qfb_decompose!(c0, c1, z, Q2345; dir = :row)
+    @test maximum(abs, c0 .- zb0) < 1.0e-13
+    @test maximum(abs, c1 .- zb1) < 1.0e-13
+    rec = zeros(ComplexF64, 32, 32)
+    qfb_reconstruct!(rec, c0, c1, Q2345; dir = :row)
+    @test maximum(abs, rec .- z) < 1.0e-12
 end
 
 @testitem "QFB in-place reconstruct col-direction" tags = [:directional] begin
@@ -384,6 +394,28 @@ end
     for k in 1:4
         @test maximum(abs, subbands[k] .- ref[k]) < 1.0e-14
     end
+end
+
+@testitem "a workspace built with other filters is not used" tags = [:directional] begin
+    using Random
+    Random.seed!(72)
+    x = randn(64, 64)
+    p = ContourletParams(J = 1, L_array = [2])        # Q2345
+    ws = make_workspace(p, (64, 64))
+    q2 = QuincunxFilterPair([0.25, 0.25])
+    ref = dfb_decompose(x, 2, q2)
+    @test maximum(abs, ref[1] .- dfb_decompose(x, 2, Q2345)[1]) > 0.1
+    got = dfb_decompose(x, 2, q2; workspace = ws)
+    @test all(maximum(abs, a .- b) < 1.0e-12 for (a, b) in zip(got, ref))
+    sb = [similar(s) for s in ref]
+    dfb_decompose!(sb, x, 2, q2; workspace = ws)
+    @test all(maximum(abs, a .- b) < 1.0e-12 for (a, b) in zip(sb, ref))
+    out = similar(x)
+    dfb_reconstruct!(out, ref, q2; workspace = ws)
+    @test maximum(abs, out .- x) < 1.0e-12
+    # Float32 data must not run on the Float64 workspace's runner either.
+    got32 = dfb_decompose(Float32.(x), 2, Q2345; workspace = ws)
+    @test eltype(got32[1]) == Float32
 end
 
 @testitem "dfb_reconstruct! basic" tags = [:directional] begin

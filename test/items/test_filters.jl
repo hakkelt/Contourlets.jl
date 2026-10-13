@@ -77,6 +77,23 @@ end
     @test check_pr_condition(CDF97)
 end
 
+@testitem "check_pr_condition scales its tolerance with the precision" tags = [:filters] begin
+    @test check_pr_condition(QuincunxFilterPair(Float32.(Q2345.f_ladder)))
+    @test check_pr_condition(FilterPair(Float32.(CDF97.h), Float32.(CDF97.g)))
+end
+
+@testitem "the ladder table is evaluated per point when it would outgrow the grid" tags = [:filters] begin
+    v = Contourlets._ladder_half(Q2345.f_ladder)
+    big = Contourlets._LadderTable(v, 15, 16)       # lcm 240: 2L > 15·16, no table
+    @test isempty(big.tab)
+    small = Contourlets._LadderTable(v, 16, 16)
+    @test !isempty(small.tab)
+    ref = [Contourlets._ladder_amplitude(v, 2π * m / big.L + π) for m in 0:(2big.L - 1)]
+    @test [Contourlets._ladder_at(big, m) for m in 0:(2big.L - 1)] == ref
+    @test [Contourlets._ladder_at(small, m) for m in 0:(2small.L - 1)] ==
+        [Contourlets._ladder_amplitude(v, 2π * m / small.L + π) for m in 0:(2small.L - 1)]
+end
+
 @testitem "FilterPair type promotion" tags = [:filters] begin
     fp = FilterPair([1.0f0, 2.0f0], [1.0, 2.0])   # Float32 vs Float64
     @test eltype(fp) == Float64

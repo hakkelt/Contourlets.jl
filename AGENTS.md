@@ -23,8 +23,7 @@ packages share only the pyramid filter machinery.
 
 The shared surface with the core is small and explicit: `FilterPair`, `CDF97`,
 `upsample_filter`, the threading policy types, and the internals `_data_eltype`,
-`_filter_eltype`, `_use_threading`, the threaded FFT loop (`_n_tasks`,
-`_foreach_chunk`, `_chunked_sum!`), the scoped FFTW thread count
+`_filter_eltype`, `_use_threading`, the scoped FFTW thread count
 (`_with_fftw_threads`), `_clamp_idx`, `_nsp_atrous_filters`, and the
 pyramid's frequency responses (`_nsp_responses`, `_centred_dtft`), and the
 mask-bank engine that runs the NSCT and TICT workspaces (`_MaskBankEngine`,

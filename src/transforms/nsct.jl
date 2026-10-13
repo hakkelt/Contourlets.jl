@@ -134,13 +134,20 @@ function _nsct_forward_noworkspace!(
 end
 
 # The workspace's FFT plans run on its dense matrix type; a view or other wrapper
-# is staged through a grow-once scratch buffer of that type.
+# is staged through a grow-once scratch buffer of that type (NSCT and TICT
+# workspaces: `fwd_scratch` for inputs, `inv_scratch` for outputs).
 function _staging(a::ScratchArena, x::AbstractMatrix)
     _arena_reset!(a)
     return _arena_take!(a, x, size(x)...)
 end
-_dense_input(ws::NSCTWorkspace, x::AbstractMatrix) =
+_dense_input(ws, x::AbstractMatrix) =
     x isa _ws_matrix_type(ws) ? x : copyto!(_staging(ws.fwd_scratch, x), x)
+
+# Run `f(y)`, which writes into a dense `y`, for the output `out`.
+function _dense_output!(out::AbstractMatrix, ws, f::F) where {F}
+    out isa _ws_matrix_type(ws) && return f(out)
+    return copyto!(out, f(_staging(ws.inv_scratch, out)))
+end
 
 function _nsct_forward_inner!(
         coeffs::NSCTCoefficients{T},
@@ -259,11 +266,7 @@ function _nsct_inverse_inner!(
     # image = ifft(Σⱼ Sⱼ Σₖ Gₖ · fft(subband k of level j) + S_{J+1} · fft(lowpass)),
     # with threading summed in one partial accumulator per task.
     threaded = _use_threading(threading, T)
-    if image isa _ws_matrix_type(ws)
-        _mask_bank_inverse!(image, coeffs, ws.engine, threaded)
-    else
-        copyto!(image, _mask_bank_inverse!(_staging(ws.inv_scratch, image), coeffs, ws.engine, threaded))
-    end
+    _dense_output!(image, ws, y -> _mask_bank_inverse!(y, coeffs, ws.engine, threaded))
     return image
 end
 

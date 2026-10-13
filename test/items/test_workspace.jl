@@ -226,8 +226,10 @@ end
     bp = randn(32, 32)
     # The workspace holds a depth-2 bank for 32×32 only: depth 3 and another size
     # must build their own and give the same result as no workspace at all.
-    @test Contourlets._workspace_runner(ws, (32, 32), 3, :both) === nothing
-    @test Contourlets._workspace_runner(ws, (16, 16), 2, :both) === nothing
+    @test Contourlets._workspace_runner(ws, (32, 32), 2, :both, Q2345, Float64) !== nothing
+    @test Contourlets._workspace_runner(ws, (32, 32), 3, :both, Q2345, Float64) === nothing
+    @test Contourlets._workspace_runner(ws, (16, 16), 2, :both, Q2345, Float64) === nothing
+    @test Contourlets._workspace_runner(ws, (32, 32), 2, :both, Q2345, Float32) === nothing
     a = dfb_decompose(bp, 3, Q2345; workspace = ws)
     b = dfb_decompose(bp, 3, Q2345)
     @test all(a .== b)

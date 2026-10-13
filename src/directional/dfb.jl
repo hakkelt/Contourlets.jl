@@ -43,7 +43,7 @@ _adapt_bank(ref::SubArray, bank::_DirectionalBank) = _adapt_bank(parent(ref), ba
 # with a freshly built one.  Each branch calls `f` on its own concrete runner type,
 # so the workspace path stays type-stable and allocation-free.
 function _with_runner(f, workspace, x::AbstractMatrix, l::Int, qfp::QuincunxFilterPair, half::Symbol, ::Type{Tf}) where {Tf}
-    r = _workspace_runner(workspace, size(x), l, half)
+    r = _workspace_runner(workspace, size(x), l, half, qfp, Tf)
     r === nothing || return f(r)
     return f(_dfb_runner(x, l, qfp, half, Tf))
 end

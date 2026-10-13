@@ -118,12 +118,16 @@ function _dfb_level_runners(ref::AbstractMatrix, p::ContourletParams, bp_dims, :
     ]
 end
 
-# The DFB runner a CT workspace holds for a bandpass of size `dims` split `l` deep,
-# or `nothing` (also without a workspace).
-_workspace_runner(::Nothing, dims, l, half) = nothing
+# The DFB runner a CT workspace holds for a bandpass of size `dims` split `l` deep
+# with the ladder pair `qfp` at filter precision `Tf`, or `nothing` (also without a
+# workspace, or when the workspace was built with other filters).
+_workspace_runner(::Nothing, dims, l, half, qfp, Tf) = nothing
 
-function _workspace_runner(ws::CTWorkspace, dims, l::Int, half::Symbol)
+function _workspace_runner(
+        ws::CTWorkspace{Td, Tw}, dims, l::Int, half::Symbol, qfp::QuincunxFilterPair, ::Type{Tf}
+    ) where {Td, Tw, Tf}
     half === :both || return nothing
+    (Tw === Tf && ws.params.dfb_filters.f_ladder == qfp.f_ladder) || return nothing
     for r in ws.dfb_runners
         (r.bank.dims == dims && r.bank.levels == l) && return r
     end

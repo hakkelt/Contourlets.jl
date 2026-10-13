@@ -114,9 +114,12 @@ end
 
 # b on the DFT grid.  Every fan argument is θ = c·ω + π with an integer vector c, so
 # on an n₁ × n₂ grid θ is a multiple of 2π/L (L = lcm(n₁, n₂)) plus π, and one
-# table of b over its period 4π serves every factor of every channel.
+# table of b over its period 4π serves every factor of every channel.  When n₁ and
+# n₂ share few factors the table (2L entries) would outgrow the grid itself
+# (4093 × 4096: 268 MB), so it is left empty and b is evaluated per grid point.
 struct _LadderTable
     tab::Vector{Float64}
+    v::Vector{Float64}
     L::Int
     step_r::Int        # L ÷ n₁: table steps per unit of row frequency index
     step_c::Int        # L ÷ n₂
@@ -124,9 +127,13 @@ end
 
 function _LadderTable(v::Vector{Float64}, n1::Int, n2::Int)
     L = lcm(n1, n2)
-    tab = [_ladder_amplitude(v, 2π * m / L + π) for m in 0:(2L - 1)]
-    return _LadderTable(tab, L, L ÷ n1, L ÷ n2)
+    tab = 2L <= n1 * n2 ? [_ladder_amplitude(v, 2π * m / L + π) for m in 0:(2L - 1)] : Float64[]
+    return _LadderTable(tab, v, L, L ÷ n1, L ÷ n2)
 end
+
+# b(2πm/L + π), for 0 ≤ m < 2L.
+@inline _ladder_at(t::_LadderTable, m::Int) =
+    isempty(t.tab) ? _ladder_amplitude(t.v, 2π * m / t.L + π) : @inbounds(t.tab[m + 1])
 
 # p(Bᵀω) = b(u₀ + u₁ + π) b(u₀ − u₁ + π) with u = Bᵀω, over the whole grid.
 function _fan_argument!(p::Matrix{Float64}, t::_LadderTable, B::Matrix{Int})
@@ -138,7 +145,7 @@ function _fan_argument!(p::Matrix{Float64}, t::_LadderTable, B::Matrix{Int})
     @inbounds for kc in 0:(n2 - 1), kr in 0:(n1 - 1)
         m₊ = mod(c₊[1] * kc * t.step_c + c₊[2] * kr * t.step_r, P)
         m₋ = mod(c₋[1] * kc * t.step_c + c₋[2] * kr * t.step_r, P)
-        p[kr + 1, kc + 1] = t.tab[m₊ + 1] * t.tab[m₋ + 1]
+        p[kr + 1, kc + 1] = _ladder_at(t, m₊) * _ladder_at(t, m₋)
     end
     return p
 end

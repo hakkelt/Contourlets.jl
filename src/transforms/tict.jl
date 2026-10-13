@@ -12,9 +12,13 @@
 Precomputed TILP masks, directional filters, FFT buffers and plans of a TICT at
 one image size and element type.  Build with [`make_tict_workspace`](@ref).
 """
-struct TICTWorkspace{Td <: Number, Tf <: AbstractFloat, E <: _MaskBankEngine}
+struct TICTWorkspace{Td <: Number, Tf <: AbstractFloat, M <: AbstractMatrix, E <: _MaskBankEngine}
     params::ContourletParams{Tf}
     image_size::NTuple{2, Int}
+    # Staging buffers for an input or output that is not of the dense type `M`
+    # the FFT plans run on (a view, a transpose; `_dense_input`).
+    fwd_scratch::ScratchArena{M}
+    inv_scratch::ScratchArena{M}
     # TILP channel masks (pyramid mask 4(i - 1) + c is channel c of level i) and
     # lowpass, the directional bank of every channel (bank index = pyramid index;
     # the identity bank where L = 0), the outputs (i, c, k), and the FFT plans and
@@ -65,8 +69,11 @@ function make_tict_workspace(
         reduce(vcat, masks.ana), reduce(vcat, masks.syn), masks.coarse_ana, masks.coarse_syn,
         banks, items, X, pfwd, pinv
     )
-    return TICTWorkspace{Td, Tf, typeof(engine)}(p, (n1, n2), engine)
+    Mw = typeof(ref)
+    return TICTWorkspace{Td, Tf, Mw, typeof(engine)}(p, (n1, n2), ScratchArena{Mw}(), ScratchArena{Mw}(), engine)
 end
+
+_ws_matrix_type(::TICTWorkspace{Td, Tf, M}) where {Td, Tf, M} = M
 
 # ── Transforms ────────────────────────────────────────────────────────────────
 
@@ -78,7 +85,7 @@ _tict_forward_ws!(coeffs::TICTCoefficients, x::AbstractMatrix, ws::TICTWorkspace
     _mask_bank_forward!(coeffs, x, ws.engine, threaded)
 
 _tict_inverse_ws!(x::AbstractMatrix, coeffs::TICTCoefficients, ws::TICTWorkspace, threaded::Bool = false) =
-    _mask_bank_inverse!(x, coeffs, ws.engine, threaded)
+    _dense_output!(x, ws, y -> _mask_bank_inverse!(y, coeffs, ws.engine, threaded))
 
 """
     tict_forward(image, params::ContourletParams; workspace=nothing, threading=Auto())
@@ -125,7 +132,7 @@ function tict_forward(
         threading::ThreadingPolicy = Auto()
     )
     ws = workspace === nothing ? _own_workspace(make_tict_workspace, image, params) : workspace
-    x = _check_tict_input(ws, _ws_input(ws, image))
+    x = _dense_input(ws, _check_tict_input(ws, _ws_input(ws, image)))
     coeffs = similar_tict_coefficients(ws.params, ws.image_size; Td = eltype(ws), M = typeof(similar(x)))
     return _tict_forward_ws!(coeffs, x, ws, _use_threading(threading, eltype(ws)))
 end
@@ -144,7 +151,8 @@ function tict_forward!(
     )
     ws = workspace === nothing ? _own_workspace(make_tict_workspace, image, params) : workspace
     _check_tict_eltype(ws, coeffs.coarse, "coefficient set")
-    return _tict_forward_ws!(coeffs, _check_tict_input(ws, _ws_input(ws, image)), ws, _use_threading(threading, eltype(ws)))
+    x = _dense_input(ws, _check_tict_input(ws, _ws_input(ws, image)))
+    return _tict_forward_ws!(coeffs, x, ws, _use_threading(threading, eltype(ws)))
 end
 
 """

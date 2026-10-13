@@ -147,6 +147,34 @@ end
     end
 end
 
+@testitem "TICT stages views and transposes through the workspace" tags = [:tict] begin
+    using Random
+    Random.seed!(42)
+    p = ContourletParams(J = 2, L_array = [2, 1])
+    big = randn(40, 40)
+    x = view(big, 3:34, 5:36)
+    xd = collect(x)
+    ref = tict_forward(xd, p)
+    same(c, r) = maximum(abs, c.coarse .- r.coarse) < 1.0e-12 &&
+        all(maximum(abs, a .- b) < 1.0e-12 for (la, lb) in zip(c.subbands, r.subbands) for (ca, cb) in zip(la, lb) for (a, b) in zip(ca, cb))
+    @test same(tict_forward(x, p), ref)
+    @test same(tict_forward(transpose(permutedims(xd)), p), ref)
+    ws = make_tict_workspace(p, (32, 32))
+    c = similar_tict_coefficients(p, (32, 32))
+    tict_forward!(c, x, p; workspace = ws)
+    @test same(c, ref)
+    out = zeros(40, 40)
+    tict_inverse!(view(out, 3:34, 5:36), ref, p; workspace = ws)
+    @test maximum(abs, view(out, 3:34, 5:36) .- xd) < 1.0e-12
+    @test all(iszero, view(out, 1:2, :))
+    # A dense input still allocates nothing.
+    let c = c, xd = xd, p = p, ws = ws
+        run() = tict_forward!(c, xd, p; workspace = ws, threading = Disabled())
+        run()
+        @test (@allocated run()) == 0
+    end
+end
+
 @testitem "TICT/STICT argument checks" tags = [:tict] begin
     p = ContourletParams(J = 1, L_array = [2])
     ws = make_tict_workspace(p, (32, 32))

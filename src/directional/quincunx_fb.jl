@@ -65,7 +65,7 @@ function qfb_decompose!(
         _qfb_col_decompose!(
             PermutedDimsArray(sb0, (2, 1)),
             PermutedDimsArray(sb1, (2, 1)),
-            adjoint(image), qfp
+            transpose(image), qfp
         )
         return sb0, sb1
     end

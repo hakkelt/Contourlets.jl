@@ -131,6 +131,12 @@ julia> length.(c.subbands[1]), length.(c.subbands[2])
 julia> maximum(abs, tict_inverse(c, p) .- x) < 1e-12
 true
 ```
+
+# References
+1. R. Eslami and H. Radha, "Translation-Invariant Contourlet Transform and Its
+   Application to Image Denoising", *IEEE Transactions on Image Processing*,
+   15(11):3362–3374, 2006.
+   [doi:10.1109/TIP.2006.881992](https://doi.org/10.1109/TIP.2006.881992)
 """
 function tict_forward(
         image::AbstractMatrix, params::ContourletParams;

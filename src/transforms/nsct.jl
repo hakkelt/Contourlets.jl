@@ -30,6 +30,12 @@ julia> coeffs = nsct_forward(x, p);
 julia> size(coeffs.coarse) == size(x)
 true
 ```
+
+# References
+1. A. L. da Cunha, J. Zhou, and M. N. Do, "The Nonsubsampled Contourlet Transform:
+   Theory, Design, and Applications", *IEEE Transactions on Image Processing*,
+   15(10):3089–3101, 2006.
+   [doi:10.1109/TIP.2006.877507](https://doi.org/10.1109/TIP.2006.877507)
 """
 function nsct_forward(
         image::AbstractMatrix, params::ContourletParams;

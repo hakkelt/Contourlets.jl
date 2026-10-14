@@ -228,8 +228,7 @@ Allocating wrapper around `conv2d!`.
 !!! note
     For repeated calls with the same kernel size, preallocate a workspace with
     `_make_fftw_workspace` and call `conv2d!` directly — `plan_rfft(MEASURE)` is
-    expensive (~14 ms for non-power-of-2 padded sizes) and is rebuilt on every
-    call to this allocating form. The contourlet transforms never reach this path;
+    expensive and is rebuilt on every call to this allocating form. The contourlet transforms never reach this path;
     they use `conv2d_sep!` exclusively.
 """
 function conv2d(

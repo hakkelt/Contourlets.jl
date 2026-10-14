@@ -23,9 +23,7 @@ module ContourletsCUDAExt
 # buffers), re-capture.  CPU-image inputs skip graph capture entirely.
 #
 # Capture pays off here because the DFB is many small FFTs and broadcasts, where
-# launch overhead dominates: on an A100 a J = 3–4 Float32 forward takes 0.84 ms
-# captured against 1.16 ms eager at 256², 1.44 against 2.59 ms at 512² and 1.97
-# against 2.67 ms at 1024² (the inverse alike).
+# launch overhead dominates.
 #
 # Nothing in the captured call may allocate: an allocation inside `CUDA.capture`
 # becomes graph memory, which the pool later fails to free

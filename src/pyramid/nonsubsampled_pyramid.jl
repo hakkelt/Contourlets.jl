@@ -62,6 +62,12 @@ julia> c, bp = nsp_decompose(x, CDF97, 1);
 julia> size(c) == size(bp) == size(x)
 true
 ```
+
+# References
+1. A. L. da Cunha, J. Zhou, and M. N. Do, "The Nonsubsampled Contourlet Transform:
+   Theory, Design, and Applications", *IEEE Transactions on Image Processing*,
+   15(10):3089–3101, 2006.
+   [doi:10.1109/TIP.2006.877507](https://doi.org/10.1109/TIP.2006.877507)
 """
 function nsp_decompose(image::AbstractMatrix, fp::FilterPair, level::Int)
     level >= 1 || throw(ArgumentError("level must be ≥ 1"))

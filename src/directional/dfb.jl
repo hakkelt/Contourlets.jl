@@ -79,6 +79,14 @@ julia> sbs = dfb_decompose(x, 2, Q2345);
 julia> length(sbs), size(sbs[1])
 (4, (16, 16))
 ```
+
+# References
+1. R. H. Bamberger and M. J. T. Smith, "A Filter Bank for the Directional
+   Decomposition of Images: Theory and Design", *IEEE Transactions on Signal
+   Processing*, 40(4):882–893, 1992.
+   [doi:10.1109/78.127960](https://doi.org/10.1109/78.127960)
+2. M. N. Do, *Directional Multiresolution Image Representations*, PhD thesis,
+   EPFL, 2001, §3.2–3.3.
 """
 function dfb_decompose(
         bandpass::AbstractMatrix, l_levels::Int,

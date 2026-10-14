@@ -8,7 +8,7 @@ and semi-translation-invariant contourlet transforms.*
 
 ```julia
 using Pkg
-Pkg.add(url = "https://github.com/hakkelt/Contourlets.jl")
+Pkg.add("Contourlets")
 ```
 
 ## Quick start
@@ -47,6 +47,8 @@ the Q2345 ladder are all planar, and Lu and Do prove that the hourglass
 frequency partition a volume needs cannot be critically sampled at all. The two
 packages share only the pyramid filter machinery, which lives in
 [MultiscaleFilterBanks.jl](https://github.com/hakkelt/MultiscaleFilterBanks.jl).
+[Shearlets.jl](https://github.com/hakkelt/Shearlets.jl) offers 2-D and 3-D
+shearlet transforms built on the same core.
 
 ## What is here
 
@@ -63,9 +65,11 @@ packages share only the pyramid filter machinery, which lives in
 | [`CDF97`](@ref) / [`Q2345`](@ref) | Default pyramid and ladder DFB filter pairs |
 
 Threading is chosen per element type by default — SIMD for real data,
-multi-threaded batching for complex — and the whole transform runs on the
-GPU when a KernelAbstractions backend is loaded. Both are covered in
-[Performance, threading and GPUs](@ref performance).
+multi-threaded batching for complex — and the NSCT and TICT take a `threaded`
+keyword to override it. The whole transform runs on the GPU with CUDA.jl,
+AMDGPU.jl or Metal.jl; OpenCL.jl is supported but much slower than the CPU,
+because it has no FFT. Both are covered in [Performance, threading and
+GPUs](@ref performance).
 
 ## Where to go next
 

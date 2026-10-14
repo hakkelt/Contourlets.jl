@@ -28,6 +28,14 @@ julia> c, bp = lp_decompose(x, CDF97);
 julia> size(c), size(bp) == size(x)
 ((32, 32), true)
 ```
+
+# References
+1. P. J. Burt and E. H. Adelson, "The Laplacian Pyramid as a Compact Image Code",
+   *IEEE Transactions on Communications*, 31(4):532–540, 1983.
+   [doi:10.1109/TCOM.1983.1095851](https://doi.org/10.1109/TCOM.1983.1095851)
+2. M. N. Do and M. Vetterli, "Framing Pyramids", *IEEE Transactions on Signal
+   Processing*, 51(9):2329–2342, 2003.
+   [doi:10.1109/TSP.2003.815389](https://doi.org/10.1109/TSP.2003.815389)
 """
 function lp_decompose(image::AbstractMatrix, fp::FilterPair)
     Td = data_eltype(image)   # data type (preserves complex)

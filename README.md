@@ -1,16 +1,25 @@
 # Contourlets.jl
 
 [![CI](https://github.com/hakkelt/Contourlets.jl/actions/workflows/CI.yml/badge.svg?branch=master)](https://github.com/hakkelt/Contourlets.jl/actions/workflows/CI.yml)
+[![Lint](https://github.com/hakkelt/Contourlets.jl/actions/workflows/lint.yml/badge.svg?branch=master)](https://github.com/hakkelt/Contourlets.jl/actions/workflows/lint.yml)
+[![Documentation (stable)](https://img.shields.io/badge/docs-stable-blue.svg)](https://hakkelt.github.io/Contourlets.jl/stable/)
 [![Documentation (dev)](https://img.shields.io/badge/docs-dev-blue.svg)](https://hakkelt.github.io/Contourlets.jl/dev/)
 [![Coverage](https://codecov.io/gh/hakkelt/Contourlets.jl/branch/master/graph/badge.svg)](https://codecov.io/gh/hakkelt/Contourlets.jl)
 [![Aqua QA](https://raw.githubusercontent.com/JuliaTesting/Aqua.jl/master/badge.svg)](https://github.com/JuliaTesting/Aqua.jl)
 [![JET](https://img.shields.io/badge/%F0%9F%9B%A9%EF%B8%8F_tested_with-JET.jl-233f9a)](https://github.com/aviatesk/JET.jl)
 [![Runic](https://img.shields.io/badge/code%20style-runic-blue.svg)](https://github.com/fredrikekre/Runic.jl)
+[![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
 
 A Julia package implementing the Discrete Contourlet Transform (CT), the
 Nonsubsampled Contourlet Transform (NSCT) and the translation-invariant (TICT)
 and semi-translation-invariant (STICT) contourlet transforms via a Pyramid
 Directional Filter Bank (PDFB).
+
+A contourlet transform splits an image by scale, like a wavelet, and each scale
+further by orientation into wedges of the frequency plane. Every subband then
+holds the edges of one scale and one direction, so images with smooth curved
+edges are represented far more sparsely than by separable wavelets, which helps
+denoising, compression and compressed-sensing reconstruction.
 
 | Contourlet frequency tiling | NSCT denoising vs. wavelets |
 |:---:|:---:|
@@ -32,9 +41,19 @@ Directional Filter Bank (PDFB).
 - **Workspace API**: reuse preallocated buffers across iterations with
   `make_workspace` and the `workspace=ws` kwarg on both `ct_forward!` and `ct_forward`
 - Parabolic scaling utility `parabolic_levels` for optimal direction count per scale
-- **GPU**: the full transform runs on device-resident arrays for any
-  KernelAbstractions backend; CUDA additionally captures the workspace paths
-  into CUDA graphs
+- **Multithreading**: the NSCT and TICT take a `threaded` keyword; by default
+  real data runs SIMD-vectorised and complex data multi-threaded
+- **GPU**: the full transform runs on device-resident arrays with CUDA.jl,
+  AMDGPU.jl and Metal.jl (`Float32`); CUDA additionally captures the workspace
+  paths into CUDA graphs.  OpenCL.jl is supported but much slower than the CPU,
+  since it has no FFT and FFTW runs the FFTs on the CPU
+
+## Installation
+
+```julia
+using Pkg
+Pkg.add("Contourlets")
+```
 
 ## Quick Start
 
@@ -66,7 +85,7 @@ caller-supplied output container instead of allocating one.  With `workspace=ws`
 the pyramid stage reuses preallocated scratch buffers — no per-iteration
 allocation.
 
-## Volumes
+## Related packages
 
 Volumes are covered by [Surfacelets.jl](https://github.com/hakkelt/Surfacelets.jl).
 It is **not** this transform with an extra axis: the quincunx lattice, the shear
@@ -75,17 +94,20 @@ hourglass frequency partition a volume needs cannot be critically sampled at all
 so the surfacelet transform is a different construction.  The two packages share
 only the pyramid filter machinery, which lives in
 [MultiscaleFilterBanks.jl](https://github.com/hakkelt/MultiscaleFilterBanks.jl)
-and is re-exported here.
+and whose filter names are re-exported here.
+[Shearlets.jl](https://github.com/hakkelt/Shearlets.jl) offers 2-D and 3-D
+shearlet transforms built on the same core.
+
+## Development
+
+```bash
+julia --project=test test/runtests.jl          # all tests
+julia --project=docs docs/make.jl              # build the documentation
+```
 
 To work against a local checkout of the core package instead, put it next to
 this one and run `julia --project=. dev/bootstrap.jl` once; it
 `Pkg.develop`s the sibling checkout into every environment of the workspace.
-
-## References
-
-- Do & Vetterli (2005), "The Contourlet Transform: An Efficient Directional Multiresolution Image Representation"
-- da Cunha, Zhou & Do (2006), "The Nonsubsampled Contourlet Transform"
-- Phoong, Kim, Vaidyanathan & Ansari (1995), "A New Class of Two-Channel Biorthogonal Filter Banks"
 
 ## Acknowledgments
 

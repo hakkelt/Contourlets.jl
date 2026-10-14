@@ -35,6 +35,14 @@ julia> sb0_r, sb1_r = qfb_decompose(x, Q2345; dir = :row);
 julia> size(sb0), size(sb0_r)
 ((16, 8), (8, 16))
 ```
+
+# References
+1. S.-M. Phoong, C. W. Kim, P. P. Vaidyanathan, and R. Ansari, "A New Class of
+   Two-Channel Biorthogonal Filter Banks and Wavelet Bases", *IEEE Transactions on
+   Signal Processing*, 43(3):649–665, 1995.
+   [doi:10.1109/78.370620](https://doi.org/10.1109/78.370620)
+2. M. N. Do, *Directional Multiresolution Image Representations*, PhD thesis,
+   EPFL, 2001, §3.2–3.3.
 """
 function qfb_decompose(image::AbstractMatrix, qfp::QuincunxFilterPair; dir::Symbol = :col)
     Td = data_eltype(image)         # data type (real or complex)

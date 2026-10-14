@@ -1,13 +1,5 @@
 # [Theory](@id theory)
 
-The constructions behind [`ct_forward`](@ref), [`nsct_forward`](@ref),
-[`tict_forward`](@ref) and [`stict_forward`](@ref): a Laplacian pyramid for
-scale, a directional filter bank for orientation, and the à trous variants of
-both that make the NSCT and the TICT shift-invariant.  For in-depth
-derivations see the references at the bottom; for the volume transforms, which
-are a different construction rather than a generalisation of this one, see
-[Surfacelets.jl](https://github.com/hakkelt/Surfacelets.jl).
-
 ```@setup theory
 using Contourlets, Plots, FFTW
 Plots.default(show = false)

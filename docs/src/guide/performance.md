@@ -96,11 +96,15 @@ println("tict_forward! threaded : $(round(t_threaded * 1e3; digits = 1)) ms on $
 
 ## GPU
 
-`ContourletsGPUExt` loads when a KernelAbstractions backend (CUDA, AMDGPU, Metal,
-oneAPI) is present and runs *every* stage of the CT and NSCT on the device;
-coefficients stay device-resident.  The directional stage needs an FFT for the
-array type (cuFFT with CUDA, rocFFT with AMDGPU); the pyramid and the shear-based
-primitives run on any backend.  Pass a device array and dispatch does the rest:
+`ContourletsGPUExt` loads when a KernelAbstractions backend is present and runs
+*every* stage of the transforms on the device; coefficients stay device-resident.
+The directional stage needs an FFT for the array type (cuFFT with CUDA, rocFFT
+with AMDGPU, Metal's FFT for `Float32`); the pyramid and the shear-based
+primitives run on any backend.  OpenCL.jl has no FFT: with `CLArray`s in shared
+virtual memory (OpenCL.jl's default on devices that support it) FFTW transforms
+them on the CPU, so the results are right but the transforms run about twice
+as slowly as on the CPU, and buffer-backed `CLArray`s fail.  Pass a device array and
+dispatch does the rest:
 
 ```julia
 using CUDA, Contourlets

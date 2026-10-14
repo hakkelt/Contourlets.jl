@@ -36,6 +36,19 @@ julia> coeffs = ct_forward(x, p);
 julia> length(coeffs.subbands[2])
 4
 ```
+
+# References
+1. M. N. Do and M. Vetterli, "The Contourlet Transform: An Efficient Directional
+   Multiresolution Image Representation", *IEEE Transactions on Image Processing*,
+   14(12):2091–2106, 2005.
+   [doi:10.1109/TIP.2005.859376](https://doi.org/10.1109/TIP.2005.859376)
+2. P. J. Burt and E. H. Adelson, "The Laplacian Pyramid as a Compact Image Code",
+   *IEEE Transactions on Communications*, 31(4):532–540, 1983.
+   [doi:10.1109/TCOM.1983.1095851](https://doi.org/10.1109/TCOM.1983.1095851)
+3. R. H. Bamberger and M. J. T. Smith, "A Filter Bank for the Directional
+   Decomposition of Images: Theory and Design", *IEEE Transactions on Signal
+   Processing*, 40(4):882–893, 1992.
+   [doi:10.1109/78.127960](https://doi.org/10.1109/78.127960)
 """
 function ct_forward(
         image::AbstractMatrix, params::ContourletParams;

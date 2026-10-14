@@ -89,6 +89,12 @@ julia> parabolic_levels(5, 2)
  2
  2
 ```
+
+# References
+1. M. N. Do and M. Vetterli, "The Contourlet Transform: An Efficient Directional
+   Multiresolution Image Representation", *IEEE Transactions on Image Processing*,
+   14(12):2091–2106, 2005.
+   [doi:10.1109/TIP.2005.859376](https://doi.org/10.1109/TIP.2005.859376)
 """
 function parabolic_levels(J::Int, l_j0::Int = 1)::Vector{Int}
     j0 = J

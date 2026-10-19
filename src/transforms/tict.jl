@@ -70,10 +70,10 @@ function _make_tict_workspace(
         MaskItem((i, c, k), g(i, c), g(i, c), k)
             for (i, l) in enumerate(p.L_array) for c in 1:4 for k in 1:_tict_n_subbands(l, c)
     ]
-    X, pfwd, pinv = _ns_plans(ref; measured = true)
-    engine = MaskBankEngine(
-        reduce(vcat, masks.ana), reduce(vcat, masks.syn), masks.coarse_ana, masks.coarse_syn,
-        banks, items, X, pfwd, pinv
+    X, pfwd, pbwd = _ns_unnormalised_plans(ref; measured = true)
+    engine = _mask_bank_engine(
+        ref, X, pfwd, pbwd, reduce(vcat, masks.ana), reduce(vcat, masks.syn), masks.coarse_ana, masks.coarse_syn,
+        banks, items
     )
     Mw = typeof(ref)
     return TICTWorkspace{Td, Tf, Mw, typeof(engine)}(p, (n1, n2), ScratchArena{Mw}(), ScratchArena{Mw}(), engine)

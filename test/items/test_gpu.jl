@@ -455,3 +455,140 @@ end
         @test Array(vh) == x[:, 1]
     end
 end
+
+@testitem "GPU NSCT/TICT chunked analysis, stacked subbands, STICT replay" tags = [:gpu] setup = [GPUBackends] begin
+    using GPUEnv, Random
+    Random.seed!(11)
+    p = ContourletParams(
+        J = 2, L_array = [2, 3],
+        lp_filters = FilterPair{Float32}(Float32.(CDF97.h), Float32.(CDF97.g)),
+        dfb_filters = QuincunxFilterPair{Float32}(Float32.(Q2345.f_ladder))
+    )
+    flat(c::NSCTCoefficients) = reduce(vcat, c.subbands)
+    flat(c::TICTCoefficients) = reduce(vcat, reduce(vcat, c.subbands))
+    close(a, b) = maximum(abs, Array(a) .- b) < 1.0f-4
+    for x in (randn(Float32, 64, 64), complex.(randn(Float32, 64, 64), randn(Float32, 64, 64)))
+        for (fwd!, inv!, mk, sim) in (
+                (nsct_forward!, nsct_inverse!, make_nsct_workspace, similar_nsct_coefficients),
+                (tict_forward!, tict_inverse!, make_tict_workspace, similar_tict_coefficients),
+            )
+            ccpu = sim(p, size(x); Td = eltype(x))
+            fwd!(ccpu, x, p)
+            for backend in GPUBackends.fft_backends
+                xg = to_gpu(backend, x)
+                ws = mk(xg, p)
+                c = sim(p, size(x); Td = eltype(x), M = typeof(xg))
+                # Device subbands are slices of one array where a slice is a
+                # device array of the same type (not JLArrays: a view of a
+                # JLArray is a SubArray).
+                stacked = c.storage !== nothing
+                @test stacked == (view(xg, :, :) isa typeof(xg))
+                # The analysis runs in chunks: every FFT backend has batched plans.
+                @test ws.engine.batch !== nothing
+                fwd!(c, xg, p; workspace = ws)
+                @test close(c.coarse, ccpu.coarse)
+                @test all(close(a, b) for (a, b) in zip(flat(c), flat(ccpu)))
+                # A replaced subband is written through a copy, not the storage.
+                s = flat(c)[2]
+                level = c isa NSCTCoefficients ? c.subbands[1] : c.subbands[1][1]
+                level[2] = zero(s)
+                fwd!(c, xg, p; workspace = ws)
+                @test all(close(a, b) for (a, b) in zip(flat(c), flat(ccpu)))
+                y = similar(xg)
+                inv!(y, c, p; workspace = ws)
+                @test close(y, x)
+                # Coefficients moved to the device are stacked as well.
+                ca = Adapt.adapt(typeof(xg).name.wrapper, ccpu)
+                @test (ca.storage !== nothing) == stacked
+                @test all(close(a, b) for (a, b) in zip(flat(ca), flat(ccpu)))
+            end
+        end
+        # STICT: a captured graph (CUDA) replays for a new input into the same
+        # coefficients, and alternating coefficient sets replay their own graphs.
+        x2 = x .+ 1
+        ref1, ref2 = stict_forward(x, p), stict_forward(x2, p)
+        for backend in GPUBackends.fft_backends
+            xg = to_gpu(backend, x)
+            ws = make_stict_workspace(xg, p)
+            similar_c() = similar_stict_coefficients(p, size(x); Td = eltype(ws), M = typeof(similar(xg, eltype(ws))))
+            c1, c2 = similar_c(), similar_c()
+            xw = similar(xg, eltype(ws))
+            y = similar(xw)
+            graphs = nothing
+            for round in 1:2, (xi, ref, c) in ((x, ref1, c1), (x2, ref2, c1), (x, ref1, c2))
+                copyto!(xw, eltype(ws).(xi))
+                stict_forward!(c, xw, p; workspace = ws)
+                @test close(c.coarse, ref.coarse)
+                @test all(close(a, b) for (a, b) in zip(flat(c), flat(ref)))
+                stict_inverse!(y, c, p; workspace = ws)
+                @test close(y, xi)
+                round == 1 && (graphs = Set(objectid(e[2]) for e in ws.graph_cache.entries))
+            end
+            # no capture in the second round (none at all off CUDA)
+            @test length(ws.graph_cache.entries) == (backend.name === :CUDA ? 2 : 0)
+            @test Set(objectid(e[2]) for e in ws.graph_cache.entries) == graphs
+            # The allocating calls run eagerly: new arrays every call, nothing to replay.
+            @test close(stict_inverse(stict_forward(xw, p; workspace = ws), p; workspace = ws), x)
+            @test Set(objectid(e[2]) for e in ws.graph_cache.entries) == graphs
+        end
+    end
+end
+
+@testitem "GPU CT replay after a GC" tags = [:gpu] setup = [GPUBackends] begin
+    using GPUEnv, Random
+    # A captured CT graph (CUDA) reads device filters it does not keep alive: they
+    # live with the cache entry, so a replay after a GC still reads them.
+    p = ContourletParams(
+        J = 3, L_array = [2, 3, 3],
+        lp_filters = FilterPair{Float32}(Float32.(CDF97.h), Float32.(CDF97.g)),
+        dfb_filters = QuincunxFilterPair{Float32}(Float32.(Q2345.f_ladder))
+    )
+    x = randn(Xoshiro(3), Float32, 64, 64)
+    ref = ct_forward(x, p)
+    for backend in GPUBackends.fft_backends
+        xg = to_gpu(backend, x)
+        ws = make_workspace(xg, p)
+        c = ct_forward(xg, p; workspace = ws)
+        ct_forward!(c, xg, p; workspace = ws)
+        GC.gc(true)
+        # reuse freed device memory with NaNs
+        junk = [fill!(similar(xg, k), NaN32) for k in (length(CDF97.h), length(CDF97.g), 16) for _ in 1:20]
+        ct_forward!(c, xg, p; workspace = ws)
+        @test maximum(abs, Array(c.coarse) .- ref.coarse) < 1.0f-4
+        @test all(maximum(abs, Array(a) .- b) < 1.0f-4 for (la, lb) in zip(c.subbands, ref.subbands) for (a, b) in zip(la, lb))
+    end
+end
+
+@testitem "GPU CT replay: Float64 filters, resized scratch" tags = [:gpu] setup = [GPUBackends] begin
+    using GPUEnv, Random
+    # Float64 replays read Float64 filters (not `cu`'s Float32), and a call with
+    # another image size, which resizes the scratch buffers a graph points at,
+    # drops the cached graphs.
+    p = ContourletParams(J = 3, L_array = [2, 3, 3])
+    x = randn(Xoshiro(4), 64, 64)
+    ref = ct_forward(x, p)
+    err(c) = max(maximum(abs, Array(c.coarse) .- ref.coarse), maximum(maximum(abs, Array(a) .- b) for (la, lb) in zip(c.subbands, ref.subbands) for (a, b) in zip(la, lb)))
+    for backend in GPUBackends.fft_backends
+        xg = to_gpu(backend, x)
+        ws = make_workspace(xg, p)
+        c = ct_forward(xg, p; workspace = ws)
+        y = similar(xg)
+        for _ in 1:2   # capture, then replay
+            ct_forward!(c, xg, p; workspace = ws)
+            @test err(c) < 1.0e-12
+            ct_inverse!(y, c, p; workspace = ws)
+            @test maximum(abs, Array(y) .- x) < 1.0e-12
+        end
+        r0 = ws.fwd_scratch.replaced
+        try
+            ct_forward!(c, to_gpu(backend, randn(Xoshiro(5), 32, 32)), p; workspace = ws)
+        catch
+        end
+        @test ws.fwd_scratch.replaced > r0
+        for _ in 1:2
+            ct_forward!(c, xg, p; workspace = ws)
+            @test err(c) < 1.0e-12
+        end
+        @test length(ws.graph_cache.entries) == (backend.name === :CUDA ? 1 : 0)
+    end
+end

@@ -129,16 +129,38 @@ function Adapt.adapt_structure(to, c::ContourletCoefficients)
     )
 end
 
+# NSCT and TICT subbands stored as one array (`_stacked_zeros`) stay so where
+# the target array type allows; otherwise each subband moves on its own.
 function Adapt.adapt_structure(to, c::NSCTCoefficients)
-    return NSCTCoefficients(
-        Adapt.adapt(to, c.coarse),
-        [[Adapt.adapt(to, s) for s in lvl] for lvl in c.subbands],
-    )
+    coarse = Adapt.adapt(to, c.coarse)
+    storage, flat = _adapt_subbands(to, c.storage, coarse, reduce(vcat, c.subbands))
+    return NSCTCoefficients(coarse, Contourlets._split(flat, length.(c.subbands)), storage)
 end
 
 function Adapt.adapt_structure(to, c::TICTCoefficients)
-    return TICTCoefficients(
-        Adapt.adapt(to, c.coarse),
-        [[[Adapt.adapt(to, s) for s in ch] for ch in lvl] for lvl in c.subbands],
-    )
+    coarse = Adapt.adapt(to, c.coarse)
+    channels = reduce(vcat, c.subbands)
+    storage, flat = _adapt_subbands(to, c.storage, coarse, reduce(vcat, channels))
+    subbands = Contourlets._split(Contourlets._split(flat, length.(channels)), length.(c.subbands))
+    return TICTCoefficients(coarse, subbands, storage)
+end
+
+# The subbands `subs`, moved as one array when a slice of an array like the moved
+# `coarse` has its type: their storage `P` while they are still its slices, or
+# host subbands of one size, stacked for the move.  Storage already of that type
+# stays as it is.
+function _adapt_subbands(to, P, coarse, subs::Vector)
+    A = typeof(coarse)
+    stacked = P !== nothing && all(Contourlets._is_slice(P, s, i) for (i, s) in enumerate(subs))
+    stacked && all(s -> s isa A, subs) && return P, A[s for s in subs]
+    if !(coarse isa Array) && eltype(coarse) == eltype(first(subs)) &&
+            (stacked || all(s -> s isa Array && size(s) == size(first(subs)), subs))
+        Q = similar(coarse, (size(first(subs))..., length(subs)))
+        slices = Contourlets._slices_as(Q, A)
+        if slices !== nothing
+            copyto!(Q, stacked ? P : stack(subs))
+            return Q, slices
+        end
+    end
+    return nothing, A[Adapt.adapt(to, s) for s in subs]
 end

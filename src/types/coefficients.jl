@@ -29,14 +29,22 @@ ContourletCoefficients(coarse::A, subbands::Vector{Vector{A}}) where {A <: Abstr
 Output of `nsct_forward`.  Same structure as `ContourletCoefficients` (data type `Td`,
 storage type `A`) but each subband matrix has the same spatial size as the input image
 (no downsampling).
+
+On a device, [`similar_nsct_coefficients`](@ref) and `Adapt.adapt` store the
+subbands as the slices of one array (`storage`), which lets a workspace transform
+them with batched FFTs in place.  Replacing a subband array is allowed; that
+subband is then written through a copy.
 """
-struct NSCTCoefficients{Td <: Number, A <: AbstractMatrix{Td}}
+struct NSCTCoefficients{Td <: Number, A <: AbstractMatrix{Td}, S <: Union{Nothing, AbstractArray{Td, 3}}}
     coarse::A
     subbands::Vector{Vector{A}}
+    # The subbands as the slices of one array, in order, or `nothing`; see
+    # `_stacked_zeros`.
+    storage::S
 end
 
-NSCTCoefficients(coarse::A, subbands::Vector{Vector{A}}) where {A <: AbstractMatrix} =
-    NSCTCoefficients{eltype(A), A}(coarse, subbands)
+NSCTCoefficients(coarse::A, subbands::Vector{Vector{A}}, storage = nothing) where {A <: AbstractMatrix} =
+    NSCTCoefficients{eltype(A), A, typeof(storage)}(coarse, subbands, storage)
 
 """
     TICTCoefficients{Td, A}
@@ -50,10 +58,11 @@ directional filter bank (`2^L_array[i]` subbands), channels 2 and 3 a half tree
 have the input's size; STICT subbands are critically sampled from full-size
 channels.
 """
-struct TICTCoefficients{Td <: Number, A <: AbstractMatrix{Td}}
+struct TICTCoefficients{Td <: Number, A <: AbstractMatrix{Td}, S <: Union{Nothing, AbstractArray{Td, 3}}}
     coarse::A
     subbands::Vector{Vector{Vector{A}}}    # [level][channel 1..4][direction]
+    storage::S                             # as for `NSCTCoefficients`
 end
 
-TICTCoefficients(coarse::A, subbands::Vector{Vector{Vector{A}}}) where {A <: AbstractMatrix} =
-    TICTCoefficients{eltype(A), A}(coarse, subbands)
+TICTCoefficients(coarse::A, subbands::Vector{Vector{Vector{A}}}, storage = nothing) where {A <: AbstractMatrix} =
+    TICTCoefficients{eltype(A), A, typeof(storage)}(coarse, subbands, storage)

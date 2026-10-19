@@ -41,11 +41,9 @@ struct CTWorkspace{Td <: Number, Tf <: AbstractFloat, M <: AbstractMatrix{Td}, R
     # level with L = 0 has none: the DFB just copies its bandpass there.
     dfb_runners::Vector{R}
 
-    # Mutable slots for device-accelerated graph execs (e.g. CUDA.CuGraphExec).
-    # Layout: [] = uncaptured; [exec, img_ptr::UInt, coarse_ptr::UInt].
-    # Populated by ContourletsCUDAExt on first ct_forward!/ct_inverse! call.
-    graph_cache::Vector{Any}
-    inv_graph_cache::Vector{Any}
+    # Captured device graphs of the forward / inverse (`ContourletsCUDAExt`).
+    graph_cache::_GraphCache
+    inv_graph_cache::_GraphCache
 end
 
 """
@@ -187,7 +185,7 @@ function make_workspace(
     # once here (the allocating API rebuilds them per call).
     runners = _dfb_level_runners(ref, p2, bp_dims, Tf)
     ws = CTWorkspace{Td, Tf, M, eltype(runners)}(
-        p2, image_size, ScratchArena{M}(), ScratchArena{M}(), bp_dims, runners, Any[], Any[]
+        p2, image_size, ScratchArena{M}(), ScratchArena{M}(), bp_dims, runners, _GraphCache(), _GraphCache()
     )
     # Grow the scratch arena to its steady-state size now (forward + inverse), so
     # the first user call is already allocation-free.
@@ -257,12 +255,13 @@ function make_nsct_workspace(
             )
         end
     end
-    X, pfwd, pinv = _ns_plans(similar(ref, Td, image_size); measured = true)
+    x = similar(ref, Td, image_size)
+    X, pfwd, pbwd = _ns_unnormalised_plans(x; measured = true)
     ana, syn = _nsp_masks(Tf, p2.lp_filters, image_size, J; rows = axes(X, 1))
     ana = [_like(X, a) for a in ana]
     syn = [_like(X, a) for a in syn]
     items = [MaskItem((j, k), j, j, k) for j in 1:J for k in eachindex(banks[j].ana)]
-    engine = MaskBankEngine(ana[1:J], syn[1:J], ana[J + 1], syn[J + 1], banks, items, X, pfwd, pinv)
+    engine = _mask_bank_engine(x, X, pfwd, pbwd, ana[1:J], syn[1:J], ana[J + 1], syn[J + 1], banks, items)
     ws = NSCTWorkspace{Td, Tf, M, typeof(engine)}(p2, image_size, ScratchArena{M}(), ScratchArena{M}(), engine)
     prewarm && _prewarm_nsct!(ws; threaded = threaded)
     return ws

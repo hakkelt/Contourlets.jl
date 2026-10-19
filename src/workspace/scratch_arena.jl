@@ -12,11 +12,14 @@
 # Parametrised on the stored matrix type `M` so the same pool serves host
 # (`Matrix`) and device (`CuMatrix`, …) buffers; new buffers are made with
 # `similar(ref, …)` from a caller-supplied reference array.
+# `replaced` counts the buffers dropped for a new size: a captured device graph
+# still points at them, so a change invalidates the graphs (`_GraphCache`).
 mutable struct ScratchArena{M <: AbstractMatrix}
     bufs::Vector{M}
     cursor::Int
+    replaced::Int
 end
-ScratchArena{M}() where {M <: AbstractMatrix} = ScratchArena{M}(M[], 0)
+ScratchArena{M}() where {M <: AbstractMatrix} = ScratchArena{M}(M[], 0, 0)
 
 _arena_reset!(a::ScratchArena) = (a.cursor = 0; return a)
 
@@ -27,6 +30,7 @@ function _arena_take!(a::ScratchArena{M}, ref, m::Int, n::Int) where {M}
         push!(a.bufs, similar(ref, m, n)::M)
     elseif size(a.bufs[a.cursor]) != (m, n)
         a.bufs[a.cursor] = similar(ref, m, n)::M
+        a.replaced += 1
     end
     return a.bufs[a.cursor]
 end
@@ -90,3 +94,22 @@ function _allocate_zeros(::Type{M}, Td::Type, dims::Tuple) where {M <: AbstractM
     arr = similar(dummy, Td, dims)
     return fill!(arr, zero(Td))
 end
+
+# ── Captured graphs ───────────────────────────────────────────────────────────
+
+# The device graphs of a workspace path (`ContourletsCUDAExt`), each with the
+# addresses of the input and output arrays it was captured with and the device
+# arrays it reads but does not own (the CT's filters: a graph does not keep them
+# alive), most recently used first; empty elsewhere.  A few are kept, so that a
+# solver alternating between coefficient sets replays instead of capturing on
+# every call.  `epoch` is the state of the workspace buffers the graphs were
+# captured with (the CT's `ScratchArena.replaced`); when it changes, they are
+# dropped.  The core cannot name the graph type, so entries hold it untyped.
+mutable struct _GraphCache
+    const entries::Vector{Tuple{Vector{UInt}, Any, Any}}
+    epoch::Int
+end
+
+_GraphCache() = _GraphCache(Tuple{Vector{UInt}, Any, Any}[], 0)
+
+const _GRAPH_CACHE_SIZE = 4

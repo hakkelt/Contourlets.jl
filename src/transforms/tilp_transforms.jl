@@ -59,9 +59,10 @@ end
 function _similar_tict_coefficients(
         params::ContourletParams, image_size::Tuple{Int, Int}, ::Type{Td}, ::Type{M}
     ) where {Td, M}
-    z() = _allocate_zeros(M, Td, image_size)
-    subbands = [[[z() for _ in 1:_tict_n_subbands(l, c)] for c in 1:4] for l in params.L_array]
-    return TICTCoefficients(z(), subbands)
+    counts = [_tict_n_subbands(l, c) for l in params.L_array for c in 1:4]
+    storage, flat = _stacked_zeros(M, Td, image_size, sum(counts))
+    subbands = _split(_split(flat, counts), fill(4, length(params.L_array)))
+    return TICTCoefficients(_allocate_zeros(M, Td, image_size), subbands, storage)
 end
 
 """

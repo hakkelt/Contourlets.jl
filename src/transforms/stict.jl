@@ -20,6 +20,9 @@ struct STICTWorkspace{Td <: Number, Tf <: AbstractFloat, C <: AbstractMatrix{Com
     Z::C                                        # scratch
     pfwd::P                                     # in-place FFT plans on X and Z
     pbwd::Q                                     # (inverse unnormalised)
+    # Captured device graphs of the forward / inverse (`ContourletsCUDAExt`).
+    graph_cache::_GraphCache
+    inv_graph_cache::_GraphCache
 end
 
 Base.eltype(::STICTWorkspace{Td}) where {Td} = Td
@@ -73,13 +76,18 @@ function _make_stict_workspace(
     pfwd, pbwd = _inplace_plans(X, flags)
     Z = first(pool[(:Z, image_size)])
     return STICTWorkspace{Td, Tf, typeof(X), R, typeof(pfwd), typeof(pbwd)}(
-        p, image_size, masks, runners, X, Z, pfwd, pbwd
+        p, image_size, masks, runners, X, Z, pfwd, pbwd, _GraphCache(), _GraphCache()
     )
 end
 
 # ── Transforms ────────────────────────────────────────────────────────────────
 
-function _stict_forward_ws!(coeffs::TICTCoefficients, x::AbstractMatrix, ws::STICTWorkspace)
+# The workspace paths: the same kernels on the same buffers every call, which
+# `ContourletsCUDAExt` captures as CUDA graphs.  Nothing in them may allocate.
+_stict_forward_ws!(coeffs::TICTCoefficients, x::AbstractMatrix, ws::STICTWorkspace) = _stict_forward_inner!(coeffs, x, ws)
+_stict_inverse_ws!(x::AbstractMatrix, coeffs::TICTCoefficients, ws::STICTWorkspace) = _stict_inverse_inner!(x, coeffs, ws)
+
+function _stict_forward_inner!(coeffs::TICTCoefficients, x::AbstractMatrix, ws::STICTWorkspace)
     m, X, Z = ws.masks, ws.X, ws.Z
     X .= x
     ws.pfwd * X
@@ -97,7 +105,7 @@ function _stict_forward_ws!(coeffs::TICTCoefficients, x::AbstractMatrix, ws::STI
     return coeffs
 end
 
-function _stict_inverse_ws!(x::AbstractMatrix, coeffs::TICTCoefficients, ws::STICTWorkspace)
+function _stict_inverse_inner!(x::AbstractMatrix, coeffs::TICTCoefficients, ws::STICTWorkspace)
     m, X, Z = ws.masks, ws.X, ws.Z
     fill!(X, zero(eltype(X)))
     for i in eachindex(m.syn), c in 1:4
@@ -159,7 +167,10 @@ function stict_forward(
     ws = workspace === nothing ? _own_workspace(_make_stict_workspace, image, params) : workspace
     x = _check_tict_input(ws, _ws_input(ws, image))
     coeffs = _similar_stict_coefficients(ws.params, ws.image_size, eltype(ws), typeof(similar(x)))
-    return _stict_forward_ws!(coeffs, x, ws)
+    # Not `_stict_forward_ws!`: the coefficients are new on every call, so a device
+    # graph captured with them would never replay.
+    _stict_forward_inner!(coeffs, x, ws)
+    return coeffs
 end
 
 """
@@ -188,7 +199,9 @@ function stict_inverse(
     )
     ws = workspace === nothing ? _own_workspace(_make_stict_workspace, coeffs.coarse, params) : workspace
     _check_tict_eltype(ws, coeffs.coarse, "coefficient set")
-    return _stict_inverse_ws!(similar(coeffs.coarse, eltype(ws)), coeffs, ws)
+    x = similar(coeffs.coarse, eltype(ws))
+    _stict_inverse_inner!(x, coeffs, ws)    # not captured, as in `stict_forward`
+    return x
 end
 
 """

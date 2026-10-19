@@ -304,15 +304,7 @@ end
 function _similar_nsct_coefficients(
         params::ContourletParams, image_size::Tuple{Int, Int}, ::Type{Td}, ::Type{M}
     ) where {Td, M}
-    J = params.J
-    L = params.L_array
-    n1, n2 = image_size
-    A = typeof(_allocate_zeros(M, Td, (1, 1)))
-    subbands = Vector{Vector{A}}(undef, J)
-    for j in 1:J
-        n_dirs = max(1, 2^L[j])
-        subbands[j] = [_allocate_zeros(M, Td, (n1, n2)) for _ in 1:n_dirs]
-    end
-    coarse = _allocate_zeros(M, Td, (n1, n2))
-    return NSCTCoefficients(coarse, subbands)
+    counts = [max(1, 2^l) for l in params.L_array[1:params.J]]
+    storage, flat = _stacked_zeros(M, Td, image_size, sum(counts))
+    return NSCTCoefficients(_allocate_zeros(M, Td, image_size), _split(flat, counts), storage)
 end

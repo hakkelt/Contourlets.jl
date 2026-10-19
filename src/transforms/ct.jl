@@ -58,7 +58,10 @@ function ct_forward(
         Tw = eltype(workspace)
         coeffs = _similar_coefficients(params, size(image), Tw, Matrix{Tw})
         img = Tw === eltype(image) ? image : Tw.(image)
-        return ct_forward!(coeffs, img, params; workspace = workspace)
+        # Not `ct_forward!`: the coefficients are new on every call, so a device
+        # graph captured with them would never replay.
+        _ct_forward_inner!(coeffs, img, workspace)
+        return coeffs
     end
     # No-workspace: direct construction keeps the return type concrete (type-stable).
     Td = data_eltype(image)
@@ -207,7 +210,9 @@ function ct_inverse(
         Tw = eltype(workspace)
         M = _ws_matrix_type(workspace)
         image = _allocate_zeros(M, Tw, workspace.image_size)
-        return ct_inverse!(image, coeffs, params; workspace = workspace)
+        # Not `ct_inverse!`: as in `ct_forward`, a graph would never replay.
+        _ct_inverse_inner!(image, coeffs, workspace)
+        return image
     end
     return _ct_inverse_alloc(coeffs, params)
 end

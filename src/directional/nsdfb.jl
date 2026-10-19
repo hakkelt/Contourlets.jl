@@ -40,12 +40,19 @@ _nsdfb_upsampling(tree_level::Int) = max(0, tree_level - 2)
 # data).  The spectra and outputs are allocated with `similar` and filled through
 # plans, so they keep the input's array type even for an array type whose FFT runs
 # on host memory.
+function _ns_plans(x::AbstractMatrix)
+    X, pfwd, pbwd = _ns_unnormalised_plans(x)
+    return X, pfwd, _ns_scale(x, X) * pbwd
+end
+
+# The same with the unnormalised inverse (`brfft` / `bfft`), whose 1/N
+# (`_ns_scale`) the caller applies.
 #
 # A workspace passes `measured = true`: host plans are then measured and
 # single-threaded, because the workspace threads over its independent subband FFTs
 # instead (MultiscaleFilterBanks' mask-bank engine), which at these sizes scales far better than FFTW's
 # threads splitting one FFT.
-function _ns_plans(x::AbstractMatrix; measured::Bool = false)
+function _ns_unnormalised_plans(x::AbstractMatrix; measured::Bool = false)
     X = _ns_spectrum(x)
     (measured && x isa Array) || return (X, _ns_plan_pair(x, X)...)
     return with_fftw_threads(1) do
@@ -56,8 +63,15 @@ end
 _ns_spectrum(x::AbstractMatrix{T}) where {T <: Real} = similar(x, Complex{T}, (size(x, 1) ÷ 2 + 1, size(x, 2)))
 _ns_spectrum(x::AbstractMatrix) = similar(x)
 
-_ns_plan_pair(x::AbstractMatrix{<:Real}, X; kwargs...) = (plan_rfft(x; kwargs...), plan_irfft(X, size(x, 1); kwargs...))
-_ns_plan_pair(x::AbstractMatrix, X; kwargs...) = (plan_fft(x; kwargs...), plan_ifft(X; kwargs...))
+_ns_scale(x::AbstractMatrix, X::AbstractMatrix) = one(real(eltype(X))) / length(x)
+
+_ns_plan_pair(x::AbstractMatrix{<:Real}, X; kwargs...) = (plan_rfft(x; kwargs...), _ns_inverse_plan(X, x; kwargs...))
+_ns_plan_pair(x::AbstractMatrix, X; kwargs...) = (plan_fft(x; kwargs...), _ns_inverse_plan(X, x; kwargs...))
+
+# The unnormalised inverse FFT over the first two axes of spectra `X` to data like
+# `y`: `brfft` to real data, `bfft` otherwise.
+_ns_inverse_plan(X::AbstractArray, y::AbstractArray{<:Real}; kwargs...) = plan_brfft(X, size(y, 1), 1:2; kwargs...)
+_ns_inverse_plan(X::AbstractArray, y::AbstractArray; kwargs...) = plan_bfft(X, 1:2; kwargs...)
 
 function _nsdfb_bank(
         img::AbstractMatrix, l::Int, qfp::QuincunxFilterPair, tree_level::Int, half::Symbol, ::Type{Tf}

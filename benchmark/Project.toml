@@ -15,6 +15,6 @@ Contourlets = {path = ".."}
 [compat]
 BenchmarkTools = "1"
 FFTW = "1"
-GPUEnv = "0.2"
+GPUEnv = "0.2, 0.3"
 MultiscaleFilterBanks = "0.1"
 julia = "1.10"

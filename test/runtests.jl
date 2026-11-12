@@ -4,7 +4,7 @@ using GPUEnv
 # adds the GPU stack — GPUArrays, KernelAbstractions, JLArrays and any functional
 # native backend (CUDA, AMDGPU, …) — so they need not be listed as test deps and
 # the `:gpu` test items can load the ContourletsGPUExt extension.
-GPUEnv.activate(persist = true, include_jlarrays = true)
+GPUEnv.activate(persist = true, include_cpu_backends = true)
 
 using TestItemRunner
 const FILTER_PARTS = if length(ARGS) > 0

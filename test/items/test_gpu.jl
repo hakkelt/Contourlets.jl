@@ -20,20 +20,20 @@
     # Activating here keeps the items self-contained either way; when the overlay
     # already exists (`persist = true` writes it to `test/gpu_env`) this only
     # loads it.
-    isempty(gpu_backends(; include_jlarrays = true)) &&
-        GPUEnv.activate(persist = true, include_jlarrays = true)
+    isempty(gpu_backends(; include_cpu_backends = true)) &&
+        GPUEnv.activate(persist = true, include_cpu_backends = true)
 
     # All backends to exercise (JLArrays always present).  GPUEnv supplies the
     # backend packages from its overlay environment, so the tests need no direct
     # GPUArrays / KernelAbstractions / JLArrays dependency.
     # All test data below is Float32 (Metal does not support Float64), so every
     # backend — including Metal — can run the same test bodies.
-    const backends = gpu_backends(; include_jlarrays = true)
+    const backends = gpu_backends(; include_cpu_backends = true)
 
     # The directional filter banks filter on the DFT grid, so the transforms need a
     # backend with an FFT (cuFFT, rocFFT, …, or FFTW on JLArrays' host memory);
     # OpenCL has none.
-    const fft_backends = gpu_backends(; include_jlarrays = true, supports_fftw = true)
+    const fft_backends = gpu_backends(; include_cpu_backends = true, supports_fftw = true)
 end
 
 @testitem "GPU at least one backend (JLArrays)" tags = [:gpu] setup = [GPUBackends] begin

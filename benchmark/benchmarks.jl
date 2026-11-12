@@ -29,7 +29,7 @@ const HARDWARE = GPUEnv.detect_gpu_hardware()
 const GPU_DETECTED = any(k -> get(HARDWARE, k, false) == 1, (:CUDA, :AMDGPU, :Metal, :oneAPI))
 
 if GPU_DETECTED
-    GPUEnv.activate(persist = true, include_jlarrays = false, only_first = true)
+    GPUEnv.activate(persist = true, include_cpu_backends = false, only_first = true)
     const BACKENDS = gpu_backends()
     if !isempty(BACKENDS)
         const GPU_BACKEND = first(BACKENDS)

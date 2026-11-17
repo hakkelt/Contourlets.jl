@@ -9,6 +9,7 @@ using Contourlets: Contourlets,
     qx_downsample!, qx_upsample!,
     ct_forward!, ct_inverse!, nsct_forward!
 using GPUArrays: GPUArrays, AbstractGPUMatrix, AbstractGPUArray
+using MultiscaleFilterBanks: data_eltype, filter_eltype, is_last_axis_slice
 
 const GPUSubArray{T, N} = SubArray{T, N, <:AbstractGPUArray}
 const _AbstractGPUMatrix{T} = Union{AbstractGPUMatrix{T}, GPUSubArray{T, 2}}

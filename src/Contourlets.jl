@@ -34,15 +34,14 @@ and is re-exported here.
 """
 module Contourlets
 
-using FFTW: FFTW, plan_rfft, plan_fft, plan_fft!, plan_irfft, plan_ifft, plan_brfft, plan_bfft, plan_bfft!, rfft, irfft, fft, ifft
-using LinearAlgebra: mul!, adjoint
-using LoopVectorization: @turbo
+using FFTW: FFTW, plan_rfft, plan_fft, plan_fft!, plan_irfft, plan_brfft, plan_bfft, plan_bfft!
+using LinearAlgebra: mul!
 using FastBroadcast: @..
 
 using MultiscaleFilterBanks: MultiscaleFilterBanks,
     FilterPair, CDF97, upsample_filter,
     data_eltype, filter_eltype, use_threading, with_fftw_threads, clamp_idx, nsp_atrous_filters, nsp_responses, centred_dtft,
-    MaskItem, MaskBankEngine, mask_bank_forward!, mask_bank_inverse!, _is_slice
+    MaskItem, MaskBankEngine, mask_bank_forward!, mask_bank_inverse!
 
 # ── Types (must come before filters which use them) ──────────────────────────
 include("types/quincunx_filter_pair.jl")

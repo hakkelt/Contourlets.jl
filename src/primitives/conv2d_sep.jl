@@ -71,9 +71,8 @@ end
 # Specialised fast-path for real CPU arrays with :symmetric or :periodic boundary.
 # Interior pixels (where no boundary extension is needed) are split out and
 # processed with @simd on unit-stride inner loops.  The thin border band falls
-# back to the _get path.  We restructure to "zero then accumulate over k" so the
-# innermost @simd loop is a simple axpy with stride-1 accesses — avoids the
-# LoopVectorization gensym precompile bug triggered by 3-level @turbo reductions.
+# back to the _get path.  The loops are ordered "zero then accumulate over k" so
+# the innermost @simd loop is a simple axpy with stride-1 accesses.
 function _conv2d_sep_impl!(
         dst::AbstractMatrix{Td},
         src::AbstractMatrix{Td},

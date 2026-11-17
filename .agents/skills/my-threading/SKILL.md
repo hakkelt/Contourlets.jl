@@ -1,6 +1,6 @@
 ---
 name: my-threading
-description: Work with the dual-path threading architecture (LoopVectorization @turbo for real data, Polyester @batch for complex data). Use when adding threaded loops, modifying the `threaded` keyword resolution, or diagnosing threading-related performance issues.
+description: Work with the dual-path threading architecture (single-threaded @simd loops for real data, Polyester @batch for complex data). Use when adding threaded loops, modifying the `threaded` keyword resolution, or diagnosing threading-related performance issues.
 ---
 
 # Threading Architecture
@@ -10,11 +10,10 @@ performance for both `Real` and `Complex` data:
 
 | Data type | Backend | Mechanism |
 |---|---|---|
-| `Real` (`Float32`/`Float64`) | `LoopVectorization.@turbo` | SIMD on a single thread |
+| `Real` (`Float32`/`Float64`) | plain loops with `@simd` | SIMD on a single thread |
 | `Complex` (`ComplexF32`/`ComplexF64`) | `Polyester.@batch` | multi-core via persistent thread pool |
 
-`LoopVectorization` does not support complex numbers, so the two paths are
-mutually exclusive. `Polyester`'s near-zero spawn overhead makes multi-core
+Complex loops do not vectorise well, so they take the threaded path. `Polyester`'s near-zero spawn overhead makes multi-core
 `ComplexF64` transforms competitive with single-thread SIMD `Float64` transforms.
 
 ## Public API
@@ -33,7 +32,7 @@ nsct_forward(image, params; threaded = false) # force single-thread
 ## Reference Files
 
 - **[Policy dispatch](references/policy.md)** — `use_threading`, how `threaded = nothing` resolves per type
-- **[Writing threaded loops](references/loops.md)** — `@turbo` vs `@batch`, placement, guards
+- **[Writing threaded loops](references/loops.md)** — `@simd` vs `@batch`, placement, guards
 - **[Adding threading to a new function](references/adding.md)** — step-by-step checklist
 
 ## Quick Check
@@ -47,10 +46,10 @@ Contourlets.use_threading(nothing, ComplexF64) # → true  (batch path)
 
 ## Key Invariants
 
-- Never put `@turbo` on a loop that operates on complex arrays — it will error or silently produce wrong results.
+- Do not add LoopVectorization (`@turbo`): it does not support complex numbers and is not a dependency.
 - Never spawn `Base.Threads.@spawn` tasks inside hot recursive paths — task creation overhead dominates.
 - `@batch` (Polyester) reuses a persistent thread pool; it is safe to call recursively and in tight loops.
-- `threaded = false` must suppress both `@turbo` and `@batch` — fall back to a plain `for` loop.
+- `threaded = false` must suppress `@batch` — fall back to a plain `for` loop.
 
 ## Related Skills
 

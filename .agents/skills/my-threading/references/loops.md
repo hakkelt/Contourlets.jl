@@ -1,30 +1,27 @@
 # Writing Threaded Loops
 
-## Real Data: `@turbo` (LoopVectorization)
+## Real Data: `@simd`
 
 ```julia
-using LoopVectorization
-
-function _conv_turbo!(dst::AbstractMatrix{T}, src, h) where {T <: Real}
+function _conv_simd!(dst::AbstractMatrix{T}, src, h) where {T <: Real}
     n1, n2 = size(src)
     lh = length(h)
-    @turbo for j in 1:n2, i in 1:n1   # column-major: j outer, i inner
-        acc = zero(T)
+    for j in 1:n2                      # column-major: j outer, i inner
+        dst[:, j] .= zero(T)
         for k in 1:lh
-            # ... boundary-safe index ...
-            acc += h[k] * src[ii, j]
+            @simd for i in 1:n1        # stride-1 axpy over the column
+                dst[i, j] += h[k] * src[i, j]   # ... boundary-safe index ...
+            end
         end
-        dst[i, j] = acc
     end
     return dst
 end
 ```
 
 Rules:
-- `@turbo` requires all indexed arrays to be `Array` or `SubArray` (not arbitrary `AbstractArray`).
-- Only `Real` element types — never use on complex data.
-- Keep the inner body simple: no function calls that aren't inlineable, no `if` branches inside the vectorised nest that depend on loop indices in a non-trivial way.
+- Keep the innermost loop a stride-1 axpy ("zero, then accumulate over k") so it vectorises.
 - Column-major traversal: outer loop over `j`, inner over `i`.
+- Split the interior (no boundary extension) from the border band, which takes the slower boundary-aware path.
 
 ## Complex Data: `@batch` (Polyester)
 
@@ -51,7 +48,6 @@ Rules:
 - `@batch` parallelises the *outermost* loop only — put the largest-trip-count dimension there.
 - For 2-D arrays use `j` (columns) as the outer loop.
 - Polyester uses a persistent thread pool — no task allocation overhead; safe to call from inside another `@batch` region (it will not spawn more threads than `Threads.nthreads()`).
-- Do not mix `@batch` and `@turbo` in the same function body.
 
 ## Disabled Path: Plain Loop
 

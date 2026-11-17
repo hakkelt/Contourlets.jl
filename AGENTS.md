@@ -195,7 +195,7 @@ output.
   independent pyramid. Channels 2 and 3 use half trees; the fan each splits is
   fixed by the channel's energy (`_TILP_HALVES`), not by a label in the paper.
 - **Hybrid Threading Architecture** — real data (`Float32`/`Float64`) uses
-  `LoopVectorization.@turbo` (SIMD, single thread); complex data uses
+  single-threaded `@simd` loops; complex data uses
   `Polyester.@batch` (multi-core, near-zero spawn overhead). The NSCT and
   TICT transforms (and `conv2d`) expose a `threaded::Union{Bool, Nothing}`
   keyword: `nothing` (default), `true`, `false`; the CT and STICT do not.

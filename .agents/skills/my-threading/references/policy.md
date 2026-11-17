@@ -11,7 +11,7 @@ the shared core and are imported in `src/Contourlets.jl`.
 ```
 
 `threaded = nothing` (the default) enables threading exactly when `T` is not a
-real type — i.e., for all complex types. `Real` data takes the `@turbo` SIMD path
+real type — i.e., for all complex types. `Real` data takes the single-threaded `@simd` path
 instead.
 
 ## Using `use_threading` in a Function
@@ -21,7 +21,7 @@ function my_filtered_op!(dst, src, h, threaded::Union{Bool, Nothing} = nothing)
     if use_threading(threaded, eltype(src))
         _my_op_batch!(dst, src, h)    # Polyester @batch loop
     else
-        _my_op_turbo!(dst, src, h)    # LoopVectorization @turbo loop
+        _my_op_simd!(dst, src, h)     # single-threaded @simd loop
     end
 end
 ```

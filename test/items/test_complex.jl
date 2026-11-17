@@ -26,8 +26,8 @@ end
     cx = ct_forward(x, p)
     cy = ct_forward(y, p)
     # Approximate equality: a real-filtered complex transform splits over re/im parts.
-    # Floating-point ordering differences due to LoopVectorization on the real path
-    # mean this is no longer bit-for-bit identical, but it is mathematically linear.
+    # The real path's @simd loops may reorder floating-point sums, so this is
+    # approximate, not bit-for-bit.
     @test cz.coarse ≈ cx.coarse .+ im .* cy.coarse
     for j in 1:p.J, k in eachindex(cz.subbands[j])
         @test cz.subbands[j][k] ≈ cx.subbands[j][k] .+ im .* cy.subbands[j][k]

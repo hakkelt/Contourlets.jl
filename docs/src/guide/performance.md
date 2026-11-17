@@ -75,7 +75,7 @@ run their stages one after another and take none): `true`, `false`, or `nothing`
 
 | Data | Default | Why |
 |---|---|---|
-| Real (`Float32`/`Float64`) | single-threaded `LoopVectorization.@turbo` | the inner loops vectorise cleanly; SIMD beats thread-spawn overhead |
+| Real (`Float32`/`Float64`) | single-threaded `@simd` loops | the inner loops vectorise cleanly; SIMD beats thread-spawn overhead |
 | Complex | multi-threaded `Polyester.@batch` | the loops do not vectorise; `@batch` spawns at near-zero cost |
 
 `threaded = true` and `threaded = false` override that choice.  The NSCT and TICT workspace

@@ -6,7 +6,7 @@
 
 2. **Propagate it** — pass `threaded` (not `nothing`) to every inner call that does compute work.
 
-3. **Split into two implementation functions** — one `@turbo` (real) and one `@batch` (complex), or a plain fallback. Name them `_foo_turbo!` and `_foo_batch!`.
+3. **Split into two implementation functions** — one single-threaded `@simd` loop (real) and one `@batch` (complex). Name them `_foo_simd!` and `_foo_batch!`.
 
 4. **Dispatch via `use_threading`**:
    ```julia
@@ -14,12 +14,12 @@
        if use_threading(threaded, eltype(src))
            _foo_batch!(dst, src, params)
        else
-           _foo_turbo!(dst, src, params)
+           _foo_simd!(dst, src, params)
        end
    end
    ```
 
-5. **Guard `@turbo` with a type constraint** — `where {T <: Real}` on the method signature so the compiler never generates a `@turbo` specialisation for complex types.
+5. **Restrict the `@simd` method to real data** — `where {T <: Real}` on its signature, so complex data always takes the `@batch` method.
 
 6. **Test both paths**:
    ```julia
@@ -34,4 +34,3 @@
 - Do not use `Base.Threads.@spawn` — task creation is too expensive for recursive transform paths.
 - Do not use `Threads.@threads` — it does not integrate with the `threaded` keyword and has higher overhead than `Polyester`.
 - Do not call `use_threading` inside a hot inner loop — call it once at the function entry and branch to the appropriate implementation.
-- Do not put `@turbo` on a loop that reads from `AbstractMatrix` (requires `Array` or `SubArray` for SIMD to kick in — annotate `where {T <: Real}` and accept `Array{T,2}` internally if needed).

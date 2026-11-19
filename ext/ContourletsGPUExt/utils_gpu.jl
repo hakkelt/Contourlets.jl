@@ -15,7 +15,9 @@ Copy `x` to `backend` device if it is not already there.
 """
 function _to_device(backend, x::AbstractArray{T}) where {T}
     out = KernelAbstractions.allocate(backend, T, size(x))
-    copyto!(out, x)
+    # Device copies take a host `Array`; other host arrays (a FilterPair's
+    # read-only taps) would be copied element by element.
+    copyto!(out, x isa Array ? x : collect(x))
     return out
 end
 

@@ -76,7 +76,7 @@ end
 # Float64 filters Float32.
 function _ct_prepare(f::F, ws::CTWorkspace{T, Tf}, arena) where {F, T, Tf}
     fp = ws.params.lp_filters
-    filters = Base.IdDict{AbstractVector, Any}(fp.h => CUDA.CuArray{Tf}(fp.h), fp.g => CUDA.CuArray{Tf}(fp.g))
+    filters = Base.IdDict{AbstractVector, Any}(fp.h => CUDA.CuArray{Tf}(collect(fp.h)), fp.g => CUDA.CuArray{Tf}(collect(fp.g)))
     Contourlets._arena_reset!(arena)
     return () -> Contourlets._with_filter_cache(f, filters), filters
 end

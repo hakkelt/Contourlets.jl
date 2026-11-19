@@ -206,7 +206,7 @@ end
     ws = make_nsct_workspace(p, size(x))
     # Depth 0 is the identity bank: one channel with all-ones masks.
     b = ws.engine.banks[2]
-    @test b.levels == 0 && length(b.ana) == 1
+    @test length(b) == 1
     @test all(isone, b.ana[1]) && all(isone, b.syn[1])
     c = similar_nsct_coefficients(p, size(x))
     nsct_forward!(c, x, p; workspace = ws)

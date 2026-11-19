@@ -15,7 +15,8 @@ function _mask_bank_engine(x::AbstractMatrix, X, pfwd, pbwd, pyramid_ana, pyrami
     s = _ns_scale(x, X)
     batched = x isa Array ? (;) : (; planner = _ns_batch_plan, output = x)
     return MaskBankEngine(
-        pyramid_ana, pyramid_syn, coarse_ana, coarse_syn, banks, items, X, pfwd, s * pbwd;
+        [MaskBank(b.ana, b.syn) for b in banks], items, X, pfwd, s * pbwd;
+        pyramid = MaskBank(pyramid_ana, pyramid_syn), lowpass = (coarse_ana, coarse_syn),
         pbwd = pbwd, scale = s, batched...
     )
 end

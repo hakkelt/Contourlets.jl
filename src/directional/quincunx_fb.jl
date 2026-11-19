@@ -31,6 +31,8 @@ Returns `(sb0, sb1)` where `sb0` is the LP subband and `sb1` the HP subband.
 ```jldoctest
 julia> using Contourlets, Random
 
+julia> using Contourlets: qfb_decompose
+
 julia> x = randn(Xoshiro(7), 16, 16);
 
 julia> sb0, sb1 = qfb_decompose(x, Q2345);
@@ -94,6 +96,8 @@ Two-channel quincunx filter bank synthesis.
 # Examples
 ```jldoctest
 julia> using Contourlets, Random
+
+julia> using Contourlets: qfb_decompose, qfb_reconstruct
 
 julia> x = randn(Xoshiro(7), 16, 16);
 

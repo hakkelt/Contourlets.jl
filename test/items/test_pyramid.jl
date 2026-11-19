@@ -2,10 +2,10 @@
     using Random
     Random.seed!(10)
     x = randn(32, 32)
-    c, bp = lp_decompose(x, CDF97)
+    c, bp = Contourlets.lp_decompose(x, CDF97)
     @test size(c) == (16, 16)
     @test size(bp) == (32, 32)
-    rec = lp_reconstruct(c, bp, CDF97)
+    rec = Contourlets.lp_reconstruct(c, bp, CDF97)
     @test maximum(abs, rec .- x) < 1.0e-12
 end
 
@@ -13,9 +13,9 @@ end
     using Random
     Random.seed!(11)
     x = randn(Float32, 32, 32)
-    c, bp = lp_decompose(x, CDF97)
+    c, bp = Contourlets.lp_decompose(x, CDF97)
     @test eltype(c) == Float32
-    rec = lp_reconstruct(c, bp, CDF97)
+    rec = Contourlets.lp_reconstruct(c, bp, CDF97)
     @test maximum(abs, rec .- x) < 1.0e-4
 end
 
@@ -24,9 +24,9 @@ end
     Random.seed!(12)
     x = randn(32, 32)
     c = zeros(16, 16); bp = zeros(32, 32)
-    lp_decompose!(c, bp, x, CDF97)
+    Contourlets.lp_decompose!(c, bp, x, CDF97)
     rec = similar(x)
-    lp_reconstruct!(rec, c, bp, CDF97)
+    Contourlets.lp_reconstruct!(rec, c, bp, CDF97)
     @test maximum(abs, rec .- x) < 1.0e-12
 end
 
@@ -35,10 +35,10 @@ end
     Random.seed!(13)
     x = randn(32, 32)
     for lv in 1:3
-        c, bp = nsp_decompose(x, CDF97, lv)
+        c, bp = Contourlets.nsp_decompose(x, CDF97, lv)
         @test size(c) == size(x)
         @test size(bp) == size(x)
-        rec = nsp_reconstruct(c, bp, CDF97, lv)
+        rec = Contourlets.nsp_reconstruct(c, bp, CDF97, lv)
         @test maximum(abs, rec .- x) < 1.0e-12
     end
 end
@@ -50,9 +50,9 @@ end
     c = similar(x)
     bp = similar(x)
     tmp = similar(x)
-    nsp_decompose!(c, bp, x, CDF97, 1; tmp = tmp)
+    Contourlets.nsp_decompose!(c, bp, x, CDF97, 1; tmp = tmp)
     rec = similar(x)
-    nsp_reconstruct!(rec, c, bp, CDF97, 1; tmp = tmp)
+    Contourlets.nsp_reconstruct!(rec, c, bp, CDF97, 1; tmp = tmp)
     @test maximum(abs, rec .- x) < 1.0e-12
 end
 
@@ -62,20 +62,20 @@ end
     x = randn(32, 32)
     for lv in 2:3
         c = similar(x); bp = similar(x); tmp = similar(x)
-        nsp_decompose!(c, bp, x, CDF97, lv)
+        Contourlets.nsp_decompose!(c, bp, x, CDF97, lv)
         rec = similar(x)
-        nsp_reconstruct!(rec, c, bp, CDF97, lv)
+        Contourlets.nsp_reconstruct!(rec, c, bp, CDF97, lv)
         @test maximum(abs, rec .- x) < 1.0e-12
     end
 end
 
 @testitem "NSP decompose invalid level" tags = [:pyramid] begin
     x = randn(16, 16)
-    @test_throws ArgumentError nsp_decompose(x, CDF97, 0)
+    @test_throws ArgumentError Contourlets.nsp_decompose(x, CDF97, 0)
 end
 
 @testitem "lp_decompose! odd dimension throws" tags = [:pyramid] begin
     x = randn(7, 8)
     c = zeros(4, 4); bp = zeros(7, 8)
-    @test_throws ArgumentError lp_decompose!(c, bp, x, CDF97)
+    @test_throws ArgumentError Contourlets.lp_decompose!(c, bp, x, CDF97)
 end

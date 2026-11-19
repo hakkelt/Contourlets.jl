@@ -31,7 +31,7 @@ julia> using Contourlets
 
 julia> x = reshape(1.0:16.0, 4, 4);
 
-julia> rect_downsample(x)
+julia> Contourlets.rect_downsample(x)
 2×2 Matrix{Float64}:
  1.0   9.0
  3.0  11.0
@@ -67,7 +67,7 @@ odd output, `2d - 1` along each axis, where `d` is the matching size of `src`.
 ```jldoctest
 julia> using Contourlets
 
-julia> rect_upsample([1.0 2.0; 3.0 4.0])
+julia> Contourlets.rect_upsample([1.0 2.0; 3.0 4.0])
 4×4 Matrix{Float64}:
  1.0  0.0  2.0  0.0
  0.0  0.0  0.0  0.0

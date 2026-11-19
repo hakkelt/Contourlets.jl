@@ -29,17 +29,24 @@ different construction rather than this one with an extra axis — its direction
 stage is an hourglass filter bank built from Bernstein mapping kernels, with no
 sampling matrix or ladder filter in it at all.  The two packages share only the
 pyramid filter machinery, which lives in
-[MultiscaleFilterBanks.jl](https://github.com/hakkelt/MultiscaleFilterBanks.jl)
-and is re-exported here.
+[MultiscaleFilterBanks.jl](https://github.com/hakkelt/MultiscaleFilterBanks.jl);
+its filter types `FilterPair` and `CDF97` are re-exported here.
+
+### Building blocks
+The pyramid and directional stages (`lp_*`, `nsp_*`, `qfb_*`, `dfb_*`,
+`nsdfb_*`) and the filter utilities `upsample_kernel` and `check_pr_condition`
+are public but not exported: load them by name, e.g.
+`using Contourlets: lp_decompose, dfb_decompose`.
 """
 module Contourlets
 
 using FFTW: FFTW, plan_rfft, plan_fft, plan_fft!, plan_irfft, plan_brfft, plan_bfft, plan_bfft!
 using LinearAlgebra: mul!
 using FastBroadcast: @..
+using Compat: @compat
 
 using MultiscaleFilterBanks: MultiscaleFilterBanks,
-    FilterPair, CDF97, upsample_filter,
+    FilterPair, CDF97,
     data_eltype, filter_eltype, with_fftw_threads, clamp_idx, nsp_atrous_filters, nsp_responses, centred_dtft,
     MaskItem, MaskBank, MaskBankEngine, mask_bank_forward!, mask_bank_inverse!
 
@@ -89,9 +96,12 @@ include("transforms/stict.jl")
 include("precompile.jl")
 
 # ── Exports ───────────────────────────────────────────────────────────────────
+# The transform API is exported.  The pyramid and directional stages and the
+# filter utilities are public but not exported; the raw primitives (conv2d*,
+# rect_*sample*, qx_*sample*, shear*, inv_shear*) are internal.
 export
     # Re-exported from MultiscaleFilterBanks
-    FilterPair, CDF97, upsample_filter,
+    FilterPair, CDF97,
 
     # Types
     QuincunxFilterPair,
@@ -103,20 +113,6 @@ export
 
     # Utilities
     parabolic_levels,
-    upsample_kernel, check_pr_condition,
-
-    # Primitives
-    conv2d!, conv2d, conv2d_sep!, conv2d_sep,
-    rect_downsample!, rect_downsample, rect_upsample!, rect_upsample,
-    qx_downsample!, qx_downsample, qx_upsample!, qx_upsample,
-    shear!, shear, inv_shear!, inv_shear,
-
-    # Building blocks
-    lp_decompose, lp_decompose!, lp_reconstruct, lp_reconstruct!,
-    nsp_decompose, nsp_decompose!, nsp_reconstruct, nsp_reconstruct!,
-    qfb_decompose, qfb_decompose!, qfb_reconstruct, qfb_reconstruct!,
-    dfb_decompose, dfb_decompose!, dfb_reconstruct, dfb_reconstruct!, dfb_subband_sizes,
-    nsdfb_decompose, nsdfb_reconstruct,
 
     # Top-level transforms
     ct_forward, ct_forward!, ct_inverse, ct_inverse!,
@@ -128,5 +124,13 @@ export
 
     # Workspace
     make_workspace, make_nsct_workspace, make_tict_workspace, make_stict_workspace
+
+# Building blocks
+@compat public lp_decompose, lp_decompose!, lp_reconstruct, lp_reconstruct!,
+    nsp_decompose, nsp_decompose!, nsp_reconstruct, nsp_reconstruct!,
+    qfb_decompose, qfb_decompose!, qfb_reconstruct, qfb_reconstruct!,
+    dfb_decompose, dfb_decompose!, dfb_reconstruct, dfb_reconstruct!, dfb_subband_sizes,
+    nsdfb_decompose, nsdfb_reconstruct,
+    upsample_kernel, check_pr_condition
 
 end # module

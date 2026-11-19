@@ -270,9 +270,11 @@ buys.
 ## Using the stages on their own
 
 The pyramid and the directional filter bank are public, so a single stage can be
-used without the full transform:
+used without the full transform.  They are not exported; load them by name:
 
 ```@example guide2d
+using Contourlets: lp_decompose, lp_reconstruct, dfb_decompose, dfb_reconstruct
+
 coarse, bandpass = lp_decompose(img, CDF97)       # one Laplacian pyramid level
 back             = lp_reconstruct(coarse, bandpass, CDF97)
 
@@ -295,5 +297,5 @@ println("DFB round-trip error: ",
     maximum(abs, dfb_reconstruct(sbs, Q2345) .- bandpass))
 ```
 
-[`nsdfb_decompose`](@ref) / [`nsdfb_reconstruct`](@ref) are the nonsubsampled
+[`nsdfb_decompose`](@ref Contourlets.nsdfb_decompose) / [`nsdfb_reconstruct`](@ref Contourlets.nsdfb_reconstruct) are the nonsubsampled
 counterparts. The complete list is in the [API Reference](@ref api).

@@ -116,6 +116,8 @@ basis functions** — elongated, oriented elements (the anisotropy that lets
 contourlets trace smooth contours):
 
 ```@example theory
+using Contourlets: dfb_decompose, dfb_reconstruct, nsdfb_decompose
+
 N = 128
 sbs = dfb_decompose(zeros(N, N), 3, Q2345)     # 8 directional subbands
 function basis_element(k)

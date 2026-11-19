@@ -55,6 +55,8 @@ Both outputs have the same spatial size as `image`.
 ```jldoctest
 julia> using Contourlets, Random
 
+julia> using Contourlets: nsp_decompose
+
 julia> x = randn(Xoshiro(1), 32, 32);
 
 julia> c, bp = nsp_decompose(x, CDF97, 1);
@@ -118,6 +120,8 @@ Reconstruct one NSP level.
 # Examples
 ```jldoctest
 julia> using Contourlets, Random
+
+julia> using Contourlets: nsp_decompose, nsp_reconstruct
 
 julia> x = randn(Xoshiro(1), 32, 32);
 

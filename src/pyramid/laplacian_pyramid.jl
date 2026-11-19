@@ -21,6 +21,8 @@ One-level Laplacian Pyramid analysis.
 ```jldoctest
 julia> using Contourlets, Random
 
+julia> using Contourlets: lp_decompose
+
 julia> x = randn(Xoshiro(42), 64, 64);
 
 julia> c, bp = lp_decompose(x, CDF97);
@@ -87,6 +89,8 @@ One-level Laplacian Pyramid synthesis.
 # Examples
 ```jldoctest
 julia> using Contourlets, Random
+
+julia> using Contourlets: lp_decompose, lp_reconstruct
 
 julia> x = randn(Xoshiro(42), 64, 64);
 

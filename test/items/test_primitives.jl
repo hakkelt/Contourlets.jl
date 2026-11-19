@@ -32,11 +32,11 @@ end
     using Random
     Random.seed!(2)
     x = randn(8, 8)
-    y = rect_downsample(x)
+    y = Contourlets.rect_downsample(x)
     @test size(y) == (4, 4)
     # upsample then downsample should give back original
-    u = rect_upsample(y)
-    d2 = rect_downsample(u)
+    u = Contourlets.rect_upsample(y)
+    d2 = Contourlets.rect_downsample(u)
     @test maximum(abs, d2 .- y) < 1.0e-14
 end
 
@@ -45,9 +45,9 @@ end
     Random.seed!(3)
     x = randn(8, 8)
     for dir in [:h, :v]
-        sh = shear(x, dir)
+        sh = Contourlets.shear(x, dir)
         @test size(sh) == size(x)
-        rec = inv_shear(sh, dir)
+        rec = Contourlets.inv_shear(sh, dir)
         @test maximum(abs, rec .- x) < 1.0e-14
     end
 end
@@ -55,11 +55,11 @@ end
 @testitem "shear does not alias src/dst" tags = [:primitives] begin
     x = randn(8, 8)
     y = copy(x)
-    sh = shear(x, :h)          # allocating — never aliases
+    sh = Contourlets.shear(x, :h)          # allocating — never aliases
     @test sh != x              # result differs from identity
     # in-place shear! into a separate dst is fine
     dst = similar(x)
-    shear!(dst, x, :h)
+    Contourlets.shear!(dst, x, :h)
     @test dst == sh
 end
 
@@ -106,9 +106,9 @@ end
 
     # Square case
     x = randn(16, 16)
-    y = qx_downsample(x)
+    y = Contourlets.qx_downsample(x)
     @test size(y) == (16, 8)
-    x_rec = qx_upsample(y, size(x))
+    x_rec = Contourlets.qx_upsample(y, size(x))
     @test size(x_rec) == size(x)
     # Retained positions must exactly match x; dropped positions must be zero.
     for i in 1:16, j in 1:16
@@ -121,9 +121,9 @@ end
 
     # Non-square even case
     x2 = randn(8, 6)
-    y2 = qx_downsample(x2)
+    y2 = Contourlets.qx_downsample(x2)
     @test size(y2) == (8, 3)
-    x2_rec = qx_upsample(y2, size(x2))
+    x2_rec = Contourlets.qx_upsample(y2, size(x2))
     for i in 1:8, j in 1:6
         if isodd(i + j)
             @test x2_rec[i, j] == 0
@@ -133,17 +133,17 @@ end
     end
 
     # Odd n2 must throw
-    @test_throws ArgumentError qx_downsample(randn(8, 5))
-    @test_throws ArgumentError qx_downsample!(zeros(8, 2), randn(8, 5))
+    @test_throws ArgumentError Contourlets.qx_downsample(randn(8, 5))
+    @test_throws ArgumentError Contourlets.qx_downsample!(zeros(8, 2), randn(8, 5))
 end
 
 @testitem "qx_downsample! in-place" tags = [:primitives] begin
     using Random
     Random.seed!(7)
     x = randn(16, 16)
-    y_alloc = qx_downsample(x)
+    y_alloc = Contourlets.qx_downsample(x)
     y_inplace = zeros(size(y_alloc)...)
-    qx_downsample!(y_inplace, x)
+    Contourlets.qx_downsample!(y_inplace, x)
     @test y_inplace == y_alloc
 end
 
@@ -151,33 +151,33 @@ end
     using Random
     Random.seed!(8)
     x = randn(16, 16)
-    y = qx_downsample(x)
-    x_alloc = qx_upsample(y, size(x))
+    y = Contourlets.qx_downsample(x)
+    x_alloc = Contourlets.qx_upsample(y, size(x))
     x_inplace = zeros(size(x)...)
-    qx_upsample!(x_inplace, y)
+    Contourlets.qx_upsample!(x_inplace, y)
     @test x_inplace == x_alloc
 end
 
 @testitem "shear! invalid direction throws" tags = [:primitives] begin
     x = randn(8, 8)
     dst = similar(x)
-    @test_throws ArgumentError shear!(dst, x, :bad)
+    @test_throws ArgumentError Contourlets.shear!(dst, x, :bad)
 end
 
 @testitem "inv_shear! invalid direction throws" tags = [:primitives] begin
     x = randn(8, 8)
     dst = similar(x)
-    @test_throws ArgumentError inv_shear!(dst, x, :bad)
+    @test_throws ArgumentError Contourlets.inv_shear!(dst, x, :bad)
 end
 
 @testitem "rect_upsample! in-place" tags = [:primitives] begin
     using Random
     Random.seed!(9)
     x = randn(8, 8)
-    y = rect_downsample(x)
-    up_alloc = rect_upsample(y)
+    y = Contourlets.rect_downsample(x)
+    up_alloc = Contourlets.rect_upsample(y)
     up_inplace = zeros(size(up_alloc)...)
-    rect_upsample!(up_inplace, y)
+    Contourlets.rect_upsample!(up_inplace, y)
     @test up_inplace == up_alloc
 end
 
@@ -185,9 +185,9 @@ end
     using Random
     Random.seed!(10)
     x = randn(8, 8)
-    y_alloc = rect_downsample(x)
+    y_alloc = Contourlets.rect_downsample(x)
     y_inplace = zeros(4, 4)
-    rect_downsample!(y_inplace, x)
+    Contourlets.rect_downsample!(y_inplace, x)
     @test y_inplace == y_alloc
 end
 
@@ -197,12 +197,12 @@ end
     x = randn(8, 8)
     h = Float64[0.25, 0.5, 0.25]
     dst_per = similar(x)
-    conv2d_sep!(dst_per, x, h, h; boundary = :periodic)
+    Contourlets.conv2d_sep!(dst_per, x, h, h; boundary = :periodic)
     dst_sym = similar(x)
-    conv2d_sep!(dst_sym, x, h, h; boundary = :symmetric)
+    Contourlets.conv2d_sep!(dst_sym, x, h, h; boundary = :symmetric)
     @test maximum(abs, dst_per[3:6, 3:6] .- dst_sym[3:6, 3:6]) < 1.0e-12
     dst_zero = similar(x)
-    conv2d_sep!(dst_zero, x, h, h; boundary = :zero)
+    Contourlets.conv2d_sep!(dst_zero, x, h, h; boundary = :zero)
     @test size(dst_zero) == size(x)
     @test all(isfinite, dst_zero)
     @test maximum(abs, dst_zero[3:6, 3:6] .- dst_sym[3:6, 3:6]) < 1.0e-12
@@ -213,9 +213,9 @@ end
     Random.seed!(61)
     x = randn(16, 16)
     h = Float64[0.25, 0.5, 0.25]
-    dst_alloc = conv2d_sep(x, h, h; boundary = :periodic)
+    dst_alloc = Contourlets.conv2d_sep(x, h, h; boundary = :periodic)
     dst_ip = similar(x)
-    conv2d_sep!(dst_ip, x, h, h; boundary = :periodic)
+    Contourlets.conv2d_sep!(dst_ip, x, h, h; boundary = :periodic)
     @test dst_alloc == dst_ip
 end
 
@@ -224,7 +224,7 @@ end
     Random.seed!(95)
     x = randn(8, 8)
     h = [0.25, 0.5, 0.25]
-    out = conv2d_sep(x, h, h; boundary = :periodic)
+    out = Contourlets.conv2d_sep(x, h, h; boundary = :periodic)
     @test size(out) == size(x)
     @test all(isfinite, out)
 end
@@ -234,7 +234,7 @@ end
     Random.seed!(96)
     x = randn(8, 8)
     h = [0.25, 0.5, 0.25]
-    out = conv2d_sep(x, h, h; boundary = :zero)
+    out = Contourlets.conv2d_sep(x, h, h; boundary = :zero)
     @test size(out) == size(x)
     @test all(isfinite, out)
 end
@@ -251,7 +251,7 @@ end
     ]
     for (nr, nc) in [(3, 3), (4, 4)]
         x = randn(nr, nc)
-        out = conv2d_sep(x, h9, h9; boundary = :symmetric)
+        out = Contourlets.conv2d_sep(x, h9, h9; boundary = :symmetric)
         @test all(isfinite, out)
         @test size(out) == (nr, nc)
     end
@@ -296,7 +296,7 @@ end
     ]
     for (nr, nc) in [(3, 3), (4, 4)]
         x = randn(nr, nc)
-        @test maximum(abs, conv2d_sep(x, h9, h9; boundary = :symmetric) .- ref_conv_sep(x, h9)) <
+        @test maximum(abs, Contourlets.conv2d_sep(x, h9, h9; boundary = :symmetric) .- ref_conv_sep(x, h9)) <
             1.0e-12
     end
 end
@@ -314,7 +314,6 @@ end
 
 @testitem "even-length filters: fast path matches generic path" tags = [:primitives] begin
     using Random
-    using Contourlets: conv2d_sep
     Random.seed!(42)
 
     # The real fast paths split the domain into a border band and an interior
@@ -329,8 +328,8 @@ end
     for boundary in (:symmetric, :periodic), h in (h4, h6)
         for (n1, n2) in ((8, 6), (16, 16), (5, 4))
             x = randn(n1, n2)
-            fast = conv2d_sep(x, h, h; boundary = boundary)
-            ref = real(conv2d_sep(complex(x), h, h; boundary = boundary))
+            fast = Contourlets.conv2d_sep(x, h, h; boundary = boundary)
+            ref = real(Contourlets.conv2d_sep(complex(x), h, h; boundary = boundary))
             @test maximum(abs, fast .- ref) < 1.0e-12
         end
     end

@@ -30,7 +30,7 @@ julia> using Contourlets
 
 julia> x = reshape(1.0:9.0, 3, 3);
 
-julia> shear(x, :h)
+julia> Contourlets.shear(x, :h)
 3×3 Matrix{Float64}:
  4.0  7.0  1.0
  8.0  2.0  5.0

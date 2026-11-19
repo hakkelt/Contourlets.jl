@@ -65,6 +65,8 @@ Perfect-reconstruction property:
 ```jldoctest
 julia> using Contourlets
 
+julia> using Contourlets: check_pr_condition
+
 julia> check_pr_condition(Q2345)
 true
 ```

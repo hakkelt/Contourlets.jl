@@ -59,7 +59,12 @@ similar_tict_coefficients
 similar_stict_coefficients
 ```
 
-## Pyramid
+## Building blocks
+
+The pyramid and directional stages below are public but not exported; load them
+by name, e.g. `using Contourlets: lp_decompose, dfb_decompose`.
+
+### Pyramid
 
 ```@docs
 lp_decompose
@@ -72,7 +77,7 @@ nsp_reconstruct
 nsp_reconstruct!
 ```
 
-## Directional Filter Bank
+### Directional Filter Bank
 
 ```@docs
 qfb_decompose
@@ -88,27 +93,6 @@ nsdfb_decompose
 nsdfb_reconstruct
 ```
 
-## Primitives
-
-```@docs
-conv2d
-conv2d!
-conv2d_sep
-conv2d_sep!
-rect_downsample
-rect_downsample!
-rect_upsample
-rect_upsample!
-qx_downsample
-qx_downsample!
-qx_upsample
-qx_upsample!
-shear
-shear!
-inv_shear
-inv_shear!
-```
-
 ## Filters
 
 ```@docs
@@ -117,7 +101,11 @@ Q2345
 FilterPair
 QuincunxFilterPair
 parabolic_levels
-upsample_filter
+```
+
+The filter utilities below are public but not exported.
+
+```@docs
 upsample_kernel
 check_pr_condition
 ```

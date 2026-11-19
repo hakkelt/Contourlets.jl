@@ -3,7 +3,7 @@
 """
     upsample_kernel(K::AbstractMatrix, factor::Int) -> Matrix
 
-2-D version of `upsample_filter`: insert `factor - 1` zero rows and columns
+2-D version of `MultiscaleFilterBanks.upsample_filter`: insert `factor - 1` zero rows and columns
 between every row and column of kernel `K`.
 """
 function upsample_kernel(K::AbstractMatrix{T}, factor::Int)::Matrix{T} where {T}

@@ -109,8 +109,8 @@ Build the FFTW plans for FFT convolution of a `src_size` image with a
 No plan is cached at the package level: FFTW already caches its `MEASURE` wisdom
 (the expensive timing step) globally in the C library, so rebuilding a plan for a
 size that has been planned before is cheap (sub-millisecond).  This FFT path is
-only reached for large kernels through the public [`conv2d`](@ref); the contourlet
-transforms use the separable direct backend ([`conv2d_sep!`](@ref)).
+only reached for large kernels through `conv2d`; the contourlet
+transforms use the separable direct backend (`conv2d_sep!`).
 """
 function _build_fft_plan(
         src_size::Tuple{Int, Int},

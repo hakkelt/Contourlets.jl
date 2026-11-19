@@ -6,7 +6,7 @@
 end
 
 @testitem "Q2345 PR condition" tags = [:filters] begin
-    @test check_pr_condition(Q2345)
+    @test Contourlets.check_pr_condition(Q2345)
 end
 
 @testitem "Q2345 structure" tags = [:filters] begin
@@ -40,6 +40,7 @@ end
 end
 
 @testitem "upsample_filter" tags = [:filters] begin
+    using MultiscaleFilterBanks: upsample_filter
     h = [1.0, 2.0, 3.0]
     @test upsample_filter(h, 1) == h
     hu = upsample_filter(h, 2)
@@ -54,9 +55,9 @@ end
 
 @testitem "upsample_kernel 2D" tags = [:filters] begin
     K = [1.0 2.0; 3.0 4.0]
-    K2 = upsample_kernel(K, 1)
+    K2 = Contourlets.upsample_kernel(K, 1)
     @test K2 == K
-    K3 = upsample_kernel(K, 2)
+    K3 = Contourlets.upsample_kernel(K, 2)
     @test size(K3) == (3, 3)
     @test K3[1, 1] == 1.0
     @test K3[1, 3] == 2.0
@@ -66,20 +67,21 @@ end
 end
 
 @testitem "upsample_filter invalid factor" tags = [:filters] begin
+    using MultiscaleFilterBanks: upsample_filter
     @test_throws ArgumentError upsample_filter([1.0, 2.0], 0)
 end
 
 @testitem "upsample_kernel invalid factor" tags = [:filters] begin
-    @test_throws ArgumentError upsample_kernel([1.0 2.0], 0)
+    @test_throws ArgumentError Contourlets.upsample_kernel([1.0 2.0], 0)
 end
 
 @testitem "check_pr_condition(FilterPair)" tags = [:filters] begin
-    @test check_pr_condition(CDF97)
+    @test Contourlets.check_pr_condition(CDF97)
 end
 
 @testitem "check_pr_condition scales its tolerance with the precision" tags = [:filters] begin
-    @test check_pr_condition(QuincunxFilterPair(Float32.(Q2345.f_ladder)))
-    @test check_pr_condition(FilterPair(Float32.(CDF97.h), Float32.(CDF97.g)))
+    @test Contourlets.check_pr_condition(QuincunxFilterPair(Float32.(Q2345.f_ladder)))
+    @test Contourlets.check_pr_condition(FilterPair(Float32.(CDF97.h), Float32.(CDF97.g)))
 end
 
 @testitem "the ladder table is evaluated per point when it would outgrow the grid" tags = [:filters] begin
@@ -107,7 +109,7 @@ end
     qfp64 = QuincunxFilterPair{Float64}(Float32[0.25, 0.25])
     @test eltype(qfp64.f_ladder) == Float64
     # Any ladder filter gives a perfect-reconstruction pair.
-    @test check_pr_condition(QuincunxFilterPair([0.1, 0.4, 0.4, 0.1]))
+    @test Contourlets.check_pr_condition(QuincunxFilterPair([0.1, 0.4, 0.4, 0.1]))
 end
 
 @testitem "ContourletParams show method" tags = [:filters] begin

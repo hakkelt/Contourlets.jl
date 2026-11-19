@@ -109,6 +109,8 @@ tree.
 ```jldoctest
 julia> using Contourlets, Random
 
+julia> using Contourlets: nsdfb_decompose
+
 julia> x = randn(Xoshiro(5), 16, 16);
 
 julia> sbs = nsdfb_decompose(x, 2, Q2345, 1);
@@ -149,6 +151,8 @@ same `tree_level` and `half` as the analysis; the tree depth is inferred from
 # Examples
 ```jldoctest
 julia> using Contourlets, Random
+
+julia> using Contourlets: nsdfb_decompose, nsdfb_reconstruct
 
 julia> x = randn(Xoshiro(5), 16, 16);
 

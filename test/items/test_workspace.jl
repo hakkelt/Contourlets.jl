@@ -230,9 +230,9 @@ end
     @test_throws "no DFB for a (32, 32) bandpass at depth 3" Contourlets._workspace_runner(ws, (32, 32), 3, :both, Q2345, Float64)
     @test_throws "no DFB for a (16, 16) bandpass at depth 2" Contourlets._workspace_runner(ws, (16, 16), 2, :both, Q2345, Float64)
     @test_throws "filter precision Float64" Contourlets._workspace_runner(ws, (32, 32), 2, :both, Q2345, Float32)
-    a = dfb_decompose(bp, 2, Q2345; workspace = ws)
-    @test all(a .== dfb_decompose(bp, 2, Q2345))
-    @test maximum(abs, dfb_reconstruct(a, Q2345; workspace = ws) .- bp) < 1.0e-12
+    a = Contourlets.dfb_decompose(bp, 2, Q2345; workspace = ws)
+    @test all(a .== Contourlets.dfb_decompose(bp, 2, Q2345))
+    @test maximum(abs, Contourlets.dfb_reconstruct(a, Q2345; workspace = ws) .- bp) < 1.0e-12
 end
 
 @testitem "ScratchArena resizes a slot whose requested size changes" tags = [:ct] begin

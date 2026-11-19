@@ -21,16 +21,27 @@ and the Q2345 ladder are all planar, and Lu and Do prove that the hourglass
 frequency partition a volume needs cannot be critically sampled at all. The two
 packages share only the pyramid filter machinery.
 
-The shared surface with the core is small and explicit: `FilterPair`, `CDF97`,
-`upsample_filter`, and the internals `data_eltype`,
-`filter_eltype`, `use_threading`, the scoped FFTW thread count
+The shared surface with the core is small and explicit: `FilterPair`, `CDF97`
+(re-exported), and the internals `data_eltype`,
+`filter_eltype`, the scoped FFTW thread count
 (`with_fftw_threads`), `clamp_idx`, `nsp_atrous_filters`, and the
 pyramid's frequency responses (`nsp_responses`, `centred_dtft`), and the
 mask-bank engine that runs the NSCT and TICT workspaces (`MaskBankEngine`,
-`MaskItem`, `mask_bank_forward!`, `mask_bank_inverse!`; this package adds
+`MaskBank`, `MaskItem`, `mask_bank_forward!`, `mask_bank_inverse!`; this package adds
 `mask_bank_subband` methods for its coefficient sets in `src/workspace/mask_bank.jl`).
-All are re-exported (public names) or imported (internals) in
+All are re-exported (`FilterPair`, `CDF97`) or imported (internals) in
 `src/Contourlets.jl`.
+
+**Public surface.** Only the transform API is exported: transforms, workspaces,
+coefficient and parameter types, `Q2345`/`QuincunxFilterPair`,
+`parabolic_levels` and the re-exported `FilterPair`/`CDF97`.  The pyramid
+and directional stages (`lp_*`, `nsp_*`, `qfb_*`, `dfb_*`, `nsdfb_*`) and
+`upsample_kernel`/`check_pr_condition` are `@compat public`, not exported.
+The raw primitives (`conv2d*`, `rect_*sample*`, `qx_*sample*`, `shear*`,
+`inv_shear*`) are internal, so their signatures may change without a breaking
+release; tests and docstring examples call them qualified
+(`Contourlets.conv2d_sep`).  Every public name needs a docstring and an entry in
+`docs/src/api.md` (`checkdocs = :public`).
 
 **First checkout**: CI resolves `MultiscaleFilterBanks.jl` from the registry. To
 develop against a sibling checkout, run `julia --project=. dev/bootstrap.jl`

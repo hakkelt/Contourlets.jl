@@ -56,18 +56,18 @@ end
         end
         # shear / inv_shear round-trip and CPU match
         for dir in (:h, :v)
-            sg = shear(xg, dir)
-            @test maximum(abs, Array(sg) .- shear(x, dir)) < 1.0f-5
-            @test maximum(abs, Array(inv_shear(sg, dir)) .- x) < 1.0f-5
+            sg = Contourlets.shear(xg, dir)
+            @test maximum(abs, Array(sg) .- Contourlets.shear(x, dir)) < 1.0f-5
+            @test maximum(abs, Array(Contourlets.inv_shear(sg, dir)) .- x) < 1.0f-5
         end
         # rectangular down/up-sampling
-        dn = rect_downsample(xg)
-        @test maximum(abs, Array(dn) .- rect_downsample(x)) < 1.0f-5
-        up = rect_upsample(dn)
-        @test maximum(abs, Array(up) .- rect_upsample(Array(dn))) < 1.0f-5
+        dn = Contourlets.rect_downsample(xg)
+        @test maximum(abs, Array(dn) .- Contourlets.rect_downsample(x)) < 1.0f-5
+        up = Contourlets.rect_upsample(dn)
+        @test maximum(abs, Array(up) .- Contourlets.rect_upsample(Array(dn))) < 1.0f-5
         # quincunx down/up-sampling
-        qd = qx_downsample(xg)
-        @test maximum(abs, Array(qd) .- qx_downsample(x)) < 1.0f-5
+        qd = Contourlets.qx_downsample(xg)
+        @test maximum(abs, Array(qd) .- Contourlets.qx_downsample(x)) < 1.0f-5
     end
 end
 
@@ -75,13 +75,13 @@ end
     using GPUEnv, Random
     Random.seed!(51)
     x = randn(Float32, 32, 32)
-    cc, bpc = lp_decompose(x, CDF97)
+    cc, bpc = Contourlets.lp_decompose(x, CDF97)
     for backend in GPUBackends.backends
         xg = to_gpu(backend, x)
-        cg, bpg = lp_decompose(xg, CDF97)
+        cg, bpg = Contourlets.lp_decompose(xg, CDF97)
         @test maximum(abs, Array(cg) .- cc) < 1.0f-5
         @test maximum(abs, Array(bpg) .- bpc) < 1.0f-5
-        rec = lp_reconstruct(cg, bpg, CDF97)
+        rec = Contourlets.lp_reconstruct(cg, bpg, CDF97)
         @test maximum(abs, Array(rec) .- x) < 1.0f-4
     end
 end
@@ -93,11 +93,11 @@ end
     for backend in GPUBackends.backends
         xg = to_gpu(backend, x)
         for lvl in 1:2
-            cc, bpc = nsp_decompose(x, CDF97, lvl)
-            cg, bpg = nsp_decompose(xg, CDF97, lvl)
+            cc, bpc = Contourlets.nsp_decompose(x, CDF97, lvl)
+            cg, bpg = Contourlets.nsp_decompose(xg, CDF97, lvl)
             @test maximum(abs, Array(cg) .- cc) < 1.0f-5
             @test maximum(abs, Array(bpg) .- bpc) < 1.0f-5
-            rec = nsp_reconstruct(cg, bpg, CDF97, lvl)
+            rec = Contourlets.nsp_reconstruct(cg, bpg, CDF97, lvl)
             @test maximum(abs, Array(rec) .- x) < 1.0f-4
         end
     end
@@ -211,11 +211,11 @@ end
     x = randn(Float32, 16, 16)
     for backend in GPUBackends.backends
         xg = to_gpu(backend, x)
-        qd = qx_downsample(xg)
-        qu = qx_upsample(qd, size(xg))
+        qd = Contourlets.qx_downsample(xg)
+        qu = Contourlets.qx_upsample(qd, size(xg))
         @test size(qu) == size(xg)
         # upsample should reverse the downsample on even+even sites
-        qu_cpu = qx_upsample(qx_downsample(x), size(x))
+        qu_cpu = Contourlets.qx_upsample(Contourlets.qx_downsample(x), size(x))
         @test maximum(abs, Array(qu) .- qu_cpu) < 1.0f-5
     end
 end
@@ -228,17 +228,17 @@ end
     for backend in GPUBackends.fft_backends
         xg = to_gpu(backend, x)
         # l_levels == 0 → [copy(bandpass)]
-        sbs0 = nsdfb_decompose(xg, 0, Q2345)
+        sbs0 = Contourlets.nsdfb_decompose(xg, 0, Q2345)
         @test length(sbs0) == 1
         @test maximum(abs, Array(sbs0[1]) .- x) < 1.0f-5
         # nsdfb_reconstruct n == 1 → copy
-        rec1 = nsdfb_reconstruct([xg], Q2345)
+        rec1 = Contourlets.nsdfb_reconstruct([xg], Q2345)
         @test maximum(abs, Array(rec1) .- x) < 1.0f-5
         # error: l_levels < 0
-        @test_throws ArgumentError nsdfb_decompose(xg, -1, Q2345)
+        @test_throws ArgumentError Contourlets.nsdfb_decompose(xg, -1, Q2345)
         # error: non-power-of-2 subbands
-        sbs2 = nsdfb_decompose(xg, 2, Q2345)
-        @test_throws ArgumentError nsdfb_reconstruct(sbs2[1:3], Q2345)
+        sbs2 = Contourlets.nsdfb_decompose(xg, 2, Q2345)
+        @test_throws ArgumentError Contourlets.nsdfb_reconstruct(sbs2[1:3], Q2345)
     end
 end
 
@@ -248,8 +248,8 @@ end
     for backend in GPUBackends.backends
         xg = to_gpu(backend, x)
         sg = to_gpu(backend, zeros(Float32, 16, 8))
-        @test_throws ArgumentError qfb_decompose(xg, Q2345)
-        @test_throws ArgumentError qfb_reconstruct(sg, sg, Q2345)
+        @test_throws ArgumentError Contourlets.qfb_decompose(xg, Q2345)
+        @test_throws ArgumentError Contourlets.qfb_reconstruct(sg, sg, Q2345)
     end
 end
 

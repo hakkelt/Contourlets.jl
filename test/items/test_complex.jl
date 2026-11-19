@@ -87,8 +87,8 @@ end
     h = Float64[0.25, 0.5, 0.25]
     x = randn(16, 16)
     y = randn(16, 16)
-    rz = conv2d_sep(complex.(x, y), h, h)
+    rz = Contourlets.conv2d_sep(complex.(x, y), h, h)
     @test eltype(rz) == ComplexF64
-    @test real(rz) ≈ conv2d_sep(x, h, h)
-    @test imag(rz) ≈ conv2d_sep(y, h, h)
+    @test real(rz) ≈ Contourlets.conv2d_sep(x, h, h)
+    @test imag(rz) ≈ Contourlets.conv2d_sep(y, h, h)
 end

@@ -8,9 +8,10 @@ DocMeta.setdocmeta!(
 
 makedocs(;
     # MultiscaleFilterBanks is in the list because Contourlets re-exports its
-    # public names (`FilterPair`, `CDF97`, the threading policies), and their
-    # docstrings live there.
+    # `FilterPair` and `CDF97`, whose docstrings live there.  Its other public
+    # names are documented in its own manual, so `checkdocs` skips it.
     modules = [Contourlets, MultiscaleFilterBanks],
+    checkdocs_ignored_modules = [MultiscaleFilterBanks],
     sitename = "Contourlets.jl",
     remotes = Dict(
         pkgdir(MultiscaleFilterBanks) =>
@@ -33,7 +34,7 @@ makedocs(;
         ],
         "API Reference" => "api.md",
     ],
-    checkdocs = :exports,
+    checkdocs = :public,
 )
 
 deploydocs(;

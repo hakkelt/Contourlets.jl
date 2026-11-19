@@ -16,6 +16,8 @@ run only for Float64 (CT/NSCT cover the Float64-vs-ComplexF64 threading split).
 """
 
 using BenchmarkTools, Contourlets, Random, GPUEnv
+using Contourlets: lp_decompose, lp_reconstruct, dfb_decompose, dfb_reconstruct,
+    nsdfb_decompose, nsdfb_reconstruct, conv2d, conv2d_sep
 using FFTW: FFTW
 
 # Cap each @benchmarkable's tuning + steady-state phase: AirspeedVelocity runs this

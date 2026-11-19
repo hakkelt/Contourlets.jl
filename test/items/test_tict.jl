@@ -91,10 +91,10 @@ end
     s = stict_forward(x, ContourletParams(J = 2, L_array = L))
     for i in 1:2, (ch, half) in enumerate((:both, :second, :first, :both))
         w = channels.subbands[i][ch][1]
-        @test all(zip(c.subbands[i][ch], nsdfb_decompose(w, L[i], Q2345; half = half))) do (a, b)
+        @test all(zip(c.subbands[i][ch], Contourlets.nsdfb_decompose(w, L[i], Q2345; half = half))) do (a, b)
             maximum(abs, a .- b) < 1.0e-12
         end
-        @test all(zip(s.subbands[i][ch], dfb_decompose(w, L[i], Q2345; half = half))) do (a, b)
+        @test all(zip(s.subbands[i][ch], Contourlets.dfb_decompose(w, L[i], Q2345; half = half))) do (a, b)
             maximum(abs, a .- b) < 1.0e-12
         end
     end

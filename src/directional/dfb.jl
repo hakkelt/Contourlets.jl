@@ -72,6 +72,8 @@ fan whose wedges come first in the full tree.
 ```jldoctest
 julia> using Contourlets, Random
 
+julia> using Contourlets: dfb_decompose
+
 julia> x = randn(Xoshiro(3), 32, 32);
 
 julia> sbs = dfb_decompose(x, 2, Q2345);
@@ -140,6 +142,8 @@ as the analysis).
 # Examples
 ```jldoctest
 julia> using Contourlets, Random
+
+julia> using Contourlets: dfb_decompose, dfb_reconstruct
 
 julia> x = randn(Xoshiro(3), 32, 32);
 

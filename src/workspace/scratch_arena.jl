@@ -15,7 +15,7 @@
 # `replaced` counts the buffers dropped for a new size: a captured device graph
 # still points at them, so a change invalidates the graphs (`_GraphCache`).
 mutable struct ScratchArena{M <: AbstractMatrix}
-    bufs::Vector{M}
+    const bufs::Vector{M}
     cursor::Int
     replaced::Int
 end

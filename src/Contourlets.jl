@@ -40,7 +40,7 @@ using FastBroadcast: @..
 
 using MultiscaleFilterBanks: MultiscaleFilterBanks,
     FilterPair, CDF97, upsample_filter,
-    data_eltype, filter_eltype, use_threading, with_fftw_threads, clamp_idx, nsp_atrous_filters, nsp_responses, centred_dtft,
+    data_eltype, filter_eltype, with_fftw_threads, clamp_idx, nsp_atrous_filters, nsp_responses, centred_dtft,
     MaskItem, MaskBank, MaskBankEngine, mask_bank_forward!, mask_bank_inverse!
 
 # ── Types (must come before filters which use them) ──────────────────────────
@@ -53,6 +53,7 @@ include("filters/q2345.jl")
 include("filters/filter_utils.jl")
 
 # ── DSP primitives ────────────────────────────────────────────────────────────
+include("primitives/threading.jl")
 include("primitives/conv2d.jl")
 include("primitives/conv2d_sep.jl")
 include("primitives/sampling.jl")

@@ -218,21 +218,20 @@ end
     @test maximum(abs, out .- x) < 1.0e-12
 end
 
-@testitem "DFB falls back to its own bank when the workspace has none" tags = [:ct] begin
+@testitem "DFB workspace lookup: the held bank or an error" tags = [:ct] begin
     using Random
     Random.seed!(91)
     p = ContourletParams(J = 1, L_array = [2])
     ws = make_workspace(p, (32, 32))
     bp = randn(32, 32)
-    # The workspace holds a depth-2 bank for 32×32 only: depth 3 and another size
-    # must build their own and give the same result as no workspace at all.
+    # The workspace holds a depth-2 bank for 32×32 only.
     @test Contourlets._workspace_runner(ws, (32, 32), 2, :both, Q2345, Float64) !== nothing
-    @test Contourlets._workspace_runner(ws, (32, 32), 3, :both, Q2345, Float64) === nothing
-    @test Contourlets._workspace_runner(ws, (16, 16), 2, :both, Q2345, Float64) === nothing
-    @test Contourlets._workspace_runner(ws, (32, 32), 2, :both, Q2345, Float32) === nothing
-    a = dfb_decompose(bp, 3, Q2345; workspace = ws)
-    b = dfb_decompose(bp, 3, Q2345)
-    @test all(a .== b)
+    @test Contourlets._workspace_runner(nothing, (32, 32), 2, :both, Q2345, Float64) === nothing
+    @test_throws "no DFB for a (32, 32) bandpass at depth 3" Contourlets._workspace_runner(ws, (32, 32), 3, :both, Q2345, Float64)
+    @test_throws "no DFB for a (16, 16) bandpass at depth 2" Contourlets._workspace_runner(ws, (16, 16), 2, :both, Q2345, Float64)
+    @test_throws "filter precision Float64" Contourlets._workspace_runner(ws, (32, 32), 2, :both, Q2345, Float32)
+    a = dfb_decompose(bp, 2, Q2345; workspace = ws)
+    @test all(a .== dfb_decompose(bp, 2, Q2345))
     @test maximum(abs, dfb_reconstruct(a, Q2345; workspace = ws) .- bp) < 1.0e-12
 end
 

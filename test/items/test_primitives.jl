@@ -335,3 +335,28 @@ end
         end
     end
 end
+
+@testitem "unknown boundary modes throw" tags = [:primitives] begin
+    x = randn(16, 16)
+    h = [0.25, 0.5, 0.25]
+    msg = "boundary must be :symmetric, :periodic or :zero, got :reflect"
+    @test_throws msg Contourlets.conv2d(x, randn(3, 3); boundary = :reflect)   # direct backend
+    @test_throws msg Contourlets.conv2d(x, randn(7, 7); boundary = :reflect)   # FFTW backend
+    @test_throws msg Contourlets.conv2d!(similar(x), x, randn(7, 7); boundary = :reflect)
+    @test_throws msg Contourlets.conv2d_sep(x, h, h; boundary = :reflect)
+    @test_throws msg Contourlets.conv2d_sep!(similar(x), x, h, h; boundary = :reflect)
+end
+
+@testitem "rect up/downsampling checks the destination size" tags = [:primitives] begin
+    x = randn(8, 8)
+    @test_throws "must have size cld.(fine size, 2) = (4, 4), got (3, 4)" Contourlets.rect_downsample!(zeros(3, 4), x)
+    @test_throws "must have size cld.(fine size, 2) = (5, 4), got (4, 5)" Contourlets.rect_upsample!(zeros(9, 8), randn(4, 5))
+    @test_throws DimensionMismatch Contourlets.rect_upsample!(zeros(10, 8), randn(4, 4))
+    # Odd fine sizes: the coarse grid is cld(n, 2), as in the Laplacian pyramid.
+    y = randn(7, 9)
+    c = Contourlets.rect_downsample!(zeros(4, 5), y)
+    @test c == y[1:2:end, 1:2:end]
+    u = Contourlets.rect_upsample!(zeros(7, 9), c)
+    @test u[1:2:end, 1:2:end] == c
+    @test count(!iszero, u) == count(!iszero, c)
+end

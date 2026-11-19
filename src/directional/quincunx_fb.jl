@@ -12,6 +12,11 @@
 # The 1-D bank is the two-step ladder of the pair's lifting filter (see
 # q2345.jl), so perfect reconstruction is exact for any ladder filter.
 
+function _check_dir(dir::Symbol)
+    dir === :col || dir === :row || throw(ArgumentError("dir must be :col or :row, got :$(dir)"))
+    return dir
+end
+
 """
     qfb_decompose(image, qfp; dir=:col) -> (sb0, sb1)
 
@@ -49,6 +54,7 @@ function qfb_decompose(image::AbstractMatrix, qfp::QuincunxFilterPair; dir::Symb
     Tf = filter_eltype(Td)          # real filter precision
     img = Td === eltype(image) ? image : Td.(image)
     qfpT = _convert_qfp(Tf, qfp)
+    _check_dir(dir)
     if dir === :col
         return _qfb_col_decompose(img, qfpT)
     else
@@ -67,6 +73,7 @@ function qfb_decompose!(
         image::AbstractMatrix, qfp::QuincunxFilterPair;
         dir::Symbol = :col
     )
+    _check_dir(dir)
     if dir === :col
         return _qfb_col_decompose!(sb0, sb1, image, qfp)
     else
@@ -107,6 +114,7 @@ function qfb_reconstruct(
     sb0T = Td === eltype(sb0) ? sb0 : Td.(sb0)
     sb1T = Td === eltype(sb1) ? sb1 : Td.(sb1)
     qfpT = _convert_qfp(Tf, qfp)
+    _check_dir(dir)
     if dir === :col
         return _qfb_col_reconstruct(sb0T, sb1T, qfpT)
     else
@@ -125,6 +133,7 @@ function qfb_reconstruct!(
         sb1::AbstractMatrix, qfp::QuincunxFilterPair;
         dir::Symbol = :col
     )
+    _check_dir(dir)
     if dir === :col
         return _qfb_col_reconstruct!(out, sb0, sb1, qfp)
     else

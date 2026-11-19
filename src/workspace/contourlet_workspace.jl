@@ -117,19 +117,35 @@ function _dfb_level_runners(ref::AbstractMatrix, p::ContourletParams, bp_dims, :
 end
 
 # The DFB runner a CT workspace holds for a bandpass of size `dims` split `l` deep
-# with the ladder pair `qfp` at filter precision `Tf`, or `nothing` (also without a
-# workspace, or when the workspace was built with other filters).
+# with the ladder pair `qfp` at filter precision `Tf`; `nothing` without a
+# workspace.  A workspace that cannot serve the call throws.
 _workspace_runner(::Nothing, dims, l, half, qfp, Tf) = nothing
+
+function _workspace_runner(ws, dims, l, half, qfp, Tf)
+    throw(ArgumentError("workspace must be a CTWorkspace or nothing, got $(typeof(ws))"))
+end
 
 function _workspace_runner(
         ws::CTWorkspace{Td, Tw}, dims, l::Int, half::Symbol, qfp::QuincunxFilterPair, ::Type{Tf}
     ) where {Td, Tw, Tf}
-    half === :both || return nothing
-    (Tw === Tf && ws.params.dfb_filters.f_ladder == qfp.f_ladder) || return nothing
+    half === :both || throw(
+        ArgumentError("a CTWorkspace holds full-tree DFBs only; pass workspace = nothing for half = :$(half)")
+    )
+    Tw === Tf || throw(
+        ArgumentError("the workspace was built for filter precision $(Tw), but the data needs $(Tf)")
+    )
+    ws.params.dfb_filters.f_ladder == qfp.f_ladder || throw(
+        ArgumentError("the workspace was built with different DFB filters than the ones passed")
+    )
     for r in ws.dfb_runners
         (r.bank.dims == dims && r.bank.levels == l) && return r
     end
-    return nothing
+    held = [(r.bank.dims, r.bank.levels) for r in ws.dfb_runners]
+    throw(
+        ArgumentError(
+            "the workspace (image size $(ws.image_size)) has no DFB for a $(dims) bandpass at depth $(l); it holds (size, depth) = $(held)"
+        )
+    )
 end
 
 """

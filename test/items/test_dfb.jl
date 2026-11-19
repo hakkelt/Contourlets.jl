@@ -396,7 +396,7 @@ end
     end
 end
 
-@testitem "a workspace built with other filters is not used" tags = [:directional] begin
+@testitem "a mismatched DFB workspace throws" tags = [:directional] begin
     using Random
     Random.seed!(72)
     x = randn(64, 64)
@@ -404,18 +404,39 @@ end
     ws = make_workspace(p, (64, 64))
     q2 = QuincunxFilterPair([0.25, 0.25])
     ref = dfb_decompose(x, 2, q2)
-    @test maximum(abs, ref[1] .- dfb_decompose(x, 2, Q2345)[1]) > 0.1
-    got = dfb_decompose(x, 2, q2; workspace = ws)
-    @test all(maximum(abs, a .- b) < 1.0e-12 for (a, b) in zip(got, ref))
-    sb = [similar(s) for s in ref]
-    dfb_decompose!(sb, x, 2, q2; workspace = ws)
-    @test all(maximum(abs, a .- b) < 1.0e-12 for (a, b) in zip(sb, ref))
-    out = similar(x)
-    dfb_reconstruct!(out, ref, q2; workspace = ws)
-    @test maximum(abs, out .- x) < 1.0e-12
-    # Float32 data must not run on the Float64 workspace's runner either.
-    got32 = dfb_decompose(Float32.(x), 2, Q2345; workspace = ws)
-    @test eltype(got32[1]) == Float32
+    msg_filters = "built with different DFB filters"
+    @test_throws msg_filters dfb_decompose(x, 2, q2; workspace = ws)
+    @test_throws msg_filters dfb_decompose!([similar(s) for s in ref], x, 2, q2; workspace = ws)
+    @test_throws msg_filters dfb_reconstruct!(similar(x), ref, q2; workspace = ws)
+    @test_throws msg_filters dfb_reconstruct(ref, q2; workspace = ws)
+    # Float32 data on a Float64 workspace
+    @test_throws "built for filter precision Float64, but the data needs Float32" dfb_decompose(
+        Float32.(x), 2, Q2345; workspace = ws
+    )
+    # Bandpass size or depth the workspace has no DFB for
+    @test_throws "has no DFB for a (32, 32) bandpass at depth 2" dfb_decompose(
+        randn(32, 32), 2, Q2345; workspace = ws
+    )
+    @test_throws "has no DFB for a (64, 64) bandpass at depth 3" dfb_decompose(
+        x, 3, Q2345; workspace = ws
+    )
+    # Half trees are never held by a CTWorkspace
+    @test_throws "full-tree DFBs only" dfb_decompose(x, 2, Q2345; half = :first, workspace = ws)
+    # Workspaces of the other transforms
+    wn = make_nsct_workspace(p, (64, 64))
+    @test_throws "workspace must be a CTWorkspace or nothing" dfb_decompose(x, 2, Q2345; workspace = wn)
+    # A matching workspace still serves the call
+    @test all(maximum(abs, a .- b) < 1.0e-12 for (a, b) in zip(dfb_decompose(x, 2, Q2345; workspace = ws), dfb_decompose(x, 2, Q2345)))
+end
+
+@testitem "qfb rejects an unknown dir" tags = [:directional] begin
+    x = randn(8, 8)
+    sb0, sb1 = qfb_decompose(x, Q2345)
+    msg = "dir must be :col or :row, got :diag"
+    @test_throws msg qfb_decompose(x, Q2345; dir = :diag)
+    @test_throws msg qfb_decompose!(similar(sb0), similar(sb1), x, Q2345; dir = :diag)
+    @test_throws msg qfb_reconstruct(sb0, sb1, Q2345; dir = :diag)
+    @test_throws msg qfb_reconstruct!(similar(x), sb0, sb1, Q2345; dir = :diag)
 end
 
 @testitem "dfb_reconstruct! basic" tags = [:directional] begin

@@ -181,6 +181,7 @@ end
 end
 
 function Contourlets.rect_downsample!(dst::_AbstractGPUMatrix{T}, src::_AbstractGPUMatrix{T}) where {T}
+    Contourlets._check_rect_sizes(dst, src)
     d1, d2 = size(dst)
     backend = _gpu_backend(src)
     kernel = _rect_downsample_kernel!(backend, (16, 16))
@@ -189,6 +190,7 @@ function Contourlets.rect_downsample!(dst::_AbstractGPUMatrix{T}, src::_Abstract
 end
 
 function Contourlets.rect_upsample!(dst::_AbstractGPUMatrix{T}, src::_AbstractGPUMatrix{T}) where {T}
+    Contourlets._check_rect_sizes(src, dst)
     d1, d2 = size(src)
     backend = _gpu_backend(src)
     fill!(dst, zero(T))   # sparse write — even rows/cols stay zero

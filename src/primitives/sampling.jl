@@ -6,11 +6,24 @@
 # These operators are adjoint of each other (up to normalisation), which gives the
 # LP stage its perfect-reconstruction property.
 
+# Shape contract of both directions: the coarse grid has size cld.(fine size, 2), and
+# both arrays are 1-based (the loops index with 2i - 1).
+function _check_rect_sizes(coarse::AbstractMatrix, fine::AbstractMatrix)
+    Base.require_one_based_indexing(coarse, fine)
+    size(coarse) == cld.(size(fine), 2) || throw(
+        DimensionMismatch(
+            "the coarse grid must have size cld.(fine size, 2) = $(cld.(size(fine), 2)), got $(size(coarse))"
+        )
+    )
+    return nothing
+end
+
 """
     rect_downsample!(dst, src) -> dst
 
 In-place rectangular 2×2 downsampling: `dst[i,j] = src[2i-1, 2j-1]`.
-`dst` must have size `(ceil(n1/2), ceil(n2/2))`.
+`dst` must have size `(cld(n1, 2), cld(n2, 2))` where `(n1, n2) = size(src)`;
+any other size throws a `DimensionMismatch`.
 
 # Examples
 ```jldoctest
@@ -25,6 +38,7 @@ julia> rect_downsample(x)
 ```
 """
 function rect_downsample!(dst::AbstractMatrix{T}, src::AbstractMatrix{T}) where {T}
+    _check_rect_sizes(dst, src)
     @inbounds for j in axes(dst, 2), i in axes(dst, 1)
         dst[i, j] = src[2i - 1, 2j - 1]
     end
@@ -46,7 +60,8 @@ end
     rect_upsample!(dst, src) -> dst
 
 In-place rectangular 2×2 upsampling: `dst[2i-1, 2j-1] = src[i,j]`, all other
-entries zero.  `dst` must have size `(2*d1, 2*d2)` where `(d1,d2) = size(src)`.
+entries zero.  `dst` must have `cld.(size(dst), 2) == size(src)`: `2d` or, for an
+odd output, `2d - 1` along each axis, where `d` is the matching size of `src`.
 
 # Examples
 ```jldoctest
@@ -61,6 +76,7 @@ julia> rect_upsample([1.0 2.0; 3.0 4.0])
 ```
 """
 function rect_upsample!(dst::AbstractMatrix{T}, src::AbstractMatrix{T}) where {T}
+    _check_rect_sizes(src, dst)
     fill!(dst, zero(T))
     @inbounds for j in axes(src, 2), i in axes(src, 1)
         dst[2i - 1, 2j - 1] = src[i, j]

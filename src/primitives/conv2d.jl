@@ -51,11 +51,21 @@ function _conv2d_direct!(
         _conv2d_direct_impl!(dst, src, kernel, origin, Val(:symmetric))
     elseif boundary === :periodic
         _conv2d_direct_impl!(dst, src, kernel, origin, Val(:periodic))
-    else
+    elseif boundary === :zero
         _conv2d_direct_impl!(dst, src, kernel, origin, Val(:zero))
+    else
+        _throw_boundary(boundary)
     end
     return dst
 end
+
+function _check_boundary(boundary::Symbol)
+    boundary in (:symmetric, :periodic, :zero) || _throw_boundary(boundary)
+    return boundary
+end
+
+@noinline _throw_boundary(boundary) =
+    throw(ArgumentError("boundary must be :symmetric, :periodic or :zero, got :$(boundary)"))
 
 @inline function _conv2d_direct_impl!(
         dst::AbstractMatrix{Td},
@@ -192,7 +202,7 @@ end
 
 In-place 2-D convolution of `src` with `kernel`, result written to `dst`.
 `origin` is the 1-based (row, col) index of the zero-lag tap in `kernel`.
-`boundary` ∈ {:symmetric, :periodic, :zero}.
+`boundary` ∈ {:symmetric, :periodic, :zero}; any other value throws an `ArgumentError`.
 
 Uses the FFTW backend when `length(kernel) > 25`, the direct backend otherwise.
 """
@@ -208,6 +218,7 @@ function conv2d!(
         threaded::Union{Bool, Nothing} = nothing
     ) where {Td <: Number, Tf <: AbstractFloat}
     size(dst) == size(src) || throw(DimensionMismatch("dst and src must have the same size"))
+    _check_boundary(boundary)
     # The FFTW backend is real-only (plan_rfft) and needs data == kernel type, so
     # fall back to the direct backend for small kernels, complex data, or mixed
     # precision.

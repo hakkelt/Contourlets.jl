@@ -7,6 +7,7 @@
 
 Separable 2-D convolution: first apply 1-D filter `h_col` to each column, then
 `h_row` to each row.  Both filters are symmetric (centre = mid-point).
+`boundary` ∈ {:symmetric, :periodic, :zero}; any other value throws an `ArgumentError`.
 Pass a preallocated `tmp` buffer (same size as `src`, distinct from `dst` and
 `src`) to make the call allocation-free.
 
@@ -24,8 +25,10 @@ function conv2d_sep!(
         _conv2d_sep_impl!(dst, src, h_row, h_col, tmp, Val(:symmetric))
     elseif boundary === :periodic
         _conv2d_sep_impl!(dst, src, h_row, h_col, tmp, Val(:periodic))
-    else
+    elseif boundary === :zero
         _conv2d_sep_impl!(dst, src, h_row, h_col, tmp, Val(:zero))
+    else
+        _throw_boundary(boundary)
     end
     return dst
 end

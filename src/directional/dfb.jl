@@ -39,8 +39,8 @@ end
 _adapt_bank(::Array, bank::_DirectionalBank) = bank
 _adapt_bank(ref::SubArray, bank::_DirectionalBank) = _adapt_bank(parent(ref), bank)
 
-# Call `f(runner)` with the workspace's runner when it has one for `x`, otherwise
-# with a freshly built one.  Each branch calls `f` on its own concrete runner type,
+# Call `f(runner)` with the workspace's runner for `x`, or with a freshly built one
+# when `workspace === nothing`; a workspace that does not match throws.  Each branch calls `f` on its own concrete runner type,
 # so the workspace path stays type-stable and allocation-free.
 function _with_runner(f, workspace, x::AbstractMatrix, l::Int, qfp::QuincunxFilterPair, half::Symbol, ::Type{Tf}) where {Tf}
     r = _workspace_runner(workspace, size(x), l, half, qfp, Tf)
@@ -112,7 +112,9 @@ end
 In-place DFB analysis into preallocated `subbands` of the sizes
 [`dfb_subband_sizes`](@ref) gives.  A workspace from [`make_workspace`](@ref) whose
 image size and depth match supplies the precomputed filters and FFT buffers, so the
-call allocates nothing.
+call allocates nothing.  A workspace that cannot serve the call (no DFB for this
+bandpass size and depth, other filters, another precision, or `half ≠ :both`)
+throws an `ArgumentError`.
 """
 function dfb_decompose!(
         subbands::Vector{<:AbstractMatrix}, bandpass::AbstractMatrix, l_levels::Int,
@@ -172,7 +174,8 @@ end
                      half=:both, workspace=nothing) -> bandpass
 
 In-place DFB synthesis into `bandpass`.  A matching workspace from
-[`make_workspace`](@ref) makes the call allocation-free.
+[`make_workspace`](@ref) makes the call allocation-free; one that does not match
+throws an `ArgumentError`, as for [`dfb_decompose!`](@ref).
 """
 function dfb_reconstruct!(
         bandpass::AbstractMatrix, subbands::Vector{<:AbstractMatrix}, qfp::QuincunxFilterPair;

@@ -171,9 +171,13 @@ Keywords, accepted by the workspaces of all four transforms:
 - `tune = false`: for [`NSCT`](@ref) and [`TICT`](@ref) workspaces on a device,
   measure how many subbands each batched FFT should take, and whether the
   synthesis should be batched too (`MultiscaleFilterBanks.tune_mask_bank`); this
-  runs a few transforms at construction.  Host workspaces thread over their
-  subbands instead, and the [`CT`](@ref) and [`STICT`](@ref) have nothing to
-  tune: there it does nothing."""
+  runs a few transforms at construction.  On an A100 (Float32, 256² and 512²)
+  tuning adds 40–240 ms to the construction and makes the synthesis 1.6–2.6×
+  and the TICT analysis 15–25% faster, so it pays off for a workspace that runs
+  more than about 150 (NSCT) to 330 (TICT) analysis–synthesis pairs, as in an
+  iterative reconstruction.  Host workspaces thread over their subbands
+  instead, and the [`CT`](@ref) and [`STICT`](@ref) have nothing to tune:
+  there it does nothing."""
 
 """
     make_workspace(t::Union{CT, NSCT, TICT, STICT}, T::Type{<:Number}, dims; prewarm = true, threaded = nothing, tune = false)

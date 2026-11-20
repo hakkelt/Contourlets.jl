@@ -24,8 +24,8 @@ against SurfBox there.
 |---------|---------------|------------------|-------------------|
 | Language | Julia 1.10+ | MATLAB R2006+ | MATLAB R2007+ |
 | Licence | MIT | GPL | none stated |
-| Discrete CT (`ct_forward/inverse`) | ✅ | ✅ (`pdfbdec/pdfbrec`) | ✅ |
-| Nonsubsampled CT (`nsct_forward/inverse`) | ✅ | ❌ | ✅ (`nsctdec/nsctrec`) |
+| Discrete CT (`CT`) | ✅ | ✅ (`pdfbdec/pdfbrec`) | ✅ |
+| Nonsubsampled CT (`NSCT`) | ✅ | ❌ | ✅ (`nsctdec/nsctrec`) |
 | Translation-invariant CT, TICT / STICT (Eslami & Radha 2006) | ✅ | ❌ | ❌ |
 | Laplacian Pyramid (standalone) | ✅ | ✅ (`lpdec/lprec`) | ✅ |
 | Directional Filter Bank (standalone) | ✅ | ✅ (`fbdec/fbrec`) | ✅ |
@@ -46,10 +46,10 @@ against SurfBox there.
 
 | Contourlets.jl | MATLAB CT Toolbox | MATLAB NSCT Toolbox |
 |---------------|------------------|-------------------|
-| `ct_forward(img, params)` | `pdfbdec(img, '9-7', 'pkva', [L1,L2,…])` | — |
-| `ct_inverse(coeffs)` | `pdfbrec(coeffs, '9-7', 'pkva')` | — |
-| `nsct_forward(img, params)` | — | `nsctdec(img, [L1,L2,…])` |
-| `nsct_inverse(coeffs)` | — | `nsctrec(coeffs)` |
+| `analyze(t, img)`, `t = CT(J = n, L_array = [L1,…,Ln])` | `pdfbdec(img, '9-7', 'pkva', [L1,L2,…])` | — |
+| `synthesize(t, coeffs)` | `pdfbrec(coeffs, '9-7', 'pkva')` | — |
+| `analyze(t, img)`, `t = NSCT(J = n, L_array = [L1,…,Ln])` | — | `nsctdec(img, [L1,L2,…])` |
+| `synthesize(t, coeffs)` | — | `nsctrec(coeffs)` |
 | `lp_decompose(img, CDF97)` | `lpdec(img, '9-7')` | — |
 | `lp_reconstruct(c, bp, CDF97)` | `lprec(c, bp, '9-7')` | — |
 | `dfb_decompose(bp, L, Q2345)` | `dfbdec(bp, 'pkva', L)` | — |
@@ -119,7 +119,7 @@ warm-up excluded on both sides.
     on your own hardware before quoting them; the ratios travel better than the
     milliseconds.
 
-### CT — `ct_forward` / `ct_inverse` against `pdfbdec` / `pdfbrec`
+### CT — `analyze` / `synthesize` against `pdfbdec` / `pdfbrec`
 
 | Size | Contourlets.jl fwd | MATLAB fwd | Contourlets.jl inv | MATLAB inv |
 |---|---:|---:|---:|---:|
@@ -127,10 +127,10 @@ warm-up excluded on both sides.
 | 128 × 128 | 3.4 ms | 6.9 ms | 3.2 ms | 6.7 ms |
 | 256 × 256 | 13.8 ms | 85.1 ms | 13.8 ms | 13.3 ms |
 
-### NSCT — `nsct_forward` / `nsct_inverse` against `nsctdec` / `nsctrec`
+### NSCT — `analyze` / `synthesize` against `nsctdec` / `nsctrec`
 
-The workspace column is `nsct_forward!` with a prewarmed
-[`make_nsct_workspace`](@ref), which evaluates the directional stage as an FFT
+The workspace column is `analyze!` with a prewarmed workspace from
+[`make_workspace`](@ref), which evaluates the directional stage as an FFT
 and pointwise multiplies instead of spatial convolutions. It is the form to use
 whenever the same size is transformed more than once; the MATLAB toolbox has no
 equivalent.
@@ -201,7 +201,7 @@ errors and timings for both. For Julia-only benchmarks use `benchmark/benchmarks
    bank exactly, so the coefficients differ (see Numerical accuracy above).
 
 5. **Workspace API**: The MATLAB toolbox allocates on every call.  Contourlets.jl
-   provides `ct_forward!(coeffs, img, params; workspace=ws)`, which reuses the
+   provides `analyze!(coeffs, t, img; workspace = ws)`, which reuses the
    pyramid buffers and the directional stage's precomputed filters, FFT buffers
    and plans, allocating nothing per call.
 

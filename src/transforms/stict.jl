@@ -1,19 +1,27 @@
 # Semi-translation-invariant contourlet transform (STICT) of Eslami & Radha
 # (2006): the translation-invariant pyramid followed by critically sampled DFBs.
-# STICTWorkspace, make_stict_workspace and stict_forward / stict_inverse (and !
-# variants).  The overview and the parts shared with the TICT are in
+# The coefficients are a `SubbandVector` (lowpass, then the subbands of each
+# channel of each level); the directional banks write straight into its
+# subbands.  The overview and the parts shared with the TICT are in
 # `tilp_transforms.jl`.
 
 """
     STICTWorkspace
 
-Precomputed TILP masks, decimated directional filter banks with their buffers,
-FFT buffers and plans of an STICT at one image size and element type.  Build with
-[`make_stict_workspace`](@ref).
+What an [`STICT`](@ref) precomputes for one image size, data element type and
+array type: the translation-invariant pyramid's channel masks, the decimated
+directional filter banks with their buffers, FFT buffers and plans.  Build it
+with [`make_workspace`](@ref).
+
+!!! warning "Thread safety"
+    A workspace serves one call at a time; give each task its own.
 """
-struct STICTWorkspace{Td <: Number, Tf <: AbstractFloat, C <: AbstractMatrix{Complex{Tf}}, R, P, Q}
-    params::ContourletParams{Tf}
+struct STICTWorkspace{Td <: Number, Tf <: AbstractFloat, C <: AbstractMatrix{Complex{Tf}}, R, P, Q, Tt <: STICT} <: AbstractTransformWorkspace
+    transform::Tt
+    params::STICT{Tf}
     image_size::NTuple{2, Int}
+    layout::SubbandLayout{2}
+    first::Vector{Int}                          # first subband of channel c of level i: first[4(i - 1) + c]
     masks::_TILPMasks{C}
     runners::Vector{Vector{R}}                  # [level][channel]; the identity bank when L = 0
     X::C                                        # full spectrum / synthesis accumulator
@@ -25,31 +33,39 @@ struct STICTWorkspace{Td <: Number, Tf <: AbstractFloat, C <: AbstractMatrix{Com
     inv_graph_cache::_GraphCache
 end
 
-Base.eltype(::STICTWorkspace{Td}) where {Td} = Td
+MultiscaleTransformsBase.transform(ws::STICTWorkspace) = ws.transform
+Base.size(ws::STICTWorkspace) = ws.image_size
+Base.eltype(::Type{<:STICTWorkspace{Td}}) where {Td} = Td
+Base.show(io::IO, ws::STICTWorkspace) = print(io, "STICTWorkspace(", ws.transform, ", ", eltype(ws), ", ", ws.image_size, ")")
 
-"""
-    make_stict_workspace(params, image_size; T=Float64, M=Matrix{T}) -> STICTWorkspace
-    make_stict_workspace(image, params) -> STICTWorkspace
-
-Workspace for [`stict_forward`](@ref) / [`stict_inverse`](@ref); see
-[`make_tict_workspace`](@ref).  Both image dimensions must be divisible by
-`2^max(L - 1, 1)` for the deepest directional level `L`.
-"""
-make_stict_workspace(image::AbstractMatrix, params::ContourletParams{Tp}) where {Tp} =
-    make_stict_workspace(params, size(image); T = eltype(image), M = typeof(similar(image, promote_type(Tp, eltype(image)), 0, 0)))
-
-function make_stict_workspace(
-        params::ContourletParams{Tp}, image_size::Tuple{Int, Int};
-        T::Type{<:Number} = Float64, M::Type{<:AbstractMatrix} = Matrix{promote_type(Tp, T)}
-    ) where {Tp}
-    return _make_stict_workspace(params, image_size, T, M)
+# The subband layout of an STICT on a `dims` image, and the index of the first
+# subband of each channel.
+function _layout(t::STICT, dims::NTuple{2, Int})
+    n1, n2 = dims
+    groups = [dfb_subband_sizes(n1, n2, l; half = h) for l in t.L_array for h in _TILP_HALVES]
+    return _stack_levels(dims, groups, dims)
 end
 
-function _make_stict_workspace(
-        params::ContourletParams, image_size::Tuple{Int, Int}, ::Type{T}, ::Type{M}
-    ) where {T, M}
-    Td, Tf = _tict_types(params, T)
-    p = _convert_params(Tf, params)
+function MultiscaleTransformsBase.make_workspace(
+        t::STICT, ::Type{T}, dims::Dims; prewarm::Bool = true,
+        threaded::Union{Bool, Nothing} = nothing, tune::Bool = false
+    ) where {T <: Number}
+    Td = data_eltype(T)
+    return _stict_workspace(t, Td, _check_image(dims), Matrix{Td}, prewarm)
+end
+
+function MultiscaleTransformsBase.make_workspace(
+        t::STICT, x::AbstractArray; prewarm::Bool = true,
+        threaded::Union{Bool, Nothing} = nothing, tune::Bool = false
+    )
+    Td = data_eltype(x)
+    return _stict_workspace(t, Td, _check_image(size(x)), _matrix_type(x, Td), prewarm)
+end
+
+function _stict_workspace(t::STICT, ::Type{Td}, image_size::NTuple{2, Int}, ::Type{M}, prewarm::Bool) where {Td, M}
+    Tf = filter_eltype(Td)
+    p = _convert_transform(Tf, t)
+    layout, firsts = _layout(p, image_size)
     ref = _allocate_zeros(M, Td, image_size)
     masks = _adapt_masks(ref, _tilp_masks(Tf, p.lp_filters, image_size, p.J))
     R = _runner_type(ref, Tf)
@@ -75,25 +91,57 @@ function _make_stict_workspace(
     X = fill!(similar(ref, Complex{Tf}, image_size), zero(Complex{Tf}))
     pfwd, pbwd = _inplace_plans(X, flags)
     Z = first(pool[(:Z, image_size)])
-    return STICTWorkspace{Td, Tf, typeof(X), R, typeof(pfwd), typeof(pbwd)}(
-        p, image_size, masks, runners, X, Z, pfwd, pbwd, _GraphCache(), _GraphCache()
+    ws = STICTWorkspace{Td, Tf, typeof(X), R, typeof(pfwd), typeof(pbwd), typeof(t)}(
+        t, p, image_size, layout, firsts, masks, runners, X, Z, pfwd, pbwd, _GraphCache(), _GraphCache()
     )
+    if prewarm
+        c = SubbandVector(fill!(similar(ref, Td, length(layout)), zero(Td)), layout)
+        _stict_forward_inner!(c, ref, ws)
+        _stict_inverse_inner!(ref, c, ws)
+    end
+    return ws
 end
 
 # ── Transforms ────────────────────────────────────────────────────────────────
 
+# Without a workspace: one is built for the call.
+function _analyze_direct!(c::SubbandVector, first::Vector{Int}, t::STICT, x::AbstractMatrix)
+    Td = eltype(c)
+    ws = _stict_workspace(t, Td, size(x), _matrix_type(x, Td), false)
+    return _stict_forward_inner!(c, Td === eltype(x) ? x : Td.(x), ws)
+end
+
+function _synthesize_direct!(x::AbstractMatrix, first::Vector{Int}, t::STICT, c::SubbandVector)
+    Td = eltype(c)
+    ws = _stict_workspace(t, Td, size(x), _matrix_type(c.data, Td), false)
+    Td === eltype(x) && return _stict_inverse_inner!(x, c, ws)
+    return copyto!(x, _stict_inverse_inner!(similar(c.data, Td, size(x)), c, ws))
+end
+
+# Typed dispatch barriers; `capture` selects the seam that `ContourletsCUDAExt`
+# overloads to capture device graphs.
+function _ragged_forward!(c::SubbandVector, x::AbstractMatrix, ws::STICTWorkspace, capture::Bool)
+    T = eltype(ws)
+    img = T === eltype(x) ? x : T.(x)
+    return capture ? _stict_forward_ws!(c, img, ws) : _stict_forward_inner!(c, img, ws)
+end
+
+_ragged_inverse!(x::AbstractMatrix, c::SubbandVector, ws::STICTWorkspace, capture::Bool) =
+    capture ? _stict_inverse_ws!(x, c, ws) : _stict_inverse_inner!(x, c, ws)
+
 # The workspace paths: the same kernels on the same buffers every call, which
 # `ContourletsCUDAExt` captures as CUDA graphs.  Nothing in them may allocate.
-_stict_forward_ws!(coeffs::TICTCoefficients, x::AbstractMatrix, ws::STICTWorkspace) = _stict_forward_inner!(coeffs, x, ws)
-_stict_inverse_ws!(x::AbstractMatrix, coeffs::TICTCoefficients, ws::STICTWorkspace) = _stict_inverse_inner!(x, coeffs, ws)
+_stict_forward_ws!(coeffs::SubbandVector, x::AbstractMatrix, ws::STICTWorkspace) = _stict_forward_inner!(coeffs, x, ws)
+_stict_inverse_ws!(x::AbstractMatrix, coeffs::SubbandVector, ws::STICTWorkspace) = _stict_inverse_inner!(x, coeffs, ws)
 
-function _stict_forward_inner!(coeffs::TICTCoefficients, x::AbstractMatrix, ws::STICTWorkspace)
+function _stict_forward_inner!(coeffs::SubbandVector, x::AbstractMatrix, ws::STICTWorkspace)
     m, X, Z = ws.masks, ws.X, ws.Z
     X .= x
     ws.pfwd * X
     for i in eachindex(m.ana), c in 1:4
-        out = coeffs.subbands[i][c]
+        g = 4 * (i - 1) + c
         r = ws.runners[i][c]
+        out = _Bands(coeffs, ws.first[g], _tict_n_subbands(ws.params.L_array[i], c))
         R, K = r.X, m.ana[i][c]
         @.. R = K * X               # FastBroadcast: see `_mask_bank_forward_items!`
         _bank_analyze_spectrum!(out, r)
@@ -101,120 +149,24 @@ function _stict_forward_inner!(coeffs::TICTCoefficients, x::AbstractMatrix, ws::
     Kc = m.coarse_ana
     @.. Z = Kc * X
     ws.pbwd * Z
-    _store!(coeffs.coarse, Z, _bwd_scale(Z))
+    _store!(subband(coeffs, 1), Z, _bwd_scale(Z))
     return coeffs
 end
 
-function _stict_inverse_inner!(x::AbstractMatrix, coeffs::TICTCoefficients, ws::STICTWorkspace)
+function _stict_inverse_inner!(x::AbstractMatrix, coeffs::SubbandVector, ws::STICTWorkspace)
     m, X, Z = ws.masks, ws.X, ws.Z
     fill!(X, zero(eltype(X)))
     for i in eachindex(m.syn), c in 1:4
-        sbs = coeffs.subbands[i][c]
         r = ws.runners[i][c]
+        sbs = _Bands(coeffs, ws.first[4 * (i - 1) + c], _tict_n_subbands(ws.params.L_array[i], c))
         _bank_synthesize_spectrum!(sbs, r)
         R, K = r.X, m.syn[i][c]
         @.. X += K * R
     end
-    Z .= coeffs.coarse
+    Z .= subband(coeffs, 1)
     ws.pfwd * Z
     Kc = m.coarse_syn
     @.. X += Kc * Z
     ws.pbwd * X
     return _store!(x, X, _bwd_scale(X))
-end
-
-"""
-    stict_forward(image, params::ContourletParams; workspace=nothing)
-        -> TICTCoefficients
-
-Semi-translation-invariant contourlet transform of Eslami & Radha (2006): the
-translation-invariant Laplacian pyramid of [`tict_forward`](@ref) followed by
-critically sampled directional filter banks (full tree on channels 1 and 4, half
-trees on 2 and 3).  The pyramid commutes with circular shifts; the directional
-subbands are those of the decimated DFB.  Redundancy `4J + 1`.
-
-Both image dimensions must be divisible by `2^max(L - 1, 1)` for the deepest
-directional level `L`.  Pass a workspace from [`make_stict_workspace`](@ref) to
-reuse the precomputed filters and buffers.
-
-# Examples
-```jldoctest
-julia> using Contourlets, Random
-
-julia> x = randn(Xoshiro(1), 32, 32);
-
-julia> p = ContourletParams(J = 2, L_array = [3, 2]);
-
-julia> c = stict_forward(x, p);
-
-julia> sum(length, Iterators.flatten(Iterators.flatten(c.subbands))) + length(c.coarse) == 9 * length(x)
-true
-
-julia> maximum(abs, stict_inverse(c, p) .- x) < 1e-12
-true
-```
-
-# References
-1. R. Eslami and H. Radha, "Translation-Invariant Contourlet Transform and Its
-   Application to Image Denoising", *IEEE Transactions on Image Processing*,
-   15(11):3362–3374, 2006.
-   [doi:10.1109/TIP.2006.881992](https://doi.org/10.1109/TIP.2006.881992)
-"""
-function stict_forward(
-        image::AbstractMatrix, params::ContourletParams;
-        workspace::Union{Nothing, STICTWorkspace} = nothing
-    )
-    ws = workspace === nothing ? _own_workspace(_make_stict_workspace, image, params) : workspace
-    x = _check_tict_input(ws, _ws_input(ws, image))
-    coeffs = _similar_stict_coefficients(ws.params, ws.image_size, eltype(ws), typeof(similar(x)))
-    # Not `_stict_forward_ws!`: the coefficients are new on every call, so a device
-    # graph captured with them would never replay.
-    _stict_forward_inner!(coeffs, x, ws)
-    return coeffs
-end
-
-"""
-    stict_forward!(coeffs, image, params; workspace=nothing) -> coeffs
-
-In-place [`stict_forward`](@ref) into coefficients from
-[`similar_stict_coefficients`](@ref).  With a workspace it allocates nothing.
-"""
-function stict_forward!(
-        coeffs::TICTCoefficients, image::AbstractMatrix, params::ContourletParams;
-        workspace::Union{Nothing, STICTWorkspace} = nothing
-    )
-    ws = workspace === nothing ? _own_workspace(_make_stict_workspace, image, params) : workspace
-    _check_tict_eltype(ws, coeffs.coarse, "coefficient set")
-    return _stict_forward_ws!(coeffs, _check_tict_input(ws, _ws_input(ws, image)), ws)
-end
-
-"""
-    stict_inverse(coeffs::TICTCoefficients, params; workspace=nothing) -> image
-
-Inverse of [`stict_forward`](@ref): exact reconstruction (to rounding error).
-"""
-function stict_inverse(
-        coeffs::TICTCoefficients, params::ContourletParams;
-        workspace::Union{Nothing, STICTWorkspace} = nothing
-    )
-    ws = workspace === nothing ? _own_workspace(_make_stict_workspace, coeffs.coarse, params) : workspace
-    _check_tict_eltype(ws, coeffs.coarse, "coefficient set")
-    x = similar(coeffs.coarse, eltype(ws))
-    _stict_inverse_inner!(x, coeffs, ws)    # not captured, as in `stict_forward`
-    return x
-end
-
-"""
-    stict_inverse!(image, coeffs, params; workspace=nothing) -> image
-
-In-place [`stict_inverse`](@ref).  With a workspace it allocates nothing.
-"""
-function stict_inverse!(
-        image::AbstractMatrix, coeffs::TICTCoefficients, params::ContourletParams;
-        workspace::Union{Nothing, STICTWorkspace} = nothing
-    )
-    ws = workspace === nothing ? _own_workspace(_make_stict_workspace, image, params) : workspace
-    _check_tict_eltype(ws, coeffs.coarse, "coefficient set")
-    _check_tict_eltype(ws, image, "output image")
-    return _stict_inverse_ws!(_check_tict_input(ws, image), coeffs, ws)
 end

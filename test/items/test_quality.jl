@@ -19,6 +19,6 @@ end
         # trigger of the extension, so it cannot be loaded directly.
         all_explicit_imports_via_owners = (; ignore = (:Adapt,)),
         all_explicit_imports_are_public = public_checks ? (; ignore = (:Adapt, internal...)) : false,
-        all_qualified_accesses_are_public = public_checks ? (; ignore = (:ESTIMATE, :MEASURE, internal...)) : false,
+        all_qualified_accesses_are_public = public_checks ? (; ignore = (:ESTIMATE, :MEASURE, :UNALIGNED, internal...)) : false,
     )
 end

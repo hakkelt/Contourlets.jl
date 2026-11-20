@@ -14,49 +14,65 @@ MultiscaleFilterBanks.MultiscaleFilterBanks
 ## Transforms
 
 ```@docs
-ct_forward
-ct_forward!
-ct_inverse
-ct_inverse!
-nsct_forward
-nsct_forward!
-nsct_inverse
-nsct_inverse!
-tict_forward
-tict_forward!
-tict_inverse
-tict_inverse!
-stict_forward
-stict_forward!
-stict_inverse
-stict_inverse!
+CT
+NSCT
+TICT
+STICT
 ```
 
-## Types
+## Running a transform
+
+The verbs and accessors are those of
+[MultiscaleTransformsBase](https://github.com/hakkelt/MultiscaleTransformsBase.jl),
+re-exported here; each entry below lists the interface's contract first and the
+contourlet methods after it.  Every verb also takes a workspace in place of the
+transform: `analyze(ws, x)`, `analyze!(c, ws, x)`, `synthesize(ws, c)` and
+`synthesize!(x, ws, c)`.
 
 ```@docs
-ContourletParams
-ContourletCoefficients
-NSCTCoefficients
-TICTCoefficients
+analyze
+analyze!
+synthesize
+synthesize!
+```
+
+## Workspaces
+
+```@docs
+make_workspace
 CTWorkspace
 NSCTWorkspace
 TICTWorkspace
 STICTWorkspace
+transform
 ```
 
-
-## Workspace
+## Coefficients
 
 ```@docs
-make_workspace
-make_nsct_workspace
 similar_coefficients
-similar_nsct_coefficients
-make_tict_workspace
-make_stict_workspace
-similar_tict_coefficients
-similar_stict_coefficients
+subband_layout
+nsubbands
+subband
+SubbandVector
+SubbandLayout
+```
+
+## From MultiscaleTransformsBase
+
+The interface's abstract types, the public helpers an implementation uses, and
+its conformance tests.
+
+```@docs
+MultiscaleTransformsBase.MultiscaleTransformsBase
+AbstractMultiscaleTransform
+AbstractTransformWorkspace
+MultiscaleTransformsBase.DefaultWorkspace
+MultiscaleTransformsBase.check_workspace
+MultiscaleTransformsBase.signal_size
+MultiscaleTransformsBase.supports_streaming
+MultiscaleTransformsBase.Testing
+MultiscaleTransformsBase.Testing.test_transform
 ```
 
 ## Building blocks

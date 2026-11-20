@@ -5,7 +5,7 @@
 end
 
 @testitem "Documentation structure (draft build)" tags = [:docs, :quality] begin
-    using Documenter, MultiscaleFilterBanks
+    using Documenter, MultiscaleFilterBanks, MultiscaleTransformsBase
     pkg_root = pkgdir(Contourlets)
     # @meta blocks evaluate `CurrentModule = Contourlets` in Main; the module
     # must be importable there (same as `using Contourlets` in make.jl).
@@ -14,14 +14,20 @@ end
         MultiscaleFilterBanks, :DocTestSetup,
         :(using MultiscaleFilterBanks, Random); recursive = true
     )
+    DocMeta.setdocmeta!(
+        MultiscaleTransformsBase, :DocTestSetup,
+        :(using MultiscaleTransformsBase); recursive = true
+    )
     DocMeta.setdocmeta!(Contourlets, :DocTestSetup, :(using Contourlets, Random); recursive = true)
     build_dir = mktempdir()
     makedocs(;
-        modules = [Contourlets, MultiscaleFilterBanks],
-        checkdocs_ignored_modules = [MultiscaleFilterBanks],
+        modules = [Contourlets, MultiscaleFilterBanks, MultiscaleTransformsBase],
+        checkdocs_ignored_modules = [MultiscaleFilterBanks, MultiscaleTransformsBase],
         remotes = Dict(
             pkgdir(MultiscaleFilterBanks) =>
                 Documenter.Remotes.GitHub("hakkelt", "MultiscaleFilterBanks.jl"),
+            pkgdir(MultiscaleTransformsBase) =>
+                Documenter.Remotes.GitHub("hakkelt", "MultiscaleTransformsBase.jl"),
         ),
         sitename = "Contourlets.jl",
         root = joinpath(pkg_root, "docs"),

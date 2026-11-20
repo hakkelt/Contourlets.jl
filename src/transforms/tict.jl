@@ -1,20 +1,28 @@
 # Translation-invariant contourlet transform (TICT) of Eslami & Radha (2006): the
 # translation-invariant pyramid followed by nonsubsampled DFBs, on the DFT grid.
-# TICTWorkspace, make_tict_workspace and tict_forward / tict_inverse (and !
-# variants); the subband loops are the NSCT's (`mask_bank.jl`).  The overview and the parts shared
-# with the STICT are in `tilp_transforms.jl`.
-
-# ── Workspace ─────────────────────────────────────────────────────────────────
+# The workspace runs the mask-bank engine on stacked coefficients, as the NSCT's
+# does (`common.jl`); the overview and the parts shared with the STICT are in
+# `tilp_transforms.jl`.
 
 """
     TICTWorkspace
 
-Precomputed TILP masks, directional filters, FFT buffers and plans of a TICT at
-one image size and element type.  Build with [`make_tict_workspace`](@ref).
+What a [`TICT`](@ref) precomputes for one image size, data element type and
+array type: the translation-invariant pyramid's channel masks, the directional
+filters, FFT buffers and plans.  Build it with [`make_workspace`](@ref).
+
+!!! warning "Thread safety"
+    A workspace serves one call at a time; give each task its own.
 """
-struct TICTWorkspace{Td <: Number, Tf <: AbstractFloat, M <: AbstractMatrix, E <: MaskBankEngine}
-    params::ContourletParams{Tf}
+struct TICTWorkspace{Td <: Number, Tf <: AbstractFloat, M <: AbstractMatrix, E <: MaskBankEngine, S <: AbstractArray{Td, 3}, Tt <: TICT} <: AbstractTransformWorkspace
+    transform::Tt
+    params::TICT{Tf}
     image_size::NTuple{2, Int}
+    # Subband (i, c, k) is slice `offsets[4(i - 1) + c] + k` of the coefficients.
+    offsets::Vector{Int}
+    nsubbands::Int
+    # An empty array of the coefficient type the engine writes into directly.
+    stack::S
     # Staging buffers for an input or output that is not of the dense type `M`
     # the FFT plans run on (a view, a transpose; `_dense_input`).
     fwd_scratch::ScratchArena{M}
@@ -26,37 +34,34 @@ struct TICTWorkspace{Td <: Number, Tf <: AbstractFloat, M <: AbstractMatrix, E <
     engine::E
 end
 
-Base.eltype(::TICTWorkspace{Td}) where {Td} = Td
+MultiscaleTransformsBase.transform(ws::TICTWorkspace) = ws.transform
+Base.size(ws::TICTWorkspace) = ws.image_size
+Base.eltype(::Type{<:TICTWorkspace{Td}}) where {Td} = Td
+_ws_matrix_type(::TICTWorkspace{Td, Tf, M}) where {Td, Tf, M} = M
+Base.show(io::IO, ws::TICTWorkspace) = print(io, "TICTWorkspace(", ws.transform, ", ", eltype(ws), ", ", ws.image_size, ")")
 
-"""
-    make_tict_workspace(params, image_size; T=Float64, M=Matrix{T}, tune=false) -> TICTWorkspace
-    make_tict_workspace(image, params; tune=false) -> TICTWorkspace
-
-Workspace for [`tict_forward`](@ref) / [`tict_inverse`](@ref) at `image_size` for
-data of element type `T` stored as `M` (pass a device matrix type, or use the
-`image` form, to run on a GPU).  With it the `!` transforms allocate nothing.
-
-`tune = true` (device workspaces) measures how many subbands each batched FFT
-should take, and whether the synthesis should be batched too, on this device
-(`MultiscaleFilterBanks.tune_mask_bank`); this runs a few transforms at
-construction.  A host workspace threads over its subbands instead and ignores it.
-"""
-make_tict_workspace(image::AbstractMatrix, params::ContourletParams{Tp}; kwargs...) where {Tp} =
-    make_tict_workspace(params, size(image); T = eltype(image), M = typeof(similar(image, promote_type(Tp, eltype(image)), 0, 0)), kwargs...)
-
-function make_tict_workspace(
-        params::ContourletParams{Tp}, image_size::Tuple{Int, Int};
-        T::Type{<:Number} = Float64, M::Type{<:AbstractMatrix} = Matrix{promote_type(Tp, T)},
-        tune::Bool = false
-    ) where {Tp}
-    return _make_tict_workspace(params, image_size, T, M, tune)
+function MultiscaleTransformsBase.make_workspace(
+        t::TICT, ::Type{T}, dims::Dims; prewarm::Bool = true,
+        threaded::Union{Bool, Nothing} = nothing, tune::Bool = false
+    ) where {T <: Number}
+    Td = data_eltype(T)
+    return _tict_workspace(t, Td, _check_image(dims), Matrix{Td}, prewarm, threaded, tune)
 end
 
-function _make_tict_workspace(
-        params::ContourletParams, image_size::Tuple{Int, Int}, ::Type{T}, ::Type{M}, tune::Bool = false
-    ) where {T, M}
-    Td, Tf = _tict_types(params, T)
-    p = _convert_params(Tf, params)
+function MultiscaleTransformsBase.make_workspace(
+        t::TICT, x::AbstractArray; prewarm::Bool = true,
+        threaded::Union{Bool, Nothing} = nothing, tune::Bool = false
+    )
+    Td = data_eltype(x)
+    return _tict_workspace(t, Td, _check_image(size(x)), _matrix_type(x, Td), prewarm, threaded, tune)
+end
+
+function _tict_workspace(
+        t::TICT, ::Type{Td}, image_size::NTuple{2, Int}, ::Type{M}, prewarm::Bool,
+        threaded::Union{Bool, Nothing}, tune::Bool
+    ) where {Td, M}
+    Tf = filter_eltype(Td)
+    p = _convert_transform(Tf, t)
     n1, n2 = image_size
     real_data = Td <: Real
     ref = _allocate_zeros(M, Td, image_size)
@@ -76,132 +81,32 @@ function _make_tict_workspace(
         MaskItem((i, c, k), g(i, c), g(i, c), k)
             for (i, l) in enumerate(p.L_array) for c in 1:4 for k in 1:_tict_n_subbands(l, c)
     ]
-    X, pfwd, pbwd = _ns_unnormalised_plans(ref; measured = true)
+    X, pfwd, pbwd = _ns_unnormalised_plans(ref; measured = true, unaligned = _unaligned_slices(ref))
     engine = _mask_bank_engine(
         ref, X, pfwd, pbwd, reduce(vcat, masks.ana), reduce(vcat, masks.syn), masks.coarse_ana, masks.coarse_syn,
         banks, items; tunable = tune
     )
-    engine = _maybe_tune(engine, tune, tune ? _similar_tict_coefficients(p, image_size, Td, M) : nothing, ref)
+    offsets = _tilp_offsets(p)
+    n = nsubbands(p, image_size)
+    engine = _maybe_tune(engine, tune, tune ? _Stacked(_zero_stack(ref, Td, image_size, n), offsets) : nothing, ref)
     Mw = typeof(ref)
-    return TICTWorkspace{Td, Tf, Mw, typeof(engine)}(p, (n1, n2), ScratchArena{Mw}(), ScratchArena{Mw}(), engine)
+    stack = similar(ref, Td, (0, 0, 0))
+    ws = TICTWorkspace{Td, Tf, Mw, typeof(engine), typeof(stack), typeof(t)}(
+        t, p, (n1, n2), offsets, n, stack, ScratchArena{Mw}(), ScratchArena{Mw}(), engine
+    )
+    prewarm && _prewarm_stacked!(ws, threaded)
+    return ws
 end
 
-_ws_matrix_type(::TICTWorkspace{Td, Tf, M}) where {Td, Tf, M} = M
-
-# ── Transforms ────────────────────────────────────────────────────────────────
-
-# Every subband is ifft(Hₖ · K_{i,c} · X) with the TILP channel mask K_{i,c} and
-# the channel's directional filter Hₖ: the mask-bank engine (`mask_bank.jl`), whose
-# independent subband FFTs run in one task per FFT buffer with `threaded` (host
-# workspaces only).
-_tict_forward_ws!(coeffs::TICTCoefficients, x::AbstractMatrix, ws::TICTWorkspace, threaded::Bool = false) =
-    mask_bank_forward!(coeffs, x, ws.engine, threaded)
-
-_tict_inverse_ws!(x::AbstractMatrix, coeffs::TICTCoefficients, ws::TICTWorkspace, threaded::Bool = false) =
-    _dense_output!(x, ws, y -> mask_bank_inverse!(y, coeffs, ws.engine, threaded))
-
-"""
-    tict_forward(image, params::ContourletParams; workspace=nothing, threaded=nothing)
-        -> TICTCoefficients
-
-Translation-invariant contourlet transform of Eslami & Radha (2006).  A
-`params.J`-level translation-invariant Laplacian pyramid gives, at every level
-`i`, four full-size highpass channels; each is split by a translation-invariant
-directional filter bank of depth `params.L_array[i]` — the full tree for channels
-1 and 4, a half tree for channels 2 and 3 (see [`TICTCoefficients`](@ref)).  Every
-coefficient array has the input's size, and the transform commutes with circular
-shifts of the input.
-
-The redundancy is `3 Σᵢ 2^L_array[i] + 2J + 1` when every `L_array[i] ≥ 1` (a
-level with `L_array[i] = 0` contributes its 4 channels).  [`stict_forward`](@ref) trades
-the directional stage's translation invariance for a redundancy of `4J + 1`.
-
-`params.lp_filters` must be biorthogonal (as [`CDF97`](@ref) is) and
-`params.dfb_filters` a ladder pair such as [`Q2345`](@ref).  Pass a workspace from
-[`make_tict_workspace`](@ref) to reuse the precomputed filters.  With threading
-on (`threaded = true`, or the default `threaded = nothing` for complex data) the
-independent subband FFTs run in one task per Julia thread; device arrays ignore it.
-
-# Examples
-```jldoctest
-julia> using Contourlets, Random
-
-julia> x = randn(Xoshiro(1), 32, 32);
-
-julia> p = ContourletParams(J = 2, L_array = [2, 1]);
-
-julia> c = tict_forward(x, p);
-
-julia> length.(c.subbands[1]), length.(c.subbands[2])
-([4, 3, 3, 4], [2, 2, 2, 2])
-
-julia> maximum(abs, tict_inverse(c, p) .- x) < 1e-12
-true
-```
-
-# References
-1. R. Eslami and H. Radha, "Translation-Invariant Contourlet Transform and Its
-   Application to Image Denoising", *IEEE Transactions on Image Processing*,
-   15(11):3362–3374, 2006.
-   [doi:10.1109/TIP.2006.881992](https://doi.org/10.1109/TIP.2006.881992)
-"""
-function tict_forward(
-        image::AbstractMatrix, params::ContourletParams;
-        workspace::Union{Nothing, TICTWorkspace} = nothing,
-        threaded::Union{Bool, Nothing} = nothing
-    )
-    ws = workspace === nothing ? _own_workspace(_make_tict_workspace, image, params) : workspace
-    x = _dense_input(ws, _check_tict_input(ws, _ws_input(ws, image)))
-    coeffs = _similar_tict_coefficients(ws.params, ws.image_size, eltype(ws), typeof(similar(x)))
-    return _tict_forward_ws!(coeffs, x, ws, use_threading(threaded, eltype(ws)))
+# Without a workspace: one is built for the call.
+function _analyze_direct!(c::AbstractArray, t::TICT, x::AbstractMatrix, threaded)
+    Td = eltype(c)
+    ws = _tict_workspace(t, Td, size(x), _matrix_type(x, Td), false, nothing, false)
+    return _stacked_forward!(c, x, ws, threaded)
 end
 
-"""
-    tict_forward!(coeffs, image, params; workspace=nothing, threaded=nothing) -> coeffs
-
-In-place [`tict_forward`](@ref) into coefficients from
-[`similar_tict_coefficients`](@ref).  With a workspace it allocates nothing
-(a few hundred bytes for the tasks when threading is on).
-"""
-function tict_forward!(
-        coeffs::TICTCoefficients, image::AbstractMatrix, params::ContourletParams;
-        workspace::Union{Nothing, TICTWorkspace} = nothing,
-        threaded::Union{Bool, Nothing} = nothing
-    )
-    ws = workspace === nothing ? _own_workspace(_make_tict_workspace, image, params) : workspace
-    _check_tict_eltype(ws, coeffs.coarse, "coefficient set")
-    x = _dense_input(ws, _check_tict_input(ws, _ws_input(ws, image)))
-    return _tict_forward_ws!(coeffs, x, ws, use_threading(threaded, eltype(ws)))
-end
-
-"""
-    tict_inverse(coeffs::TICTCoefficients, params; workspace=nothing, threaded=nothing) -> image
-
-Inverse of [`tict_forward`](@ref): exact reconstruction (to rounding error).
-"""
-function tict_inverse(
-        coeffs::TICTCoefficients, params::ContourletParams;
-        workspace::Union{Nothing, TICTWorkspace} = nothing,
-        threaded::Union{Bool, Nothing} = nothing
-    )
-    ws = workspace === nothing ? _own_workspace(_make_tict_workspace, coeffs.coarse, params) : workspace
-    _check_tict_eltype(ws, coeffs.coarse, "coefficient set")
-    return _tict_inverse_ws!(similar(coeffs.coarse, eltype(ws)), coeffs, ws, use_threading(threaded, eltype(ws)))
-end
-
-"""
-    tict_inverse!(image, coeffs, params; workspace=nothing, threaded=nothing) -> image
-
-In-place [`tict_inverse`](@ref).  With a workspace it allocates nothing (a few
-hundred bytes for the tasks when threading is on).
-"""
-function tict_inverse!(
-        image::AbstractMatrix, coeffs::TICTCoefficients, params::ContourletParams;
-        workspace::Union{Nothing, TICTWorkspace} = nothing,
-        threaded::Union{Bool, Nothing} = nothing
-    )
-    ws = workspace === nothing ? _own_workspace(_make_tict_workspace, image, params) : workspace
-    _check_tict_eltype(ws, coeffs.coarse, "coefficient set")
-    _check_tict_eltype(ws, image, "output image")
-    return _tict_inverse_ws!(_check_tict_input(ws, image), coeffs, ws, use_threading(threaded, eltype(ws)))
+function _synthesize_direct!(x::AbstractMatrix, t::TICT, c::AbstractArray, threaded)
+    Td = eltype(c)
+    ws = _tict_workspace(t, Td, size(x), _matrix_type(c, Td), false, nothing, false)
+    return _stacked_inverse!(x, c, ws, threaded)
 end

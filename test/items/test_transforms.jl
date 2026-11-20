@@ -1,43 +1,48 @@
-@testitem "CT forward/inverse PR" tags = [:ct] begin
+@testitem "CT analyze/synthesize PR" tags = [:ct] begin
     using Random
     Random.seed!(30)
     x = randn(32, 32)
-    params = ContourletParams(J = 2, L_array = [2, 3])
-    c = ct_forward(x, params)
-    @test c isa ContourletCoefficients
-    rec = ct_inverse(c, params)
+    t = CT(J = 2, L_array = [2, 3])
+    c = analyze(t, x)
+    @test c isa SubbandVector{Float64}
+    rec = synthesize(t, c)
     @test maximum(abs, rec .- x) < 1.0e-12
 end
 
-@testitem "CT coeff structure" tags = [:ct] begin
+@testitem "CT coefficient structure" tags = [:ct] begin
     x = zeros(32, 32); x[16, 16] = 1.0
-    p = ContourletParams(J = 2, L_array = [2, 3])
-    c = ct_forward(x, p)
-    @test length(c.subbands) == 2
-    @test length(c.subbands[1]) == 4   # 2^2 directional subbands at level 1
-    @test length(c.subbands[2]) == 8   # 2^3 directional subbands at level 2
-    @test size(c.coarse) == (8, 8)
+    t = CT(J = 2, L_array = [2, 3])
+    c = analyze(t, x)
+    @test nsubbands(t, size(x)) == 1 + 4 + 8
+    layout = subband_layout(t, size(x))
+    @test layout[1] == (scale = 3, direction = 0)
+    @test count(s -> s.scale == 1, layout) == 4    # 2^2 directional subbands at level 1
+    @test count(s -> s.scale == 2, layout) == 8    # 2^3 directional subbands at level 2
+    @test size(subband(t, c, 1)) == (8, 8)
+    @test sum(i -> length(subband(t, c, i)), 1:13) == length(c)
 end
 
 @testitem "CT Float32 round-trip" tags = [:ct] begin
     using Random
     Random.seed!(31)
     x = randn(Float32, 32, 32)
-    p = ContourletParams(J = 1, L_array = [2])
-    c = ct_forward(x, p)
-    rec = ct_inverse(c, p)
+    t = CT(J = 1, L_array = [2])
+    c = analyze(t, x)
+    @test eltype(c) == Float32
+    rec = synthesize(t, c)
     @test eltype(rec) == Float32
     @test maximum(abs, rec .- x) < 1.0e-4
 end
 
-@testitem "NSCT forward/inverse PR" tags = [:nsct] begin
+@testitem "NSCT analyze/synthesize PR" tags = [:nsct] begin
     using Random
     Random.seed!(32)
     x = randn(32, 32)
-    params = ContourletParams(J = 2, L_array = [2, 3])
-    nc = nsct_forward(x, params)
-    @test nc isa NSCTCoefficients
-    rec = nsct_inverse(nc, params)
+    t = NSCT(J = 2, L_array = [2, 3])
+    nc = analyze(t, x)
+    @test nc isa Array{Float64, 3}
+    @test size(nc) == (32, 32, 13)
+    rec = synthesize(t, nc)
     @test maximum(abs, rec .- x) < 1.0e-12
 end
 
@@ -45,15 +50,14 @@ end
     using Random
     Random.seed!(38)
     x = randn(32, 32)
-    p = ContourletParams(J = 2, L_array = [2, 3])
-    c0 = nsct_forward(x, p)
+    t = NSCT(J = 2, L_array = [2, 3])
+    c0 = analyze(t, x)
     for s in ((1, 0), (0, 1), (3, 5), (7, 11))
-        cs = nsct_forward(circshift(x, s), p)
+        cs = analyze(t, circshift(x, s))
         # Coefficients of the shifted image equal the shifted coefficients,
-        # with no redistribution of energy across subbands (spec §5 Step 4).
-        @test maximum(abs, cs.coarse .- circshift(c0.coarse, s)) < 1.0e-12
-        for j in 1:2, k in eachindex(c0.subbands[j])
-            @test maximum(abs, cs.subbands[j][k] .- circshift(c0.subbands[j][k], s)) < 1.0e-12
+        # with no redistribution of energy across subbands.
+        for i in axes(c0, 3)
+            @test maximum(abs, subband(t, cs, i) .- circshift(subband(t, c0, i), s)) < 1.0e-12
         end
     end
 end
@@ -62,25 +66,57 @@ end
     using Random
     Random.seed!(39)
     x = randn(32, 32)
-    p = ContourletParams(J = 2, L_array = [2, 3])
-    e0 = [sum(abs2, sb) for sbs in nsct_forward(x, p).subbands for sb in sbs]
-    es = [sum(abs2, sb) for sbs in nsct_forward(circshift(x, (4, 9)), p).subbands for sb in sbs]
+    t = NSCT(J = 2, L_array = [2, 3])
+    c0, cs = analyze(t, x), analyze(t, circshift(x, (4, 9)))
+    e0 = [sum(abs2, subband(t, c0, i)) for i in 2:size(c0, 3)]
+    es = [sum(abs2, subband(t, cs, i)) for i in 2:size(cs, 3)]
     @test maximum(abs, e0 .- es) < 1.0e-8
 end
 
 @testitem "NSCT all subbands same size as input" tags = [:nsct] begin
     x = zeros(32, 32)
-    p = ContourletParams(J = 2, L_array = [2, 3])
-    nc = nsct_forward(x, p)
-    for sbs in nc.subbands
-        for sb in sbs
-            @test size(sb) == size(x)
-        end
+    t = NSCT(J = 2, L_array = [2, 3])
+    nc = analyze(t, x)
+    @test all(size(subband(t, nc, i)) == size(x) for i in 1:nsubbands(t, size(x)))
+end
+
+@testitem "transform constructors validate their parameters" tags = [:ct] begin
+    for T in (CT, NSCT, TICT, STICT)
+        @test_throws "J must be ≥ 1" T(J = 0, L_array = Int[])
+        @test_throws "length(L_array) must equal J" T(J = 2, L_array = [1])
+        @test_throws "L_array entries must be ≥ 0" T(J = 2, L_array = [1, -1])
     end
 end
 
-@testitem "ContourletParams J=0 throws" tags = [:ct] begin
-    @test_throws ArgumentError ContourletParams(J = 0, L_array = Int[])
+@testitem "transforms compare and hash by value" tags = [:ct] begin
+    for T in (CT, NSCT, TICT, STICT)
+        a = T(J = 2, L_array = [1, 2])
+        b = T(
+            J = 2, L_array = [1, 2], lp_filters = FilterPair(collect(CDF97.h), collect(CDF97.g)),
+            dfb_filters = QuincunxFilterPair(copy(Q2345.f_ladder))
+        )
+        @test a == b
+        @test hash(a) == hash(b)
+        @test a != T(J = 2, L_array = [2, 2])
+        @test a != T(J = 2, L_array = [1, 2], dfb_filters = QuincunxFilterPair(2 .* Q2345.f_ladder))
+        @test isequal(a, b)
+        @test length(Set([a, b])) == 1
+    end
+    @test CT(J = 2, L_array = [1, 2]) != NSCT(J = 2, L_array = [1, 2])
+    @test QuincunxFilterPair(copy(Q2345.f_ladder)) == Q2345
+    @test hash(QuincunxFilterPair(copy(Q2345.f_ladder))) == hash(Q2345)
+    # The keyword constructor copies L_array.
+    L = [1, 2]
+    t = CT(J = 2, L_array = L)
+    L[1] = 5
+    @test t.L_array == [1, 2]
+end
+
+@testitem "transform show" tags = [:ct] begin
+    @test repr(CT(J = 2, L_array = [1, 2])) == "CT(J = 2, L_array = [1, 2])"
+    @test repr(TICT(J = 1, L_array = [3])) == "TICT(J = 1, L_array = [3])"
+    s = repr(NSCT(J = 1, L_array = [1], dfb_filters = QuincunxFilterPair(2 .* Q2345.f_ladder)))
+    @test startswith(s, "NSCT(J = 1, L_array = [1], dfb_filters = ")
 end
 
 @testitem "parabolic_levels helper" tags = [:ct] begin
@@ -90,81 +126,71 @@ end
     @test issorted(ls; rev = true)  # coarser levels have more directions
 end
 
-@testitem "CT in-place forward/inverse with workspace" tags = [:ct] begin
+@testitem "CT analyze!/synthesize! with workspace" tags = [:ct] begin
     using Random
     Random.seed!(34)
     x = randn(32, 32)
-    p = ContourletParams(J = 2, L_array = [2, 3])
-    ws = make_workspace(p, (32, 32))
-    coeffs = similar_coefficients(p, (32, 32))
-    ct_forward!(coeffs, x, p; workspace = ws)
+    t = CT(J = 2, L_array = [2, 3])
+    ws = make_workspace(t, Float64, (32, 32))
+    coeffs = similar_coefficients(t, x)
+    @test analyze!(coeffs, t, x; workspace = ws) === coeffs
     rec = similar(x)
-    ct_inverse!(rec, coeffs, p; workspace = ws)
+    @test synthesize!(rec, t, coeffs; workspace = ws) === rec
     @test maximum(abs, rec .- x) < 1.0e-12
 end
 
-@testitem "CT in-place forward matches allocating" tags = [:ct] begin
+@testitem "CT workspace analysis matches the allocating one" tags = [:ct] begin
     using Random
     Random.seed!(35)
     x = randn(32, 32)
-    p = ContourletParams(J = 2, L_array = [2, 3])
-    ws = make_workspace(p, (32, 32))
-    coeffs = similar_coefficients(p, (32, 32))
-    ct_forward!(coeffs, x, p; workspace = ws)
-    coeffs_alloc = ct_forward(x, p)
-    @test maximum(abs, coeffs.coarse .- coeffs_alloc.coarse) < 1.0e-12
-    for j in 1:2, k in 1:length(coeffs.subbands[j])
-        @test maximum(abs, coeffs.subbands[j][k] .- coeffs_alloc.subbands[j][k]) < 1.0e-12
-    end
+    t = CT(J = 2, L_array = [2, 3])
+    ws = make_workspace(t, Float64, (32, 32))
+    coeffs = similar_coefficients(t, x)
+    analyze!(coeffs, t, x; workspace = ws)
+    coeffs_alloc = analyze(t, x)
+    @test maximum(abs, coeffs .- coeffs_alloc) < 1.0e-12
 end
 
-@testitem "NSCT in-place forward/inverse with workspace" tags = [:nsct] begin
+@testitem "NSCT analyze!/synthesize! with workspace" tags = [:nsct] begin
     using Random
     Random.seed!(36)
     x = randn(32, 32)
-    p = ContourletParams(J = 2, L_array = [2, 3])
-    ws = make_nsct_workspace(p, (32, 32))
-    coeffs = similar_nsct_coefficients(p, (32, 32))
-    nsct_forward!(coeffs, x, p; workspace = ws)
+    t = NSCT(J = 2, L_array = [2, 3])
+    ws = make_workspace(t, Float64, (32, 32))
+    coeffs = similar_coefficients(t, x)
+    analyze!(coeffs, t, x; workspace = ws)
     rec = similar(x)
-    nsct_inverse!(rec, coeffs, p; workspace = ws)
+    synthesize!(rec, t, coeffs; workspace = ws)
     @test maximum(abs, rec .- x) < 1.0e-12
 end
 
-@testitem "NSCT in-place forward matches allocating" tags = [:nsct] begin
+@testitem "NSCT workspace analysis matches the allocating one" tags = [:nsct] begin
     using Random
     Random.seed!(37)
     x = randn(32, 32)
-    p = ContourletParams(J = 2, L_array = [2, 3])
-    ws = make_nsct_workspace(p, (32, 32))
-    coeffs = similar_nsct_coefficients(p, (32, 32))
-    nsct_forward!(coeffs, x, p; workspace = ws)
-    coeffs_alloc = nsct_forward(x, p)
-    @test maximum(abs, coeffs.coarse .- coeffs_alloc.coarse) < 1.0e-12
-    for j in 1:2, k in 1:length(coeffs.subbands[j])
-        @test isapprox(coeffs.subbands[j][k], coeffs_alloc.subbands[j][k]; atol = 1.0e-10)
-    end
+    t = NSCT(J = 2, L_array = [2, 3])
+    ws = make_workspace(t, Float64, (32, 32))
+    coeffs = similar_coefficients(t, x)
+    analyze!(coeffs, t, x; workspace = ws)
+    coeffs_alloc = analyze(t, x)
+    @test maximum(abs, subband(t, coeffs, 1) .- subband(t, coeffs_alloc, 1)) < 1.0e-12
+    @test isapprox(coeffs, coeffs_alloc; atol = 1.0e-10)
 end
 
-@testitem "similar_nsct_coefficients sizes" tags = [:nsct] begin
-    p = ContourletParams(J = 2, L_array = [2, 3])
-    nc = similar_nsct_coefficients(p, (64, 64))
-    @test size(nc.coarse) == (64, 64)
-    @test length(nc.subbands[1]) == 4   # 2^2
-    @test length(nc.subbands[2]) == 8   # 2^3
-    for sbs in nc.subbands
-        for sb in sbs
-            @test size(sb) == (64, 64)
-        end
-    end
-end
-
-@testitem "similar_coefficients sizes" tags = [:ct] begin
-    p = ContourletParams(J = 2, L_array = [2, 3])
-    c = similar_coefficients(p, (32, 32))
-    @test length(c.subbands[1]) == 4
-    @test length(c.subbands[2]) == 8
-    @test size(c.coarse) == (8, 8)
+@testitem "similar_coefficients sizes" tags = [:ct, :nsct] begin
+    x = zeros(64, 64)
+    t = NSCT(J = 2, L_array = [2, 3])
+    nc = similar_coefficients(t, x)
+    @test size(nc) == (64, 64, 1 + 4 + 8)
+    @test iszero(nc)
+    @test similar_coefficients(t, zeros(Float32, 64, 64)) isa Array{Float32, 3}
+    @test similar_coefficients(t, zeros(Int, 64, 64)) isa Array{Float64, 3}
+    ct = CT(J = 2, L_array = [2, 3])
+    c = similar_coefficients(ct, zeros(32, 32))
+    @test c isa SubbandVector{Float64}
+    @test nsubbands(c) == 13
+    @test size(subband(ct, c, 1)) == (8, 8)
+    @test iszero(c)
 end
 
 @testitem "parabolic_levels J=0 returns empty" tags = [:ct] begin
@@ -191,116 +217,134 @@ end
     @test Contourlets.use_threading(nothing, ComplexF32) === true
 end
 
-@testitem "NSCT with threaded = true and Real data" tags = [:nsct] begin
+@testitem "threaded keyword is accepted on every path" tags = [:ct, :nsct, :tict] begin
     using Random
     Random.seed!(91)
     x = randn(32, 32)
-    p = ContourletParams(J = 2, L_array = [2, 3])
-    nc = nsct_forward(x, p; threaded = true)
-    rec = nsct_inverse(nc, p; threaded = true)
-    @test maximum(abs, rec .- x) < 1.0e-12
+    for t in (CT(J = 2, L_array = [2, 3]), NSCT(J = 2, L_array = [2, 3]), TICT(J = 2, L_array = [2, 3]), STICT(J = 2, L_array = [2, 3]))
+        for threaded in (nothing, true, false)
+            c = analyze(t, x; threaded)
+            @test maximum(abs, synthesize(t, c; threaded) .- x) < 1.0e-12
+            ws = make_workspace(t, x; threaded)
+            @test synthesize(ws, analyze(ws, x; threaded); threaded) ≈ x atol = 1.0e-12
+        end
+    end
 end
 
-@testitem "ct_forward! integer image coerced to workspace eltype" tags = [:ct] begin
+@testitem "integer image coerced to the workspace element type" tags = [:ct, :nsct] begin
     using Random
     Random.seed!(92)
     x_int = rand(1:9, 32, 32)
-    p = ContourletParams(J = 2, L_array = [2, 3])
-    ws = make_workspace(p, (32, 32))
-    coeffs = similar_coefficients(p, (32, 32))
-    ct_forward!(coeffs, x_int, p; workspace = ws)
-    x_f64 = Float64.(x_int)
-    coeffs_ref = similar_coefficients(p, (32, 32))
-    ct_forward!(coeffs_ref, x_f64, p; workspace = ws)
-    @test coeffs.coarse == coeffs_ref.coarse
-    for j in 1:2, k in eachindex(coeffs.subbands[j])
-        @test coeffs.subbands[j][k] == coeffs_ref.subbands[j][k]
+    for t in (CT(J = 2, L_array = [2, 3]), NSCT(J = 2, L_array = [2, 3]))
+        ws = make_workspace(t, Float64, (32, 32))
+        @test eltype(ws) == Float64
+        @test make_workspace(t, x_int) isa typeof(ws)
+        coeffs = similar_coefficients(t, x_int)
+        analyze!(coeffs, t, x_int; workspace = ws)
+        coeffs_ref = similar_coefficients(t, x_int)
+        analyze!(coeffs_ref, t, Float64.(x_int); workspace = ws)
+        @test coeffs == coeffs_ref
     end
 end
 
-@testitem "nsct_forward! integer image coerced to workspace eltype" tags = [:nsct] begin
+@testitem "analyze! without a workspace matches analyze" tags = [:ct, :nsct] begin
     using Random
-    Random.seed!(93)
-    x_int = rand(1:9, 32, 32)
-    p = ContourletParams(J = 2, L_array = [2, 3])
-    ws = make_nsct_workspace(p, (32, 32))
-    coeffs = similar_nsct_coefficients(p, (32, 32))
-    nsct_forward!(coeffs, x_int, p; workspace = ws)
-    x_f64 = Float64.(x_int)
-    coeffs_ref = similar_nsct_coefficients(p, (32, 32))
-    nsct_forward!(coeffs_ref, x_f64, p; workspace = ws)
-    @test coeffs.coarse == coeffs_ref.coarse
-    for j in 1:2, k in eachindex(coeffs.subbands[j])
-        @test coeffs.subbands[j][k] == coeffs_ref.subbands[j][k]
+    Random.seed!(42)
+    x = randn(32, 32)
+    for t in (CT(J = 2, L_array = [2, 3]), NSCT(J = 2, L_array = [2, 3]))
+        ref = analyze(t, x)
+        coeffs = similar_coefficients(t, x)
+        @test analyze!(coeffs, t, x) === coeffs
+        @test coeffs == ref
+        # An integer image is analysed as Float64.
+        xi = rand(Xoshiro(42), 0:9, 32, 32)
+        analyze!(coeffs, t, xi)
+        @test coeffs == analyze(t, Float64.(xi))
+        # Complex coefficients, real-filtered.
+        z = complex.(randn(32, 32), randn(32, 32))
+        cz = similar_coefficients(t, z)
+        @test eltype(cz) == ComplexF64
+        analyze!(cz, t, z)
+        @test cz == analyze(t, z)
     end
 end
 
-@testitem "CT in-place forward without workspace matches allocating" tags = [:ct] begin
+@testitem "allocating synthesis with a workspace matches the one without" tags = [:ct, :nsct] begin
     using Random
     Random.seed!(42)
     x = randn(32, 32)
-    p = ContourletParams(J = 2, L_array = [2, 3])
-    ref = ct_forward(x, p)
-    coeffs = similar_coefficients(p, (32, 32))
-    @test ct_forward!(coeffs, x, p) === coeffs
-    @test coeffs.coarse == ref.coarse
-    for j in 1:2, k in eachindex(ref.subbands[j])
-        @test coeffs.subbands[j][k] == ref.subbands[j][k]
+    for t in (CT(J = 2, L_array = [2, 3]), NSCT(J = 2, L_array = [2, 3]))
+        ws = make_workspace(t, Float64, (32, 32))
+        c = analyze(t, x)
+        rec_ws = synthesize(t, c; workspace = ws)
+        rec = synthesize(t, c)
+        @test rec_ws isa Matrix{Float64}
+        @test size(rec_ws) == size(x)
+        @test maximum(abs, rec_ws .- rec) < 1.0e-10
+        @test maximum(abs, rec_ws .- x) < 1.0e-10
+        @test synthesize(ws, c) == rec_ws
     end
-    # Integer image is coerced to the coefficient eltype.
-    xi = rand(Xoshiro(42), 0:9, 32, 32)
-    ct_forward!(coeffs, xi, p)
-    @test coeffs.coarse == ct_forward(Float64.(xi), p).coarse
-    # Complex coefficients, real-filtered.
-    z = complex.(randn(32, 32), randn(32, 32))
-    cz = similar_coefficients(p, (32, 32); Td = ComplexF64)
-    ct_forward!(cz, z, p)
-    @test cz.coarse == ct_forward(z, p).coarse
 end
 
-@testitem "NSCT in-place forward without workspace matches allocating" tags = [:nsct] begin
-    using Random
-    Random.seed!(42)
+@testitem "wrong arguments fail fast" tags = [:ct, :nsct, :tict] begin
     x = randn(32, 32)
-    p = ContourletParams(J = 2, L_array = [2, 3])
-    ref = nsct_forward(x, p)
-    coeffs = similar_nsct_coefficients(p, (32, 32))
-    @test nsct_forward!(coeffs, x, p) === coeffs
-    @test coeffs.coarse == ref.coarse
-    for j in 1:2, k in eachindex(ref.subbands[j])
-        @test coeffs.subbands[j][k] == ref.subbands[j][k]
+    for t in (CT(J = 2, L_array = [2, 3]), NSCT(J = 2, L_array = [2, 3]), TICT(J = 2, L_array = [2, 3]), STICT(J = 2, L_array = [2, 3]))
+        @test_throws "the contourlet transforms take images (two axes)" analyze(t, randn(8, 8, 8))
+        @test_throws "the contourlet transforms take images (two axes)" make_workspace(t, Float64, (8, 8, 8))
+        @test_throws "the contourlet transforms take images (two axes)" subband_layout(t, (8,))
+        ws = make_workspace(t, Float64, (32, 32))
+        # Another size, element type or transform.
+        @test_throws DimensionMismatch analyze(t, randn(64, 64); workspace = ws)
+        @test_throws "the workspace was built for element type Float64, not for Float32" analyze(t, randn(Float32, 32, 32); workspace = ws)
+        other = make_workspace(t isa CT ? NSCT(J = 2, L_array = [2, 3]) : CT(J = 2, L_array = [2, 3]), Float64, (32, 32))
+        @test_throws "the workspace was built for" analyze(t, x; workspace = other)
+        # Coefficients of another size or element type.
+        c = similar_coefficients(t, randn(64, 64))
+        @test_throws DimensionMismatch analyze!(c, t, x)
+        @test_throws DimensionMismatch analyze!(c, t, x; workspace = ws)
+        @test_throws DimensionMismatch synthesize!(similar(x), t, c)
+        c32 = similar_coefficients(t, randn(Float32, 32, 32))
+        @test_throws "element type Float32, but the data needs Float64" analyze!(c32, t, x)
+        @test_throws "element type Float32, but the data needs Float64" analyze!(c32, t, x; workspace = ws)
+        @test_throws "element type Float32, but the data needs Float64" synthesize!(similar(x), t, c32; workspace = ws)
     end
-    xi = rand(Xoshiro(42), 0:9, 32, 32)
-    nsct_forward!(coeffs, xi, p)
-    @test coeffs.coarse == nsct_forward(Float64.(xi), p).coarse
 end
 
-@testitem "CT allocating inverse with workspace matches non-workspace inverse" tags = [:ct] begin
-    using Random
-    Random.seed!(42)
-    x = randn(32, 32)
-    p = ContourletParams(J = 2, L_array = [2, 3])
-    ws = make_workspace(p, (32, 32))
-    c = ct_forward(x, p)
-    rec_ws = ct_inverse(c, p; workspace = ws)
-    rec = ct_inverse(c, p)
-    @test rec_ws isa Matrix{Float64}
-    @test size(rec_ws) == size(x)
-    @test maximum(abs, rec_ws .- rec) < 1.0e-12
-    @test maximum(abs, rec_ws .- x) < 1.0e-12
+@testitem "workspace accessors" tags = [:ct, :nsct, :tict] begin
+    for t in (CT(J = 2, L_array = [2, 3]), NSCT(J = 2, L_array = [2, 3]), TICT(J = 2, L_array = [2, 3]), STICT(J = 2, L_array = [2, 3]))
+        ws = make_workspace(t, ComplexF32, (32, 32))
+        @test ws isa AbstractTransformWorkspace
+        @test transform(ws) === t
+        @test eltype(ws) == ComplexF32
+        @test size(ws) == (32, 32)
+        @test eltype(make_workspace(t, Int, (32, 32))) == Float64
+        @test occursin(string(t), repr(ws))
+    end
 end
 
-@testitem "NSCT allocating inverse with workspace matches non-workspace inverse" tags = [:nsct] begin
+@testitem "stacked coefficients of another array type go through a copy" tags = [:nsct, :tict] begin
     using Random
-    Random.seed!(42)
+    Random.seed!(95)
     x = randn(32, 32)
-    p = ContourletParams(J = 2, L_array = [2, 3])
-    ws = make_nsct_workspace(p, (32, 32))
-    c = nsct_forward(x, p)
-    rec_ws = nsct_inverse(c, p; workspace = ws)
-    rec = nsct_inverse(c, p)
-    @test rec_ws isa Matrix{Float64}
-    @test size(rec_ws) == size(x)
-    @test maximum(abs, rec_ws .- rec) < 1.0e-10
-    @test maximum(abs, rec_ws .- x) < 1.0e-10
+    for t in (NSCT(J = 2, L_array = [2, 3]), TICT(J = 2, L_array = [1, 2]))
+        ws = make_workspace(t, x)
+        ref = analyze(t, x; workspace = ws)
+        big = zeros(32, 32, size(ref, 3) + 1)
+        v = view(big, :, :, 2:size(big, 3))
+        @test analyze!(v, t, x; workspace = ws) === v
+        @test v == ref
+        @test synthesize!(similar(x), t, v; workspace = ws) ≈ x atol = 1.0e-12
+    end
+end
+
+@testitem "NSCT and TICT on odd sizes (unaligned subband slices)" tags = [:nsct, :tict] begin
+    using Random
+    Random.seed!(96)
+    for t in (NSCT(J = 2, L_array = [1, 2]), TICT(J = 2, L_array = [2, 1])), T in (Float64, Float32, ComplexF32)
+        x = randn(T, 31, 33)
+        ws = make_workspace(t, x)
+        c = analyze(t, x; workspace = ws)
+        @test c ≈ analyze(t, x) rtol = sqrt(eps(real(T)))
+        @test synthesize(t, c; workspace = ws) ≈ x rtol = sqrt(eps(real(T)))
+    end
 end

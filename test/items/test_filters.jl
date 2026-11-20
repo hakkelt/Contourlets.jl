@@ -112,21 +112,6 @@ end
     @test Contourlets.check_pr_condition(QuincunxFilterPair([0.1, 0.4, 0.4, 0.1]))
 end
 
-@testitem "ContourletParams show method" tags = [:filters] begin
-    p = ContourletParams(J = 3, L_array = [1, 2, 3])
-    s = sprint(show, p)
-    @test occursin("J=3", s)
-    @test occursin("L_array", s)
-end
-
-@testitem "ContourletParams invalid L_array length" tags = [:filters] begin
-    @test_throws ArgumentError ContourletParams(J = 3, L_array = [1, 2])
-end
-
-@testitem "ContourletParams negative L_array entry" tags = [:filters] begin
-    @test_throws ArgumentError ContourletParams(J = 2, L_array = [1, -1])
-end
-
 @testitem "pkva_ladder_filter symmetric 12-tap" tags = [:filters] begin
     f = Contourlets.pkva_ladder_filter()
     @test length(f) == 12
@@ -134,26 +119,19 @@ end
     @test f[6] == 0.63       # pkva12 tap check (f[6] = _PKVA12_HALF[1])
 end
 
-@testitem "ContourletParams eltype and same-type conversions are identities" tags = [:filters] begin
-    using Random
-    p = ContourletParams(J = 2, L_array = [1, 2])
-    @test eltype(p) == Float64
-    @test Contourlets._convert_params(Float64, p) === p
+@testitem "same-precision conversions are identities" tags = [:filters] begin
+    t = NSCT(J = 2, L_array = [1, 2])
+    @test t isa NSCT{Float64}
+    @test Contourlets._convert_transform(Float64, t) === t
     @test Contourlets._convert_qfp(Float64, Q2345) === Q2345
-    p32 = Contourlets._convert_params(Float32, p)
-    @test eltype(p32) == Float32
-    @test eltype(p32.dfb_filters) == Float32
-    @test Contourlets._convert_params(Float32, p32) === p32
-end
-
-@testitem "Coefficient containers infer type parameters from 2-arg constructors" tags = [:filters] begin
-    c = zeros(4, 4)
-    sbs = [[zeros(4, 4), zeros(4, 4)]]
-    cc = ContourletCoefficients(c, sbs)
-    @test cc isa ContourletCoefficients{Float64, Matrix{Float64}}
-    @test cc.coarse === c
-    @test cc.subbands === sbs
-    zc = zeros(ComplexF32, 2, 2)
-    nc = NSCTCoefficients(zc, [[zeros(ComplexF32, 2, 2)]])
-    @test nc isa NSCTCoefficients{ComplexF32, Matrix{ComplexF32}}
+    t32 = Contourlets._convert_transform(Float32, t)
+    @test t32 isa NSCT{Float32}
+    @test eltype(t32.dfb_filters) == Float32
+    @test Contourlets._convert_transform(Float32, t32) === t32
+    @test t32 != t
+    # Float32 filters make a Float32 transform.
+    @test CT(
+        J = 1, L_array = [1], dfb_filters = QuincunxFilterPair(Float32.(Q2345.f_ladder)),
+        lp_filters = FilterPair(Float32.(CDF97.h), Float32.(CDF97.g))
+    ) isa CT{Float32}
 end

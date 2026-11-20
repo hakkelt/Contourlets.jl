@@ -8,16 +8,17 @@ module ContourletsCUDAExt
 # FFTs and broadcasts (about 300 and 1,700 per call), where launches dominate.
 #
 # `_replay_or_capture!` keeps a few graphs per path (`_GraphCache`), each keyed on
-# the device addresses of the input and of every output array: a new coefficient
-# set may reuse some of the old addresses but not all.
+# the device addresses of the image and of the coefficients' storage vector (the
+# subbands are views of it).
 #   - Hit: replay with a single `CUDA.launch(exec)`.
 #   - Miss: run the path eagerly once, which writes a valid result and, for the
 #     CT, warms its ScratchArena so the arena's device pointers are stable; then
 #     capture and instantiate it, evicting the least recently used graph.
 # A CT call that resizes an arena buffer (a call with other sizes) drops the
 # cached graphs, which still point at the old buffer.  CPU-image inputs to the CT
-# skip capture entirely, and so do the allocating `ct_forward(…; workspace)` and
-# friends: their arrays are new on every call, so a graph would never replay.
+# skip capture entirely, and so do the allocating `analyze(t, x; workspace)` and
+# `synthesize(t, c; workspace)`: their arrays are new on every call, so a graph
+# would never replay.
 #
 # Nothing in the captured call may allocate: an allocation inside `CUDA.capture`
 # becomes graph memory, which the pool later fails to free
@@ -31,13 +32,13 @@ module ContourletsCUDAExt
 # (The volume transforms, now in Surfacelets.jl, are deliberately not captured:
 # they are a few full-volume FFTs, and their streaming callbacks run host code.)
 
-using Contourlets: Contourlets, CTWorkspace, ContourletCoefficients, STICTWorkspace, TICTCoefficients, _GraphCache
+using Contourlets: Contourlets, CTWorkspace, STICTWorkspace, SubbandVector, _GraphCache
 using CUDA: CUDA
 
 # ── CT ────────────────────────────────────────────────────────────────────────
 
 function Contourlets._ct_forward_ws!(
-        coeffs::ContourletCoefficients{T},
+        coeffs::SubbandVector{T},
         image::AbstractMatrix,
         ws::CTWorkspace{T, Tf, M}
     ) where {T, Tf <: AbstractFloat, M <: CUDA.CuMatrix{T}}
@@ -55,7 +56,7 @@ end
 
 function Contourlets._ct_inverse_ws!(
         image::AbstractMatrix{T},
-        coeffs::ContourletCoefficients{T},
+        coeffs::SubbandVector{T},
         ws::CTWorkspace{T, Tf, M}
     ) where {T, Tf <: AbstractFloat, M <: CUDA.CuMatrix{T}}
     if image isa CUDA.CuArray
@@ -84,7 +85,7 @@ end
 # ── STICT ─────────────────────────────────────────────────────────────────────
 
 function Contourlets._stict_forward_ws!(
-        coeffs::TICTCoefficients, x::CUDA.CuMatrix, ws::STICTWorkspace{Td, Tf, C}
+        coeffs::SubbandVector, x::CUDA.CuMatrix, ws::STICTWorkspace{Td, Tf, C}
     ) where {Td <: Number, Tf <: AbstractFloat, C <: CUDA.CuMatrix{Complex{Tf}}}
     _replay_or_capture!(ws.graph_cache, x, coeffs) do
         Contourlets._stict_forward_inner!(coeffs, x, ws)
@@ -93,7 +94,7 @@ function Contourlets._stict_forward_ws!(
 end
 
 function Contourlets._stict_inverse_ws!(
-        x::CUDA.CuMatrix, coeffs::TICTCoefficients, ws::STICTWorkspace{Td, Tf, C}
+        x::CUDA.CuMatrix, coeffs::SubbandVector, ws::STICTWorkspace{Td, Tf, C}
     ) where {Td <: Number, Tf <: AbstractFloat, C <: CUDA.CuMatrix{Complex{Tf}}}
     _replay_or_capture!(ws.inv_graph_cache, x, coeffs) do
         Contourlets._stict_inverse_inner!(x, coeffs, ws)
@@ -103,23 +104,12 @@ end
 
 # ── Replay or capture ─────────────────────────────────────────────────────────
 
-# The subband arrays of a coefficient set.
-_leaves(c::ContourletCoefficients) = Iterators.flatten(c.subbands)
-_leaves(c::TICTCoefficients) = Iterators.flatten(Iterators.flatten(c.subbands))
-
-# The device addresses of `x`, the lowpass and every subband, in order.
-_pointers(x, c) = UInt[UInt(pointer(x)); UInt(pointer(c.coarse)); [UInt(pointer(s)) for s in _leaves(c)]]
+# The device addresses of the image `x` and of the storage of the coefficients `c`.
+_pointers(x, c::SubbandVector) = UInt[UInt(pointer(x)), UInt(pointer(parent(c)))]
 
 # Whether `ptrs` are `_pointers(x, c)`, without allocating.
-function _same_pointers(ptrs::Vector{UInt}, x, c)
-    length(ptrs) >= 2 && ptrs[1] == UInt(pointer(x)) && ptrs[2] == UInt(pointer(c.coarse)) || return false
-    n = 2
-    for s in _leaves(c)
-        n += 1
-        n <= length(ptrs) && ptrs[n] == UInt(pointer(s)) || return false
-    end
-    return n == length(ptrs)
-end
+_same_pointers(ptrs::Vector{UInt}, x, c::SubbandVector) =
+    length(ptrs) == 2 && ptrs[1] == UInt(pointer(x)) && ptrs[2] == UInt(pointer(parent(c)))
 
 # Replays the graph of `cache` captured with the arrays of `x` and `c`; else runs
 # `f` eagerly, then captures `g` from `(g, keep) = prepare(f)` and keeps `keep`

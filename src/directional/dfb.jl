@@ -108,7 +108,7 @@ function dfb_decompose(
 end
 
 """
-    dfb_decompose!(subbands::Vector{<:AbstractMatrix}, bandpass, l_levels, qfp::QuincunxFilterPair;
+    dfb_decompose!(subbands::AbstractVector{<:AbstractMatrix}, bandpass, l_levels, qfp::QuincunxFilterPair;
                    half=:both, workspace=nothing) -> subbands
 
 In-place DFB analysis into preallocated `subbands` of the sizes
@@ -119,7 +119,7 @@ bandpass size and depth, other filters, another precision, or `half ≠ :both`)
 throws an `ArgumentError`.
 """
 function dfb_decompose!(
-        subbands::Vector{<:AbstractMatrix}, bandpass::AbstractMatrix, l_levels::Int,
+        subbands::AbstractVector{<:AbstractMatrix}, bandpass::AbstractMatrix, l_levels::Int,
         qfp::QuincunxFilterPair;
         half::Symbol = :both,
         workspace = nothing
@@ -156,7 +156,7 @@ true
 ```
 """
 function dfb_reconstruct(
-        subbands::Vector{<:AbstractMatrix},
+        subbands::AbstractVector{<:AbstractMatrix},
         qfp::QuincunxFilterPair;
         half::Symbol = :both,
         workspace = nothing
@@ -174,7 +174,7 @@ function dfb_reconstruct(
 end
 
 """
-    dfb_reconstruct!(bandpass::AbstractMatrix, subbands::Vector{<:AbstractMatrix}, qfp::QuincunxFilterPair;
+    dfb_reconstruct!(bandpass::AbstractMatrix, subbands::AbstractVector{<:AbstractMatrix}, qfp::QuincunxFilterPair;
                      half=:both, workspace=nothing) -> bandpass
 
 In-place DFB synthesis into `bandpass`.  A matching workspace from
@@ -182,7 +182,7 @@ In-place DFB synthesis into `bandpass`.  A matching workspace from
 throws an `ArgumentError`, as for [`dfb_decompose!`](@ref).
 """
 function dfb_reconstruct!(
-        bandpass::AbstractMatrix, subbands::Vector{<:AbstractMatrix}, qfp::QuincunxFilterPair;
+        bandpass::AbstractMatrix, subbands::AbstractVector{<:AbstractMatrix}, qfp::QuincunxFilterPair;
         half::Symbol = :both,
         workspace = nothing
     )

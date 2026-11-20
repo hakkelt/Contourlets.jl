@@ -25,29 +25,29 @@ const WT97 = wavelet(WT.cdf97, WT.Lifting)
 # Per-subband synthesis gain γ — the L2 norm contributed to the reconstruction
 # by a unit coefficient in each directional subband.  Weighting coefficient
 # magnitudes by γ makes the M-term selection energy-consistent across the
-# (non-orthonormal, redundant) contourlet frame.
-function ct_subband_gains(params, sz)
-    template = ct_forward(zeros(sz...), params)
-    γ = [zeros(length(sbs)) for sbs in template.subbands]
-    for j in eachindex(template.subbands), k in eachindex(template.subbands[j])
-        c = ct_forward(zeros(sz...), params)
-        c.subbands[j][k] .= randn(size(c.subbands[j][k]))
-        γ[j][k] = sqrt(sum(abs2, ct_inverse(c, params)) / length(c.subbands[j][k]))
+# (non-orthonormal, redundant) contourlet frame.  Subband 1 is the low-pass
+# residual, which keeps every coefficient.
+function ct_subband_gains(t, sz)
+    γ = zeros(nsubbands(t, sz))
+    for i in 2:length(γ)
+        c = analyze(t, zeros(sz...))
+        sb = subband(t, c, i)
+        sb .= randn(size(sb))
+        γ[i] = sqrt(sum(abs2, synthesize(t, c)) / length(sb))
     end
     return γ
 end
 
 # Energy-normalised M-term contourlet approximation.
-function ct_nla(img, params, γ, M)
-    c = ct_forward(img, params)
-    scaled = reduce(vcat, [abs.(vec(c.subbands[j][k])) .* γ[j][k]
-        for j in eachindex(c.subbands) for k in eachindex(c.subbands[j])])
+function ct_nla(img, t, γ, M)
+    c = analyze(t, img)
+    scaled = reduce(vcat, [abs.(vec(subband(t, c, i))) .* γ[i] for i in 2:length(γ)])
     thr = M < length(scaled) ? partialsort(scaled, M; rev = true) : -1.0
-    for j in eachindex(c.subbands), k in eachindex(c.subbands[j])
-        sb = c.subbands[j][k]
-        @. sb = ifelse(abs(sb) * γ[j][k] >= thr, sb, 0.0)
+    for i in 2:length(γ)
+        sb = subband(t, c, i)
+        @. sb = ifelse(abs(sb) * γ[i] >= thr, sb, 0.0)
     end
-    return ct_inverse(c, params)
+    return synthesize(t, c)
 end
 
 # M-term wavelet approximation (keep the M largest dwt coefficients).
@@ -61,24 +61,26 @@ end
 
 # Per-subband noise standard deviation of the NSCT for unit-variance input
 # noise — the correct scale for the universal hard threshold k·σ·gain.
-function nsct_noise_gains(params, sz; trials = 6)
-    acc = nothing
+function nsct_noise_gains(t, sz; trials = 6)
+    acc = zeros(nsubbands(t, sz))
     for _ in 1:trials
-        c = nsct_forward(randn(sz...), params)
-        g = [[sqrt(sum(abs2, sb) / length(sb)) for sb in sbs] for sbs in c.subbands]
-        acc = acc === nothing ? g : [acc[j] .+ g[j] for j in eachindex(g)]
+        c = analyze(t, randn(sz...))
+        for i in eachindex(acc)
+            sb = subband(t, c, i)
+            acc[i] += sqrt(sum(abs2, sb) / length(sb))
+        end
     end
-    return [acc[j] ./ trials for j in eachindex(acc)]
+    return acc ./ trials
 end
 
-function nsct_denoise(noisy, params, gains, σ, k)
-    c = nsct_forward(noisy, params)
-    for j in eachindex(c.subbands), kk in eachindex(c.subbands[j])
-        λ = k * σ * gains[j][kk]
-        sb = c.subbands[j][kk]
+function nsct_denoise(noisy, t, gains, σ, k)
+    c = analyze(t, noisy)
+    for i in 2:length(gains)    # the directional subbands
+        λ = k * σ * gains[i]
+        sb = subband(t, c, i)
         @. sb = ifelse(abs(sb) >= λ, sb, 0.0)
     end
-    return nsct_inverse(c, params)
+    return synthesize(t, c)
 end
 
 function wt_denoise(noisy, λ)
@@ -87,12 +89,12 @@ function wt_denoise(noisy, λ)
     return idwt(c, WT97)
 end
 
-function nsct_local_variance_denoise(noisy, params, gains, σ; window_size=7)
-    c = nsct_forward(noisy, params)
+function nsct_local_variance_denoise(noisy, t, gains, σ; window_size=7)
+    c = analyze(t, noisy)
     pad = window_size ÷ 2
-    for j in eachindex(c.subbands), kk in eachindex(c.subbands[j])
-        sb = c.subbands[j][kk]
-        σ_n = σ * gains[j][kk]
+    for i in 2:length(gains)
+        sb = subband(t, c, i)
+        σ_n = σ * gains[i]
         var_n = σ_n^2
         out = similar(sb)
         R, C = size(sb)
@@ -113,26 +115,28 @@ function nsct_local_variance_denoise(noisy, params, gains, σ; window_size=7)
             val = sb[r_idx, c_idx]
             out[r_idx, c_idx] = sign(val) * max(0.0, abs(val) - T)
         end
-        c.subbands[j][kk] .= out
+        sb .= out
     end
-    return nsct_inverse(c, params)
+    return synthesize(t, c)
 end
 
-function nsct_bivariate_denoise(noisy, params, gains, σ; window_size=7)
-    c = nsct_forward(noisy, params)
+function nsct_bivariate_denoise(noisy, t, gains, σ; window_size=7)
+    c = analyze(t, noisy)
+    layout = subband_layout(t, size(noisy))
     pad = window_size ÷ 2
-    for j in eachindex(c.subbands), kk in eachindex(c.subbands[j])
-        sb = c.subbands[j][kk]
-        σ_n = σ * gains[j][kk]
+    for i in 2:length(layout)
+        j, kk = layout[i].scale, layout[i].direction
+        sb = subband(t, c, i)
+        σ_n = σ * gains[i]
         var_n = σ_n^2
         
-        parent_sb = if j == length(c.subbands)
-            c.coarse
+        parent_sb = if j == t.J
+            subband(t, c, 1)    # the low-pass residual
         else
-            L_curr = length(c.subbands[j])
-            L_parent = length(c.subbands[j+1])
+            L_curr = 2^t.L_array[j]
+            L_parent = 2^t.L_array[j+1]
             parent_kk = L_curr >= L_parent ? (kk - 1) ÷ (L_curr ÷ L_parent) + 1 : (kk - 1) * (L_parent ÷ L_curr) + 1
-            c.subbands[j+1][parent_kk]
+            subband(t, c, findfirst(==((scale = j + 1, direction = parent_kk)), layout))
         end
         
         out = similar(sb)
@@ -158,9 +162,9 @@ function nsct_bivariate_denoise(noisy, params, gains, σ; window_size=7)
             
             out[r_idx, c_idx] = y > T ? (y - T) / y * y1 : 0.0
         end
-        c.subbands[j][kk] .= out
+        sb .= out
     end
-    return nsct_inverse(c, params)
+    return synthesize(t, c)
 end
 ```
 
@@ -189,11 +193,11 @@ savefig("nla_texture.png"); nothing # hide
 Keeping the same number of coefficients `M` for both transforms:
 
 ```@example nla
-params = ContourletParams(J = 3, L_array = [3, 3, 2])
-γ = ct_subband_gains(params, (N, N))
+t = CT(J = 3, L_array = [3, 3, 2])
+γ = ct_subband_gains(t, (N, N))
 
 for M in (512, 1024, 2048)
-    ct = psnr(texture, ct_nla(texture, params, γ, M))
+    ct = psnr(texture, ct_nla(texture, t, γ, M))
     wv = psnr(texture, wt_nla(texture, M))
     println("M = $(lpad(M, 4)):  contourlet $(round(ct; digits = 2)) dB   " *
             "9/7 wavelet $(round(wv; digits = 2)) dB   " *
@@ -206,7 +210,7 @@ match the texture orientation, so fewer coefficients describe each patch.
 
 ```@example nla
 M = 1024
-ct_approx = ct_nla(texture, params, γ, M)
+ct_approx = ct_nla(texture, t, γ, M)
 wt_approx = wt_nla(texture, M)
 p = plot(layout = (1, 3), size = (900, 320))
 heatmap!(p[1], texture, title = "Original", color = :grays, aspect_ratio = :equal, axis = false, colorbar = false)
@@ -254,10 +258,11 @@ Random.seed!(11)
 σ = 0.08
 noisy = ref .+ σ .* randn(size(ref)...)
 
-gains = nsct_noise_gains(params, size(ref))
-ct_hard  = nsct_denoise(noisy, params, gains, σ, 3.0)
-ct_local = nsct_local_variance_denoise(noisy, params, gains, σ)
-ct_bivar = nsct_bivariate_denoise(noisy, params, gains, σ)
+tn = NSCT(J = 3, L_array = [3, 3, 2])
+gains = nsct_noise_gains(tn, size(ref))
+ct_hard  = nsct_denoise(noisy, tn, gains, σ, 3.0)
+ct_local = nsct_local_variance_denoise(noisy, tn, gains, σ)
+ct_bivar = nsct_bivariate_denoise(noisy, tn, gains, σ)
 wt_rec   = wt_denoise(noisy, 3σ)
 
 println("noisy              : $(round(psnr(ref, noisy);      digits = 2)) dB")

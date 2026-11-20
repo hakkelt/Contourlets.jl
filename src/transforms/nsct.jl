@@ -3,308 +3,53 @@
 # Same structure as the CT but with:
 #   • lp_decompose → nsp_decompose (no downsampling, à trous upsampled filters)
 #   • dfb_decompose → nsdfb_decompose (no quincunx decimation)
-# All outputs have the same spatial size as the input.
+# All outputs have the same spatial size as the input, so the coefficients are
+# one array of size (n1, n2, n): the lowpass, then the subbands of level 1, 2, …, J.
+# A workspace runs the whole transform as masks on the image's spectrum
+# (`NSCTWorkspace`, the mask-bank engine); without one the pyramid convolves.
 #
 # Reference: A. L. da Cunha, J. Zhou & M. N. Do, "The nonsubsampled contourlet
 # transform: theory, design, and applications", IEEE TIP 15(10), 2006, §II-A.
 
-"""
-    nsct_forward(image, params::ContourletParams; workspace=nothing, threaded=nothing) -> NSCTCoefficients
-
-Nonsubsampled Contourlet Transform forward pass.  Invariant under circular
-shifts of the input.
-
-Pass a preallocated workspace from [`make_nsct_workspace`](@ref) via
-`workspace` to reuse buffers across calls.
-
-# Examples
-```jldoctest
-julia> using Contourlets, Random
-
-julia> x = randn(Xoshiro(2), 32, 32);
-
-julia> p = ContourletParams(J = 2, L_array = [1, 2]);
-
-julia> coeffs = nsct_forward(x, p);
-
-julia> size(coeffs.coarse) == size(x)
-true
-```
-
-# References
-1. A. L. da Cunha, J. Zhou, and M. N. Do, "The Nonsubsampled Contourlet Transform:
-   Theory, Design, and Applications", *IEEE Transactions on Image Processing*,
-   15(10):3089–3101, 2006.
-   [doi:10.1109/TIP.2006.877507](https://doi.org/10.1109/TIP.2006.877507)
-"""
-function nsct_forward(
-        image::AbstractMatrix, params::ContourletParams;
-        workspace::Union{NSCTWorkspace, Nothing} = nothing,
-        threaded::Union{Bool, Nothing} = nothing
-    )
-    if workspace !== nothing
-        Tw = eltype(workspace)
-        coeffs = _similar_nsct_coefficients(params, size(image), Tw, Matrix{Tw})
-        img = Tw === eltype(image) ? image : Tw.(image)
-        return nsct_forward!(coeffs, img, params; workspace = workspace, threaded = threaded)
+# Subband (j, k) is slice `offsets[j] + k` of the coefficients.
+function _nsct_offsets(t::NSCT)
+    offsets = Vector{Int}(undef, t.J)
+    s = 1
+    for j in 1:t.J
+        offsets[j] = s
+        s += 1 << t.L_array[j]
     end
-    # No-workspace: direct construction keeps the return type concrete (type-stable).
-    Td = data_eltype(image)
+    return offsets
+end
+
+function _analyze_direct!(c::AbstractArray, t::NSCT, image::AbstractMatrix, threaded)
+    Td = eltype(c)
     Tf = filter_eltype(Td)
-    img = Td === eltype(image) ? image : Td.(image)
-    coarse = img
-    J = params.J
-    L = params.L_array
-    p_out = _convert_params(Tf, params)
-    fp, qfp = p_out.lp_filters, p_out.dfb_filters
-    subbands = Vector{Vector{Matrix{Td}}}(undef, J)
-    for j in 1:J
+    p = _convert_transform(Tf, t)
+    fp, qfp = p.lp_filters, p.dfb_filters
+    offsets = _nsct_offsets(p)
+    coarse = Td === eltype(image) ? image : Td.(image)
+    for j in 1:p.J
         coarse_j, bp_j = nsp_decompose(coarse, fp, j)
-        subbands[j] = nsdfb_decompose(bp_j, L[j], qfp, j)
-        coarse = coarse_j
-    end
-    return NSCTCoefficients(coarse, subbands)
-end
-
-"""
-    nsct_forward!(coeffs::NSCTCoefficients, image, params::ContourletParams; workspace=nothing, threaded=nothing) -> coeffs
-
-In-place NSCT forward pass writing into the preallocated `coeffs`.
-
-Pass a `NSCTWorkspace` via `workspace` for an allocation-free pyramid
-stage.  Allocate `coeffs` with [`similar_nsct_coefficients`](@ref).
-
-!!! note "Threading"
-    With a host workspace and threading on (`threaded = true`, or the default
-    `threaded = nothing` for complex data) the independent subband FFTs run in one
-    task per Julia thread.
-"""
-function nsct_forward!(
-        coeffs::NSCTCoefficients,
-        image::AbstractMatrix,
-        params::ContourletParams;
-        workspace::Union{NSCTWorkspace, Nothing} = nothing,
-        threaded::Union{Bool, Nothing} = nothing
-    )
-    workspace === nothing && return _nsct_forward_noworkspace!(coeffs, image, params)
-    return _nsct_forward_ws_barrier!(coeffs, image, workspace, threaded)
-end
-
-# Typed dispatch barrier — forces specialization on the concrete workspace type,
-# avoiding Union-boxing overhead on the hot workspace path.
-function _nsct_forward_ws_barrier!(
-        coeffs::NSCTCoefficients,
-        image::AbstractMatrix,
-        ws::NSCTWorkspace,
-        threaded::Union{Bool, Nothing}
-    )
-    T = eltype(ws)
-    img = T === eltype(image) ? image : T.(image)
-    return _nsct_forward_ws!(coeffs, img, ws; threaded = threaded)
-end
-
-# Internal dispatch seam — overloaded by GPU extension if needed.
-function _nsct_forward_ws!(
-        coeffs::NSCTCoefficients{T},
-        image::AbstractMatrix,
-        ws::NSCTWorkspace{T, Tf};
-        threaded::Union{Bool, Nothing} = nothing
-    ) where {T, Tf}
-    _nsct_forward_inner!(coeffs, image, ws; threaded = threaded)
-    return coeffs
-end
-
-# No-workspace in-place path: mirrors the allocating body but writes into coeffs.
-function _nsct_forward_noworkspace!(
-        coeffs::NSCTCoefficients,
-        image::AbstractMatrix,
-        params::ContourletParams
-    )
-    Td = eltype(coeffs.coarse)
-    Tf = filter_eltype(Td)
-    img = Td === eltype(image) ? image : Td.(image)
-    coarse = img
-    J = params.J
-    L = params.L_array
-    p_out = _convert_params(Tf, params)
-    fp, qfp = p_out.lp_filters, p_out.dfb_filters
-    for j in 1:J
-        coarse_j, bp_j = nsp_decompose(coarse, fp, j)
-        sbs = nsdfb_decompose(bp_j, L[j], qfp, j)
-        for (k, sb) in enumerate(sbs)
-            copyto!(coeffs.subbands[j][k], sb)
+        for (k, sb) in enumerate(nsdfb_decompose(bp_j, p.L_array[j], qfp, j))
+            copyto!(view(c, :, :, offsets[j] + k), sb)
         end
         coarse = coarse_j
     end
-    copyto!(coeffs.coarse, coarse)
-    return coeffs
+    copyto!(view(c, :, :, 1), coarse)
+    return c
 end
 
-# The workspace's FFT plans run on its dense matrix type; a view or other wrapper
-# is staged through a grow-once scratch buffer of that type (NSCT and TICT
-# workspaces: `fwd_scratch` for inputs, `inv_scratch` for outputs).
-function _staging(a::ScratchArena, x::AbstractMatrix)
-    _arena_reset!(a)
-    return _arena_take!(a, x, size(x)...)
-end
-_dense_input(ws, x::AbstractMatrix) =
-    x isa _ws_matrix_type(ws) ? x : copyto!(_staging(ws.fwd_scratch, x), x)
-
-# Run `f(y)`, which writes into a dense `y`, for the output `out`.
-function _dense_output!(out::AbstractMatrix, ws, f::F) where {F}
-    out isa _ws_matrix_type(ws) && return f(out)
-    return copyto!(out, f(_staging(ws.inv_scratch, out)))
-end
-
-function _nsct_forward_inner!(
-        coeffs::NSCTCoefficients{T},
-        image::AbstractMatrix,
-        ws::NSCTWorkspace{T, Tf};
-        threaded::Union{Bool, Nothing} = nothing
-    ) where {T, Tf}
-    img = _dense_input(ws, T === eltype(image) ? image : T.(image))
-    # One FFT of the input; subband k of level j is ifft(Hₖ · Bⱼ · X) with the
-    # precomputed directional filter Hₖ and pyramid mask Bⱼ (`_nsp_masks`), run by
-    # the mask-bank engine (`mask_bank.jl`), threaded over the subbands.
-    return mask_bank_forward!(coeffs, img, ws.engine, use_threading(threaded, T))
-end
-
-"""
-    nsct_inverse(coeffs::NSCTCoefficients, params::ContourletParams; workspace=nothing, threaded=nothing) -> Matrix
-
-NSCT inverse pass.
-
-# Examples
-```jldoctest
-julia> using Contourlets, Random
-
-julia> x = randn(Xoshiro(2), 32, 32);
-
-julia> p = ContourletParams(J = 2, L_array = [1, 2]);
-
-julia> rec = nsct_inverse(nsct_forward(x, p), p);
-
-julia> maximum(abs, rec .- x) < 1e-12
-true
-```
-"""
-function nsct_inverse(
-        coeffs::NSCTCoefficients,
-        params::ContourletParams;
-        workspace::Union{NSCTWorkspace, Nothing} = nothing,
-        threaded::Union{Bool, Nothing} = nothing
-    )
-    if workspace !== nothing
-        Tw = eltype(workspace)
-        M = _ws_matrix_type(workspace)
-        image = _allocate_zeros(M, Tw, workspace.image_size)
-        return nsct_inverse!(image, coeffs, params; workspace = workspace, threaded = threaded)
-    end
-    return _nsct_inverse_alloc(coeffs, params)
-end
-
-"""
-    nsct_inverse!(image, coeffs::NSCTCoefficients, params::ContourletParams; workspace=nothing, threaded=nothing) -> image
-
-In-place NSCT inverse pass writing the reconstruction into `image`.
-
-Pass a `NSCTWorkspace` via `workspace` for an allocation-free pyramid
-stage.
-
-!!! note "Threading"
-    See [`nsct_forward!`](@ref): the subband FFTs split between threads the same way.
-"""
-function nsct_inverse!(
-        image::AbstractMatrix,
-        coeffs::NSCTCoefficients,
-        params::ContourletParams;
-        workspace::Union{NSCTWorkspace, Nothing} = nothing,
-        threaded::Union{Bool, Nothing} = nothing
-    )
-    workspace === nothing && return (copyto!(image, _nsct_inverse_alloc(coeffs, params)); image)
-    return _nsct_inverse_ws_barrier!(image, coeffs, workspace, threaded)
-end
-
-# Typed dispatch barrier — forces specialization on the concrete workspace type.
-function _nsct_inverse_ws_barrier!(
-        image::AbstractMatrix,
-        coeffs::NSCTCoefficients,
-        ws::NSCTWorkspace,
-        threaded::Union{Bool, Nothing}
-    )
-    return _nsct_inverse_ws!(image, coeffs, ws; threaded = threaded)
-end
-
-# Internal dispatch seam.
-function _nsct_inverse_ws!(
-        image::AbstractMatrix{T},
-        coeffs::NSCTCoefficients{T},
-        ws::NSCTWorkspace{T, Tf};
-        threaded::Union{Bool, Nothing} = nothing
-    ) where {T, Tf}
-    _nsct_inverse_inner!(image, coeffs, ws; threaded = threaded)
-    return image
-end
-
-function _nsct_inverse_alloc(
-        coeffs::NSCTCoefficients,
-        params::ContourletParams
-    )
-    J = params.J
-    Tf = filter_eltype(eltype(coeffs.coarse))
-    p_out = _convert_params(Tf, params)
-    fp = p_out.lp_filters
-    qfp = p_out.dfb_filters
-    coarse = copy(coeffs.coarse)
-
-    for j in J:-1:1
-        bp = nsdfb_reconstruct(coeffs.subbands[j], qfp, j)
+function _synthesize_direct!(x::AbstractMatrix, t::NSCT, c::AbstractArray, threaded)
+    Tf = filter_eltype(eltype(c))
+    p = _convert_transform(Tf, t)
+    fp, qfp = p.lp_filters, p.dfb_filters
+    offsets = _nsct_offsets(p)
+    coarse = copy(view(c, :, :, 1))
+    for j in p.J:-1:1
+        bands = [copy(view(c, :, :, offsets[j] + k)) for k in 1:(1 << p.L_array[j])]
+        bp = nsdfb_reconstruct(bands, qfp, j)
         coarse = nsp_reconstruct(coarse, bp, fp, j)
     end
-    return coarse
-end
-
-function _nsct_inverse_inner!(
-        image::AbstractMatrix{T},
-        coeffs::NSCTCoefficients{T},
-        ws::NSCTWorkspace{T, Tf};
-        threaded::Union{Bool, Nothing} = nothing
-    ) where {T, Tf}
-    # image = ifft(Σⱼ Sⱼ Σₖ Gₖ · fft(subband k of level j) + S_{J+1} · fft(lowpass)),
-    # threaded with one partial accumulator per task.
-    use_threads = use_threading(threaded, T)
-    _dense_output!(image, ws, y -> mask_bank_inverse!(y, coeffs, ws.engine, use_threads))
-    return image
-end
-
-# Run one forward + inverse pass on zeros, so the first real call is compiled and
-# allocates nothing.  Called from `make_nsct_workspace(...; prewarm=true)`.
-function _prewarm_nsct!(ws::NSCTWorkspace{Td, Tf, M}; threaded::Union{Bool, Nothing} = nothing) where {Td, Tf, M}
-    img = _allocate_zeros(M, Td, ws.image_size)
-    coeffs = _similar_nsct_coefficients(ws.params, ws.image_size, Td, M)
-    nsct_forward!(coeffs, img, ws.params; workspace = ws, threaded = threaded)
-    nsct_inverse!(img, coeffs, ws.params; workspace = ws, threaded = threaded)
-    return ws
-end
-
-"""
-    similar_nsct_coefficients(params::ContourletParams, image_size) -> NSCTCoefficients
-
-Allocate `NSCTCoefficients` buffers (all subbands same spatial size as image).
-"""
-function similar_nsct_coefficients(
-        params::ContourletParams{Tf},
-        image_size::Tuple{Int, Int};
-        Td::Type = Tf,
-        M::Type{<:AbstractMatrix} = Matrix{Td}
-    ) where {Tf}
-    return _similar_nsct_coefficients(params, image_size, Td, M)
-end
-
-function _similar_nsct_coefficients(
-        params::ContourletParams, image_size::Tuple{Int, Int}, ::Type{Td}, ::Type{M}
-    ) where {Td, M}
-    counts = [max(1, 2^l) for l in params.L_array[1:params.J]]
-    storage, flat = _stacked_zeros(M, Td, image_size, sum(counts))
-    return NSCTCoefficients(_allocate_zeros(M, Td, image_size), _split(flat, counts), storage)
+    return copyto!(x, coarse)
 end

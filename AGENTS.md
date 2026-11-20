@@ -28,12 +28,26 @@ The shared surface with the core is small and explicit: `FilterPair`, `CDF97`
 pyramid's frequency responses (`nsp_responses`, `centred_dtft`), and the
 mask-bank engine that runs the NSCT and TICT workspaces (`MaskBankEngine`,
 `MaskBank`, `MaskItem`, `mask_bank_forward!`, `mask_bank_inverse!`; this package adds
-`mask_bank_subband` methods for its coefficient sets in `src/workspace/mask_bank.jl`).
+`mask_bank_subband`/`mask_bank_coarse`/`mask_bank_storage` methods for its
+stacked coefficients in `src/workspace/mask_bank.jl`).
+
+**The transform interface** comes from MultiscaleTransformsBase (MTB): the
+transform types `CT`, `NSCT`, `TICT`, `STICT` subtype
+`AbstractMultiscaleTransform`, the workspaces `AbstractTransformWorkspace`, and
+the verbs (`analyze`, `analyze!`, `synthesize`, `synthesize!`, `make_workspace`,
+`similar_coefficients`, `subband_layout`, `nsubbands`, `subband`, `transform`)
+get qualified methods (`MultiscaleTransformsBase.analyze!(...) = ...`) on this
+package's own types only — never a signature more generic than them in a
+position MTB uses.  MTB's exported names are re-exported.  Coefficients: NSCT and
+TICT a stacked `(n1, n2, n)` array, CT and STICT a `SubbandVector`; subband 1
+is the lowpass, then the finest level first (`subband_layout`).  Every test
+suite change keeps `MultiscaleTransformsBase.Testing.test_transform` passing
+(`test/items/test_interface.jl`).
 All are re-exported (`FilterPair`, `CDF97`) or imported (internals) in
 `src/Contourlets.jl`.
 
-**Public surface.** Only the transform API is exported: transforms, workspaces,
-coefficient and parameter types, `Q2345`/`QuincunxFilterPair`,
+**Public surface.** Only the transform API is exported: transform and
+workspace types, the re-exported MTB interface, `Q2345`/`QuincunxFilterPair`,
 `parabolic_levels` and the re-exported `FilterPair`/`CDF97`.  The pyramid
 and directional stages (`lp_*`, `nsp_*`, `qfb_*`, `dfb_*`, `nsdfb_*`) and
 `upsample_kernel`/`check_pr_condition` are `@compat public`, not exported.
@@ -74,7 +88,7 @@ Conventions that are non-obvious or specific to this package's API contract:
 - **Element types: real filters, real-or-complex data.** `FilterPair` and the
   `data_eltype`/`filter_eltype` helpers come from MultiscaleFilterBanks.
   Filters are always real
-  (`FilterPair`/`QuincunxFilterPair`/`ContourletParams` are `Tf <: AbstractFloat`);
+  (`FilterPair`/`QuincunxFilterPair` and the transform types are `Tf <: AbstractFloat`);
   image data may be complex (`Td <: Number`). The two flow independently —
   `Td = data_eltype(image)`, `Tf = filter_eltype(Td) = real(float(Td))` — so a
   complex image is filtered as complex·real (never complex·complex). Multiply
@@ -84,17 +98,16 @@ Conventions that are non-obvious or specific to this package's API contract:
   first param = data type). The transform is real-linear, so `T(x + i·y)` equals
   `T(x) + i·T(y)` bit-for-bit — a useful correctness invariant. The FFTW conv
   backend is real-only; complex data routes through the direct backend.
-- **In-place companions.** The top-level transforms follow the convention that
-  `f!(dst, args..., params; workspace=nothing)` writes into `dst`, and
-  `f(args..., params; workspace=nothing)` allocates and returns the result — the
-  **only** difference is whether the caller supplies the output container.  The
-  transforms that thread (NSCT, TICT) also take `threaded = nothing` on both
-  variants; the CT and the STICT have nothing to thread and take no `threaded`
-  keyword.  Both
-  variants accept the same optional `workspace` kwarg for reusing scratch buffers; pass a `CTWorkspace` from
-  `make_workspace` (or an `NSCTWorkspace` from `make_nsct_workspace`) to eliminate per-call allocation in the
-  pyramid stage.  Do not allocate inside the `_ct_forward_ws!` /
-  `_ct_inverse_ws!` / `_nsct_forward_ws!` / `_nsct_inverse_ws!` workspace paths.
+- **Verbs and workspaces.** `analyze!(c, t, x; workspace, threaded)` writes into
+  `c`, `analyze(t, x; ...)` allocates; likewise `synthesize!`/`synthesize`.  Every
+  call takes `workspace` and `threaded` (the CT and STICT accept and ignore
+  `threaded`).  A workspace runs at the data's precision (`data_eltype(T)`) and
+  a call checks it with `check_workspace` (transform, element type, size) before
+  anything else.  Every workspace constructor takes `prewarm`, `threaded` and
+  `tune` (`tune` acts on device NSCT/TICT workspaces only).  Do not allocate
+  inside the workspace paths (`_ct_forward_inner!`, `_ct_inverse_inner!`,
+  `_stacked_forward!`, `_stacked_inverse!`, `_stict_forward_inner!`,
+  `_stict_inverse_inner!`).
 - **Duck-typed public API.** Functions accept `AbstractMatrix` with no
   `where T` constraints (those cause dispatch issues here). Pin the float type
   inside the body via `T_out = float(eltype(image))` and convert filters with
@@ -131,8 +144,9 @@ Conventions that are non-obvious or specific to this package's API contract:
   `:nsct` (also implies `:ct`), `:tict` (TICT and STICT), `:quality` (Aqua/JET),
   `:jet`, `:docs`, `:gpu`.
 - Seed every random input (`Random.seed!(42)`); never rely on global RNG state.
-- NSCT shift-invariance is a required property — compare `nsct_forward(x)` with
-  `nsct_forward(circshift(x, s))` against `circshift(., s)` (tol `1e-10`).
+- NSCT shift-invariance is a required property — compare `analyze(t, x)` with
+  `analyze(t, circshift(x, s))` subband by subband against `circshift(., s)`
+  (tol `1e-10`).
 
 ---
 
@@ -151,7 +165,7 @@ julia --project=test test/runtests.jl
 
 # Run focused tests by passing tags (starting with :) or names
 julia --project=test test/runtests.jl :ct,:gpu
-julia --project=test test/runtests.jl "make_nsct_workspace (type-first positional API)"
+julia --project=test test/runtests.jl "NSCT workspace path is allocation-free"
 ```
 
 **Benchmarks** — smoke test, then revision comparison:
@@ -177,7 +191,7 @@ output.
   input. All NSP/NSDFB filtering uses periodic (circular) convolution, so the
   NSCT is exactly invariant under circular shifts of the input.  Periodic
   filtering is a product on the DFT grid, so an NSCT workspace holds the whole
-  pyramid as masks (`_nsp_masks`): `nsct_forward!` is one FFT plus one inverse
+  pyramid as masks (`_nsp_masks`): `analyze!` is one FFT plus one inverse
   FFT per output, no convolution.  The allocating path and the public
   `nsp_decompose` still convolve (skipping the à trous zeros); both agree to
   rounding.
@@ -209,7 +223,7 @@ output.
   single-threaded `@simd` loops; complex data uses
   `Polyester.@batch` (multi-core, near-zero spawn overhead). The NSCT and
   TICT transforms (and `conv2d`) expose a `threaded::Union{Bool, Nothing}`
-  keyword: `nothing` (default), `true`, `false`; the CT and STICT do not.
+  keyword: `nothing` (default), `true`, `false`; the CT and STICT accept and ignore it.
   `nothing` enables threading for complex types only. Load the `my-threading` skill
   before adding or modifying threaded loops.  The FFT-bound workspace paths
   (NSCT, TICT) thread differently: one `@batch` task per thread

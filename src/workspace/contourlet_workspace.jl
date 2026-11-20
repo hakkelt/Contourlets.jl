@@ -1,31 +1,28 @@
-# CTWorkspace and NSCTWorkspace — preallocated buffers for zero-per-iteration
-# allocations.
-#
-# Design goals:
-#   1. All temporary matrices are allocated once at construction time.
-#   2. The mutating entry points ct_forward! / ct_inverse! (with a CTWorkspace) and
-#      nsct_forward! / nsct_inverse! (with an NSCTWorkspace) reuse their buffers.
-#   3. Thread-safety: one workspace per thread; NOT safe for concurrent reuse.
-#   4. Backward compatibility: non-! functions always allocate; workspace is opt-in.
+# CTWorkspace and NSCTWorkspace: what the CT and NSCT precompute for one image
+# size and data element type (filters, FFT buffers and plans, scratch buffers),
+# so that `analyze!` / `synthesize!` with a workspace allocate nothing.  A
+# workspace is not safe for concurrent use: give each task its own.
 #
 # Scratch buffers come from the `ScratchArena` in `scratch_arena.jl`.
 
 """
-    CTWorkspace{Td, Tf}
+    CTWorkspace
 
-Preallocated buffers (data type `Td`, real filter precision `Tf`) for the
-contourlet transform: the pyramid's scratch arenas and, per pyramid level with a
-directional split, the DFB's equivalent filters, FFT buffers and plans.  Create
-with [`make_workspace`](@ref); reuse across iterations with `ct_forward!` /
-`ct_inverse!`.
+What a [`CT`](@ref) precomputes for one image size, data element type and array
+type: the pyramid's scratch arenas and, per pyramid level with a directional
+split, the DFB's equivalent filters, FFT buffers and plans.  Build it with
+[`make_workspace`](@ref); `transform`, `eltype` and `size` give the transform,
+data element type and image size it serves.
 
 !!! warning "Thread safety"
-    A `CTWorkspace` is **not thread-safe**.  Create a separate workspace
-    per thread (e.g., `[make_workspace(params, sz) for _ in 1:Threads.nthreads()]`).
+    A workspace serves one call at a time; give each task its own.
 """
-struct CTWorkspace{Td <: Number, Tf <: AbstractFloat, M <: AbstractMatrix{Td}, R}
-    params::ContourletParams{Tf}     # real filter precision Tf
+struct CTWorkspace{Td <: Number, Tf <: AbstractFloat, M <: AbstractMatrix{Td}, R, Tt <: CT} <: AbstractTransformWorkspace
+    transform::Tt                    # as given to `make_workspace`
+    params::CT{Tf}                   # the transform at filter precision Tf
     image_size::Tuple{Int, Int}
+    layout::SubbandLayout{2}
+    first::Vector{Int}               # the first subband of each level
 
     # Grow-once pool for all temporary buffers (LP coarse/bandpass, transients).
     # Separate arenas for forward and inverse passes because they traverse the
@@ -47,21 +44,27 @@ struct CTWorkspace{Td <: Number, Tf <: AbstractFloat, M <: AbstractMatrix{Td}, R
 end
 
 """
-    NSCTWorkspace{Td, Tf}
+    NSCTWorkspace
 
-Precomputed masks, FFT plans and buffers (data type `Td`, real filter precision
-`Tf`) for the nonsubsampled contourlet transform: the nonsubsampled pyramid as
-masks on the input's spectrum and one nonsubsampled directional bank per level, so
-`nsct_forward!` / `nsct_inverse!` are one FFT per output.  Create with
-[`make_nsct_workspace`](@ref).
+What an [`NSCT`](@ref) precomputes for one image size, data element type and
+array type: the nonsubsampled pyramid as masks on the image's spectrum, one
+nonsubsampled directional bank per level, FFT plans and buffers, so that
+`analyze!` / `synthesize!` are one FFT per subband.  Build it with
+[`make_workspace`](@ref).
 
 !!! warning "Thread safety"
-    An `NSCTWorkspace` is **not thread-safe**; create one per concurrent caller.
-    (A single call may still split its own subband FFTs between threads.)
+    A workspace serves one call at a time; give each task its own.  (A single
+    call may still split its own subband FFTs between threads.)
 """
-struct NSCTWorkspace{Td <: Number, Tf <: AbstractFloat, M <: AbstractMatrix{Td}, E <: MaskBankEngine}
-    params::ContourletParams{Tf}
+struct NSCTWorkspace{Td <: Number, Tf <: AbstractFloat, M <: AbstractMatrix{Td}, E <: MaskBankEngine, S <: AbstractArray{Td, 3}, Tt <: NSCT} <: AbstractTransformWorkspace
+    transform::Tt
+    params::NSCT{Tf}
     image_size::Tuple{Int, Int}
+    # Subband (j, k) is slice `offsets[j] + k` of the coefficients.
+    offsets::Vector{Int}
+    nsubbands::Int
+    # An empty array of the coefficient type the engine writes into directly.
+    stack::S
 
     # Staging for inputs / outputs that are not of the plans' dense type `M`.
     fwd_scratch::ScratchArena{M}
@@ -73,12 +76,23 @@ struct NSCTWorkspace{Td <: Number, Tf <: AbstractFloat, M <: AbstractMatrix{Td},
     engine::E
 end
 
-Base.eltype(::CTWorkspace{Td}) where {Td} = Td
-Base.eltype(::NSCTWorkspace{Td}) where {Td} = Td
+const _AnyWorkspace = Union{CTWorkspace, NSCTWorkspace}
+
+MultiscaleTransformsBase.transform(ws::_AnyWorkspace) = ws.transform
+Base.size(ws::_AnyWorkspace) = ws.image_size
+Base.eltype(::Type{<:CTWorkspace{Td}}) where {Td} = Td
+Base.eltype(::Type{<:NSCTWorkspace{Td}}) where {Td} = Td
+
+function Base.show(io::IO, ws::_AnyWorkspace)
+    return print(io, nameof(typeof(ws)), "(", ws.transform, ", ", eltype(ws), ", ", ws.image_size, ")")
+end
 
 # The dense matrix type `M` of a workspace.
 _ws_matrix_type(::CTWorkspace{Td, Tf, M}) where {Td, Tf, M} = M
 _ws_matrix_type(::NSCTWorkspace{Td, Tf, M}) where {Td, Tf, M} = M
+
+# The dense matrix type of data like `x` with element type `Td` (host or device).
+_matrix_type(x::AbstractArray, ::Type{Td}) where {Td} = typeof(similar(x, Td, 0, 0))
 
 # Bandpass size at each of the `J` pyramid levels of the CT (halving, rounded up).
 function _bandpass_dims(image_size::Tuple{Int, Int}, J::Int)
@@ -104,7 +118,7 @@ function _runner_type(ref::AbstractArray, ::Type{Tf}) where {Tf}
 end
 
 # DFB runners of the split levels of a CT workspace.
-function _dfb_level_runners(ref::AbstractMatrix, p::ContourletParams, bp_dims, ::Type{Tf}) where {Tf}
+function _dfb_level_runners(ref::AbstractMatrix, p::CT, bp_dims, ::Type{Tf}) where {Tf}
     flags = ref isa Array ? FFTW.MEASURE : FFTW.ESTIMATE
     pool = _runner_pool(ref, Tf)     # the levels run one after another
     return _runner_type(ref, Tf)[
@@ -134,7 +148,7 @@ function _workspace_runner(
     Tw === Tf || throw(
         ArgumentError("the workspace was built for filter precision $(Tw), but the data needs $(Tf)")
     )
-    ws.params.dfb_filters.f_ladder == qfp.f_ladder || throw(
+    ws.params.dfb_filters == qfp || throw(
         ArgumentError("the workspace was built with different DFB filters than the ones passed")
     )
     for r in ws.dfb_runners
@@ -148,60 +162,74 @@ function _workspace_runner(
     )
 end
 
-"""
-    make_workspace(params::ContourletParams, image_size::Tuple{Int,Int}; T=Float64)
-    make_workspace(T::Type, image_size::Tuple{Int,Int}, params::ContourletParams)
-                   -> CTWorkspace
+const _WORKSPACE_KEYWORDS = """
+Keywords, accepted by the workspaces of all four transforms:
+- `prewarm = true`: run one analysis and synthesis on zeros at construction, so
+  that the first call is compiled and allocates nothing;
+- `threaded = nothing`: threading of that warm-up pass (the calls choose their
+  own threading);
+- `tune = false`: for [`NSCT`](@ref) and [`TICT`](@ref) workspaces on a device,
+  measure how many subbands each batched FFT should take, and whether the
+  synthesis should be batched too (`MultiscaleFilterBanks.tune_mask_bank`); this
+  runs a few transforms at construction.  Host workspaces thread over their
+  subbands instead, and the [`CT`](@ref) and [`STICT`](@ref) have nothing to
+  tune: there it does nothing."""
 
-Allocate a [`CTWorkspace`](@ref) for images of `image_size` with the given `params`.
-The second form is a convenience overload with the element type as the first positional argument.
+"""
+    make_workspace(t::Union{CT, NSCT, TICT, STICT}, T::Type{<:Number}, dims; prewarm = true, threaded = nothing, tune = false)
+    make_workspace(t::Union{CT, NSCT, TICT, STICT}, x::AbstractMatrix; kwargs...)
+
+The workspace of the contourlet transform `t` ([`CTWorkspace`](@ref),
+[`NSCTWorkspace`](@ref), [`TICTWorkspace`](@ref) or [`STICTWorkspace`](@ref))
+for images of size `dims` and element type `T` (real or complex; an integer
+type means `float(T)`), on the host.  The second form takes size, element type
+and array type from the image `x`; pass a device array to build a device
+workspace.  With it, `analyze!` and `synthesize!` allocate nothing.  The
+workspace runs at the precision of `T`: a `Float32` workspace converts the
+filters of a `Float64` transform.
+
+$(_WORKSPACE_KEYWORDS)
 
 # Examples
 ```jldoctest
 julia> using Contourlets
 
-julia> p = ContourletParams(J = 2, L_array = [1, 2]);
+julia> t = CT(J = 2, L_array = [1, 2]);
 
-julia> ws = make_workspace(p, (64, 64));
+julia> ws = make_workspace(t, Float64, (64, 64));
 
-julia> ws isa CTWorkspace
-true
+julia> transform(ws) == t, eltype(ws), size(ws)
+(true, Float64, (64, 64))
 ```
 """
-make_workspace(
-    T::Type{<:Number}, image_size::Tuple{Int, Int},
-    params::ContourletParams; kwargs...
-) =
-    make_workspace(params, image_size; T = T, kwargs...)
+function MultiscaleTransformsBase.make_workspace(
+        t::CT, ::Type{T}, dims::Dims; prewarm::Bool = true,
+        threaded::Union{Bool, Nothing} = nothing, tune::Bool = false
+    ) where {T <: Number}
+    Td = data_eltype(T)
+    return _ct_workspace(t, Td, _check_image(dims), Matrix{Td}, prewarm)
+end
 
-"""
-    make_workspace(image::AbstractMatrix, params::ContourletParams) -> CTWorkspace
+function MultiscaleTransformsBase.make_workspace(
+        t::CT, x::AbstractArray; prewarm::Bool = true,
+        threaded::Union{Bool, Nothing} = nothing, tune::Bool = false
+    )
+    Td = data_eltype(x)
+    return _ct_workspace(t, Td, _check_image(size(x)), _matrix_type(x, Td), prewarm)
+end
 
-Allocate a [`CTWorkspace`](@ref) using the array type and element type of `image`.
-This is required for allocation-free execution on GPU arrays.
-"""
-make_workspace(
-    image::AbstractMatrix, params::ContourletParams{Tp}; kwargs...
-) where {Tp} =
-    make_workspace(params, size(image); T = eltype(image), M = typeof(similar(image, promote_type(Tp, eltype(image)), 0, 0)), kwargs...)
-
-function make_workspace(
-        params::ContourletParams{Tp},
-        image_size::Tuple{Int, Int};
-        T::Type{<:Number} = Float64,
-        M::Type{<:AbstractMatrix} = Matrix{promote_type(Tp, T)},
-        prewarm::Bool = true
-    ) where {Tp}
-    Td = promote_type(Tp, T)         # data buffer type (may be complex)
+function _ct_workspace(t::CT, ::Type{Td}, image_size::NTuple{2, Int}, ::Type{M}, prewarm::Bool) where {Td, M}
     Tf = filter_eltype(Td)          # real filter precision
-    p2 = _convert_params(Tf, params)
+    p2 = _convert_transform(Tf, t)
     bp_dims = _bandpass_dims(image_size, p2.J)
+    layout, firsts = _layout(p2, image_size)
     ref = _allocate_zeros(M, Td, (1, 1))
     # The DFB equivalent filters, FFT buffers and plans of every level are built
     # once here (the allocating API rebuilds them per call).
     runners = _dfb_level_runners(ref, p2, bp_dims, Tf)
-    ws = CTWorkspace{Td, Tf, M, eltype(runners)}(
-        p2, image_size, ScratchArena{M}(), ScratchArena{M}(), bp_dims, runners, _GraphCache(), _GraphCache()
+    ws = CTWorkspace{Td, Tf, M, eltype(runners), typeof(t)}(
+        t, p2, image_size, layout, firsts, ScratchArena{M}(), ScratchArena{M}(), bp_dims, runners,
+        _GraphCache(), _GraphCache()
     )
     # Grow the scratch arena to its steady-state size now (forward + inverse), so
     # the first user call is already allocation-free.
@@ -209,57 +237,28 @@ function make_workspace(
     return ws
 end
 
-"""
-    make_nsct_workspace(params::ContourletParams, image_size::Tuple{Int,Int}; T=Float64,
-                        threaded=nothing, tune=false) -> NSCTWorkspace
-    make_nsct_workspace(T::Type, image_size::Tuple{Int,Int}, params::ContourletParams)
-                        -> NSCTWorkspace
+function MultiscaleTransformsBase.make_workspace(
+        t::NSCT, ::Type{T}, dims::Dims; prewarm::Bool = true,
+        threaded::Union{Bool, Nothing} = nothing, tune::Bool = false
+    ) where {T <: Number}
+    Td = data_eltype(T)
+    return _nsct_workspace(t, Td, _check_image(dims), Matrix{Td}, prewarm, threaded, tune)
+end
 
-Allocate an [`NSCTWorkspace`](@ref).  All buffers have the full `image_size`
-since the NSCT performs no downsampling.
-The second form is a convenience overload with the element type as the first positional argument.
+function MultiscaleTransformsBase.make_workspace(
+        t::NSCT, x::AbstractArray; prewarm::Bool = true,
+        threaded::Union{Bool, Nothing} = nothing, tune::Bool = false
+    )
+    Td = data_eltype(x)
+    return _nsct_workspace(t, Td, _check_image(size(x)), _matrix_type(x, Td), prewarm, threaded, tune)
+end
 
-!!! note "Threading"
-    A host workspace holds one FFT buffer per Julia thread, and `nsct_forward!` /
-    `nsct_inverse!` split their independent subband FFTs between threads when their
-    own `threaded` keyword says so, call by call.  The `threaded` keyword here only
-    applies to the warm-up pass.
-
-`tune = true` (device workspaces, e.g. from the `image` form with a GPU array)
-measures how many subbands each batched FFT should take, and whether the synthesis
-should be batched too, on this device (`MultiscaleFilterBanks.tune_mask_bank`); this
-runs a few transforms at construction.  A host workspace threads over its subbands
-instead and ignores it.
-"""
-make_nsct_workspace(
-    T::Type{<:Number}, image_size::Tuple{Int, Int},
-    params::ContourletParams; kwargs...
-) =
-    make_nsct_workspace(params, image_size; T = T, kwargs...)
-
-"""
-    make_nsct_workspace(image::AbstractMatrix, params::ContourletParams) -> NSCTWorkspace
-
-Allocate an [`NSCTWorkspace`](@ref) using the array type and element type of `image`.
-This is required for allocation-free execution on GPU arrays.
-"""
-make_nsct_workspace(
-    image::AbstractMatrix, params::ContourletParams{Tp}; kwargs...
-) where {Tp} =
-    make_nsct_workspace(params, size(image); T = eltype(image), M = typeof(similar(image, promote_type(Tp, eltype(image)), 0, 0)), kwargs...)
-
-function make_nsct_workspace(
-        params::ContourletParams{Tp},
-        image_size::Tuple{Int, Int};
-        T::Type{<:Number} = Float64,
-        M::Type{<:AbstractMatrix} = Matrix{promote_type(Tp, T)},
-        prewarm::Bool = true,
-        threaded::Union{Bool, Nothing} = nothing,
-        tune::Bool = false
-    ) where {Tp}
-    Td = promote_type(Tp, T)         # data buffer type (may be complex)
+function _nsct_workspace(
+        t::NSCT, ::Type{Td}, image_size::NTuple{2, Int}, ::Type{M}, prewarm::Bool,
+        threaded::Union{Bool, Nothing}, tune::Bool
+    ) where {Td, M}
     Tf = filter_eltype(Td)          # real filter precision
-    p2 = _convert_params(Tf, params)
+    p2 = _convert_transform(Tf, t)
     J = p2.J
     # Precompute the NSDFB equivalent filters (the bank depends on the pyramid level
     # only through its depth and its filter upsampling; levels with equal keys share
@@ -279,14 +278,19 @@ function make_nsct_workspace(
         end
     end
     x = similar(ref, Td, image_size)
-    X, pfwd, pbwd = _ns_unnormalised_plans(x; measured = true)
+    X, pfwd, pbwd = _ns_unnormalised_plans(x; measured = true, unaligned = _unaligned_slices(x))
     ana, syn = _nsp_masks(Tf, p2.lp_filters, image_size, J; rows = axes(X, 1))
     ana = [_like(X, a) for a in ana]
     syn = [_like(X, a) for a in syn]
     items = [MaskItem((j, k), j, j, k) for j in 1:J for k in eachindex(banks[j].ana)]
+    offsets = _nsct_offsets(p2)
+    n = nsubbands(p2, image_size)
+    stack = similar(ref, Td, (0, 0, 0))
     engine = _mask_bank_engine(x, X, pfwd, pbwd, ana[1:J], syn[1:J], ana[J + 1], syn[J + 1], banks, items; tunable = tune)
-    engine = _maybe_tune(engine, tune, tune ? _similar_nsct_coefficients(p2, image_size, Td, M) : nothing, x)
-    ws = NSCTWorkspace{Td, Tf, M, typeof(engine)}(p2, image_size, ScratchArena{M}(), ScratchArena{M}(), engine)
-    prewarm && _prewarm_nsct!(ws; threaded = threaded)
+    engine = _maybe_tune(engine, tune, tune ? _Stacked(_zero_stack(ref, Td, image_size, n), offsets) : nothing, x)
+    ws = NSCTWorkspace{Td, Tf, M, typeof(engine), typeof(stack), typeof(t)}(
+        t, p2, image_size, offsets, n, stack, ScratchArena{M}(), ScratchArena{M}(), engine
+    )
+    prewarm && _prewarm_stacked!(ws, threaded)
     return ws
 end

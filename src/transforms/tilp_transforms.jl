@@ -30,96 +30,21 @@
 # Reference: R. Eslami & H. Radha, "Translation-invariant contourlet transform and
 # its application to image denoising", IEEE TIP 15(11), 2006, pp. 3362–3374.
 #
-# This file holds what the two share: the half tree of each channel, the
-# input / element-type checks, the coefficient containers and the
-# workspace helpers of the allocating forms.  The TICT is in `tict.jl`, the STICT
-# in `stict.jl`.
+# This file holds what the two share: the half tree of each channel and the
+# subband counts and offsets.  The TICT is in `tict.jl`, the STICT in `stict.jl`.
 
 # Half tree of each TILP channel (see above).
 const _TILP_HALVES = (:both, :second, :first, :both)
 
-_tict_types(params::ContourletParams{Tp}, ::Type{T}) where {Tp, T} = (Td = promote_type(Tp, T); (Td, filter_eltype(Td)))
-
-# ── Coefficient containers ────────────────────────────────────────────────────
-
 _tict_n_subbands(l::Int, c::Int) = _bank_n_subbands(l, _TILP_HALVES[c])
 
-"""
-    similar_tict_coefficients(params, image_size; Td=Float64, M=Matrix{Td}) -> TICTCoefficients
-
-Zero-filled TICT coefficients for `image_size`: every subband has the image's size.
-"""
-function similar_tict_coefficients(
-        params::ContourletParams{Tf}, image_size::Tuple{Int, Int};
-        Td::Type = Tf, M::Type{<:AbstractMatrix} = Matrix{Td}
-    ) where {Tf}
-    return _similar_tict_coefficients(params, image_size, Td, M)
+# Subband (i, c, k) is slice `offsets[4(i - 1) + c] + k` of TICT coefficients.
+function _tilp_offsets(t::Union{TICT, STICT})
+    offsets = Vector{Int}(undef, 4 * t.J)
+    s = 1
+    for (i, l) in enumerate(t.L_array), c in 1:4
+        offsets[4 * (i - 1) + c] = s
+        s += _tict_n_subbands(l, c)
+    end
+    return offsets
 end
-
-function _similar_tict_coefficients(
-        params::ContourletParams, image_size::Tuple{Int, Int}, ::Type{Td}, ::Type{M}
-    ) where {Td, M}
-    counts = [_tict_n_subbands(l, c) for l in params.L_array for c in 1:4]
-    storage, flat = _stacked_zeros(M, Td, image_size, sum(counts))
-    subbands = _split(_split(flat, counts), fill(4, length(params.L_array)))
-    return TICTCoefficients(_allocate_zeros(M, Td, image_size), subbands, storage)
-end
-
-"""
-    similar_stict_coefficients(params, image_size; Td=Float64, M=Matrix{Td}) -> TICTCoefficients
-
-Zero-filled STICT coefficients for `image_size`: each channel's subbands have the
-sizes of a critically sampled DFB of that channel.
-"""
-function similar_stict_coefficients(
-        params::ContourletParams{Tf}, image_size::Tuple{Int, Int};
-        Td::Type = Tf, M::Type{<:AbstractMatrix} = Matrix{Td}
-    ) where {Tf}
-    return _similar_stict_coefficients(params, image_size, Td, M)
-end
-
-function _similar_stict_coefficients(
-        params::ContourletParams, image_size::Tuple{Int, Int}, ::Type{Td}, ::Type{M}
-    ) where {Td, M}
-    z(dims) = _allocate_zeros(M, Td, dims)
-    n1, n2 = image_size
-    subbands = [
-        [[z(s) for s in dfb_subband_sizes(n1, n2, l; half = h)] for h in _TILP_HALVES]
-            for l in params.L_array
-    ]
-    return TICTCoefficients(z(image_size), subbands)
-end
-
-# ── Checks and workspace helpers ──────────────────────────────────────────────
-
-function _check_tict_input(ws, x::AbstractMatrix)
-    size(x) == ws.image_size || throw(
-        DimensionMismatch("image size $(size(x)) does not match the workspace's $(ws.image_size)")
-    )
-    return x
-end
-
-# The `!` forms write through the workspace's FFT plans, so the caller's arrays
-# must have the workspace's element type.
-function _check_tict_eltype(ws, A::AbstractMatrix, what::String)
-    eltype(A) === eltype(ws) || throw(
-        ArgumentError(
-            string(
-                "the $(what) has element type $(eltype(A)) but the workspace was built ",
-                "for $(eltype(ws)); build both with the same element type"
-            )
-        )
-    )
-    return A
-end
-
-# Workspace at the data's own precision: like `nsct_forward`, the allocating forms
-# never promote the data to the precision of `params`.
-function _own_workspace(make::F, x::AbstractMatrix, params::ContourletParams) where {F}
-    Td = data_eltype(x)
-    p = _convert_params(filter_eltype(Td), params)
-    return make(p, size(x), Td, typeof(similar(x, Td, 0, 0)))
-end
-
-# Input in the workspace's data type (a copy only when the types differ).
-_ws_input(ws, x::AbstractMatrix) = (Td = eltype(ws); Td === eltype(x) ? x : Td.(x))

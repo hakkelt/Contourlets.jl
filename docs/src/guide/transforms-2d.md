@@ -3,7 +3,7 @@
 Contourlets.jl offers four 2-D transforms over the same building blocks — a
 multiscale pyramid followed by a directional filter bank:
 
-| | [`ct_forward`](@ref) (CT) | [`nsct_forward`](@ref) (NSCT) | [`tict_forward`](@ref) (TICT) | [`stict_forward`](@ref) (STICT) |
+| | [`CT`](@ref) | [`NSCT`](@ref) | [`TICT`](@ref) | [`STICT`](@ref) |
 |---|---|---|---|---|
 | Pyramid | Laplacian | nonsubsampled | translation-invariant Laplacian | translation-invariant Laplacian |
 | Directional stage | decimated | nonsubsampled | nonsubsampled | decimated |
@@ -11,10 +11,20 @@ multiscale pyramid followed by a directional filter bank:
 | Redundancy | ≈ 4/3 | `1 + Σ_j 2^{L_j}` | `1 + 2J + 3 Σ_j 2^{L_j}` | `1 + 4J` |
 | Typical use | compression, M-term approximation | denoising, feature extraction | denoising | denoising at low redundancy |
 
-The CT and NSCT return a [`ContourletCoefficients`](@ref) / [`NSCTCoefficients`](@ref):
-a `coarse` low-pass residual plus `2^L_array[j]` directional subbands at every
-scale `j`, ordered by angle.  The TICT and STICT, described [below](@ref guide2d-tict),
-return a [`TICTCoefficients`](@ref) with four channels per scale.  For
+Each transform is an immutable value built from keywords, such as
+`CT(J = 3, L_array = [2, 2, 1])`, and is run with [`analyze`](@ref) and
+[`synthesize`](@ref).  The NSCT and TICT, whose subbands all have the image's
+size, return one array of size `(size(img)..., n)` with subband `i` in
+`c[:, :, i]`.  The CT and STICT, whose subbands have different sizes, return a
+[`SubbandVector`](@ref): a vector over one flat storage vector (`parent(c)`)
+that broadcasts and reduces like any vector (`c .* 2`, `abs.(c)`, `norm(c)`).
+For all four, [`subband`](@ref)`(t, c, i)` is subband `i` as a matrix view, and
+[`subband_layout`](@ref)`(t, size(img))` says which subband each `i` is.  For
+the CT and NSCT the low-pass residual comes first, as
+`(scale = J + 1, direction = 0)`, followed by the `2^L_array[j]` directional
+subbands `(scale = j, direction = k)` of every scale `j`, finest first and
+ordered by angle.  The TICT and STICT, described [below](@ref guide2d-tict),
+have four channels per level.  For
 volumes, see [Surfacelets.jl](https://github.com/hakkelt/Surfacelets.jl); for the underlying filter banks,
 [Theory](@ref theory).
 
@@ -29,10 +39,10 @@ Plots.default(show = false)
 using Contourlets, TestImages, ImageCore, Colors, Plots, Statistics
 Plots.default(show = false)
 
-img    = Float64.(Gray.(testimage("barbara")))[1:512, 100:611]
-params = ContourletParams(J = 3, L_array = parabolic_levels(3))
+img = Float64.(Gray.(testimage("barbara")))[1:512, 100:611]
+t   = CT(J = 3, L_array = parabolic_levels(3))
 
-println("direction exponents: ", params.L_array)   # 2^L subbands per scale
+println("direction exponents: ", t.L_array)   # 2^L subbands per scale
 ```
 
 [`parabolic_levels`](@ref) applies the parabolic scaling rule (width ≈ length²),
@@ -41,11 +51,12 @@ doubling the direction count every other scale.
 ## Contourlet transform
 
 ```@example guide2d
-coeffs = ct_forward(img, params)
-rec    = ct_inverse(coeffs, params)
+coeffs = analyze(t, img)
+rec    = synthesize(t, coeffs)
+layout = subband_layout(t, size(img))
 
-println("coarse size:        ", size(coeffs.coarse))
-println("subbands per scale: ", map(length, coeffs.subbands))
+println("coarse size:        ", size(subband(t, coeffs, 1)))
+println("subbands per scale: ", [count(s -> s.scale == j, layout) for j in 1:t.J])
 println("PR error:           ", maximum(abs, rec .- img))
 @assert maximum(abs, rec .- img) < 1e-12
 ```
@@ -60,14 +71,18 @@ the 99th percentile of `|coefficient|`) — without that, the magnitude spread
 across scales washes the fine subbands out.
 
 ```@example guide2d
-function plot_coefficients(coeffs; clip = 0.99)
-    panels = Any[heatmap(coeffs.coarse; title = "coarse", color = :grays,
-        aspect_ratio = :equal, axis = false, colorbar = false, yflip = true)]
-    for j in eachindex(coeffs.subbands), k in eachindex(coeffs.subbands[j])
-        sb = coeffs.subbands[j][k]
-        c  = max(quantile(abs.(vec(sb)), clip), eps())
-        push!(panels, heatmap(sb; title = "scale $j dir $k", color = :grays,
-            clims = (-c, c), aspect_ratio = :equal, axis = false,
+function plot_coefficients(t, coeffs, dims; clip = 0.99)
+    panels = Any[]
+    for (i, s) in enumerate(subband_layout(t, dims))
+        sb = subband(t, coeffs, i)
+        if s.direction == 0     # the low-pass residual
+            push!(panels, heatmap(sb; title = "coarse", color = :grays,
+                aspect_ratio = :equal, axis = false, colorbar = false, yflip = true))
+            continue
+        end
+        c = max(quantile(abs.(vec(sb)), clip), eps())
+        push!(panels, heatmap(sb; title = "scale $(s.scale) dir $(s.direction)",
+            color = :grays, clims = (-c, c), aspect_ratio = :equal, axis = false,
             colorbar = false, yflip = true))
     end
     cols = ceil(Int, sqrt(length(panels)))
@@ -75,7 +90,7 @@ function plot_coefficients(coeffs; clip = 0.99)
     return plot(panels...; layout = (rows, cols), size = (240 * cols, 240 * rows))
 end
 
-plot_coefficients(coeffs)
+plot_coefficients(t, coeffs, size(img))
 savefig("ct_coeffs.png"); nothing # hide
 ```
 
@@ -91,12 +106,12 @@ input resolution and a circular shift of the input shifts every subband by the
 same amount.
 
 ```@example guide2d
-ns_params = ContourletParams(J = 2, L_array = [2, 3])
+tn = NSCT(J = 2, L_array = [2, 3])
 
-ns  = nsct_forward(img, ns_params)
-rec = nsct_inverse(ns, ns_params)
+ns  = analyze(tn, img)
+rec = synthesize(tn, ns)
 
-println("coarse size: ", size(ns.coarse), " (input ", size(img), ")")
+println("coarse size: ", size(subband(tn, ns, 1)), " (input ", size(img), ")")
 println("PR error:    ", maximum(abs, rec .- img))
 @assert maximum(abs, rec .- img) < 2e-15
 ```
@@ -105,11 +120,11 @@ Shift invariance is a property the test suite enforces, not an approximation:
 
 ```@example guide2d
 shift      = (3, 7)
-ns_shifted = nsct_forward(circshift(img, shift), ns_params)
+ns_shifted = analyze(tn, circshift(img, shift))
 
-err = maximum(
-    maximum(abs, ns_shifted.subbands[j][k] .- circshift(ns.subbands[j][k], shift))
-        for j in 1:ns_params.J for k in eachindex(ns.subbands[j])
+err = maximum(  # every directional subband; subband 1 is the low-pass residual
+    maximum(abs, subband(tn, ns_shifted, i) .- circshift(subband(tn, ns, i), shift))
+        for i in 2:nsubbands(tn, size(img))
 )
 println("shift equivariance error: ", err)
 @assert err < 1e-10
@@ -120,7 +135,7 @@ responses — so they are rendered with a lower clip (75th percentile) than the
 critically sampled CT above:
 
 ```@example guide2d
-plot_coefficients(ns; clip = 0.75)
+plot_coefficients(tn, ns, size(img); clip = 0.75)
 savefig("nsct_coeffs.png"); nothing # hide
 ```
 
@@ -136,9 +151,9 @@ polyphase components of the pyramid's detail image, for every position of the
 sampling lattice — instead of the NSCT's one.  A directional filter bank then
 splits every channel:
 
-- [`tict_forward`](@ref) uses the nonsubsampled DFB: the whole transform is
+- [`TICT`](@ref) uses the nonsubsampled DFB: the whole transform is
   translation invariant.
-- [`stict_forward`](@ref) uses the critically sampled DFB: only the pyramid is
+- [`STICT`](@ref) uses the critically sampled DFB: only the pyramid is
   translation invariant, and the redundancy drops to `4J + 1`.
 
 Channels 1 and 4 get the full directional tree; channels 2 and 3 pass mostly row
@@ -146,29 +161,32 @@ and mostly column frequencies, so they get half trees that split only that fan
 (see [Theory](@ref theory-tict)).
 
 ```@example guide2d
-ti_params = ContourletParams(J = 2, L_array = [3, 2])
+tt  = TICT(J = 2, L_array = [3, 2])
+tst = STICT(J = 2, L_array = [3, 2])
 
-ti  = tict_forward(img, ti_params)
-sti = stict_forward(img, ti_params)
+ti  = analyze(tt, img)
+sti = analyze(tst, img)
 
-subbands(c) = sum(length, c.subbands[j][ch] for j in 1:ti_params.J for ch in 1:4)
-redundancy(c) = (sum(length, Iterators.flatten(Iterators.flatten(c.subbands))) +
-                 length(c.coarse)) / length(img)
+ndirectional(t) = nsubbands(t, size(img)) - 1   # all but the low-pass residual
+redundancy(c) = length(c) / length(img)
 
-println("TICT:  ", subbands(ti), " subbands, redundancy ", redundancy(ti))
-println("STICT: ", subbands(sti), " subbands, redundancy ", redundancy(sti))
-println("PR errors: ", maximum(abs, tict_inverse(ti, ti_params) .- img), ", ",
-    maximum(abs, stict_inverse(sti, ti_params) .- img))
+println("TICT:  ", ndirectional(tt), " subbands, redundancy ", redundancy(ti))
+println("STICT: ", ndirectional(tst), " subbands, redundancy ", redundancy(sti))
+println("PR errors: ", maximum(abs, synthesize(tt, ti) .- img), ", ",
+    maximum(abs, synthesize(tst, sti) .- img))
 ```
 
-The coefficients are indexed `c.subbands[scale][channel][direction]`.  Like the
-NSCT, the TICT commutes with circular shifts exactly:
+[`subband_layout`](@ref) names their subbands `(level = j, channel = ch, direction = d)`,
+after the low-pass residual `(level = J + 1, channel = 0, direction = 0)`: level by
+level from the finest, channels 1 to 4 within a level, then the directions of
+each channel.  Like
+the NSCT, the TICT commutes with circular shifts exactly:
 
 ```@example guide2d
-ti_shifted = tict_forward(circshift(img, shift), ti_params)
+ti_shifted = analyze(tt, circshift(img, shift))
 err = maximum(
-    maximum(abs, ti_shifted.subbands[j][ch][d] .- circshift(ti.subbands[j][ch][d], shift))
-        for j in 1:ti_params.J for ch in 1:4 for d in eachindex(ti.subbands[j][ch])
+    maximum(abs, subband(tt, ti_shifted, i) .- circshift(subband(tt, ti, i), shift))
+        for i in 2:nsubbands(tt, size(img))
 )
 println("shift equivariance error: ", err)
 @assert err < 1e-10
@@ -187,12 +205,14 @@ function crop_center(sb, frac = 4)
     return sb[r, c]
 end
 
-function plot_tict_level(c, j; clip = 0.99)
-    nd = maximum(length, c.subbands[j])
+function plot_tict_level(t, c, j; clip = 0.99)
+    layout = subband_layout(t, size(img))
+    nd = maximum(s.direction for s in layout if s.level == j)
     panels = Any[]
     for ch in 1:4, d in 1:nd
-        if d <= length(c.subbands[j][ch])
-            sb = crop_center(c.subbands[j][ch][d])
+        i = findfirst(==((level = j, channel = ch, direction = d)), layout)
+        if i !== nothing
+            sb = crop_center(subband(t, c, i))
             cl = max(quantile(abs.(vec(sb)), clip), eps())
             push!(panels, heatmap(sb; title = "channel $ch dir $d", color = :grays,
                 clims = (-cl, cl), aspect_ratio = :equal, axis = false,
@@ -204,22 +224,22 @@ function plot_tict_level(c, j; clip = 0.99)
     return plot(panels...; layout = (4, nd), size = (200 * nd, 800))
 end
 
-plot_tict_level(ti, 2)
+plot_tict_level(tt, ti, 2)
 savefig("tict_coeffs.png"); nothing # hide
 ```
 
 ![](tict_coeffs.png)
 
 ```@example guide2d
-plot_tict_level(sti, 2)
+plot_tict_level(tst, sti, 2)
 savefig("stict_coeffs.png"); nothing # hide
 ```
 
 ![](stict_coeffs.png)
 
 Both transforms are FFT-based and have workspaces —
-[`make_tict_workspace`](@ref), [`make_stict_workspace`](@ref) — with which the
-`!` forms allocate nothing.
+[`TICTWorkspace`](@ref), [`STICTWorkspace`](@ref), built by
+[`make_workspace`](@ref) — with which the `!` forms allocate nothing.
 
 ## Choosing an API variant
 
@@ -228,29 +248,40 @@ only in who owns the output container and the scratch buffers.
 
 | Form | Output container | Scratch buffers | Use when |
 |---|---|---|---|
-| `ct_forward(img, params)` | allocated | allocated | one-shot processing |
-| `ct_forward!(dst, img, params)` | caller | allocated | you control the output's lifetime |
-| `ct_forward(img, params; workspace = ws)` | allocated | reused | repeated calls, output kept per call |
-| `ct_forward!(dst, img, params; workspace = ws)` | caller | reused | iterative algorithms — no per-call allocation |
+| `analyze(t, img)` | allocated | allocated | one-shot processing |
+| `analyze!(c, t, img)` | caller | allocated | you control the output's lifetime |
+| `analyze(t, img; workspace = ws)` | allocated | reused | repeated calls, output kept per call |
+| `analyze!(c, t, img; workspace = ws)` | caller | reused | iterative algorithms — no per-call allocation |
 
-The `!` and non-`!` entry points take identical arguments; the only difference
-is the leading destination. [`make_workspace`](@ref) (CT) and
-[`make_nsct_workspace`](@ref) (NSCT) build the scratch,
-[`similar_coefficients`](@ref) / [`similar_nsct_coefficients`](@ref) the
-coefficient container, and `Base.summarysize(ws)` reports a workspace's
-actual memory footprint.
+The synthesis has the same four forms: `synthesize(t, c)` and
+`synthesize!(img_out, t, c)`, each with or without `workspace = ws`.  The `!`
+and non-`!` entry points take identical arguments; the only difference is the
+leading destination.  A workspace knows its transform (`transform(ws)`), so
+`analyze(ws, img)`, `analyze!(c, ws, img)`, `synthesize(ws, c)` and
+`synthesize!(img_out, ws, c)` are the same as the workspace forms above
+without repeating `t`.
+
+[`make_workspace`](@ref)`(t, img)` builds the scratch for images like `img`
+(element type, size and array type, so a device array gives a device
+workspace), and `make_workspace(t, Float64, (512, 512))` builds it from an
+element type and a size.  A workspace serves one transform, element type and
+image size; passing it with any other throws.  It runs at the precision of its
+data: `Float32` images get a `Float32` workspace even with the default
+`Float64` filters.  [`similar_coefficients`](@ref)`(t, img)` builds the
+coefficient container, and `Base.summarysize(ws)` reports a workspace's actual
+memory footprint.
 
 ```@example guide2d
-ws         = make_nsct_workspace(ns_params, size(img))   # prewarm = true by default
-coeffs_buf = similar_nsct_coefficients(ns_params, size(img))
+ws         = make_workspace(tn, img)   # prewarm = true by default
+coeffs_buf = similar_coefficients(tn, img)
 img_out    = similar(img)
 
 for _ in 1:10
-    nsct_forward!(coeffs_buf, img, ns_params; workspace = ws)
+    analyze!(coeffs_buf, tn, img; workspace = ws)
 
-    # … threshold / prox step on coeffs_buf.subbands …
+    # … threshold / prox step on coeffs_buf …
 
-    nsct_inverse!(img_out, coeffs_buf, ns_params; workspace = ws)
+    synthesize!(img_out, tn, coeffs_buf; workspace = ws)
 end
 
 println("PR error after 10 iterations: ", maximum(abs, img_out .- img))
@@ -264,7 +295,7 @@ buys.
 !!! note "Threading"
     A host NSCT or TICT workspace keeps one FFT buffer per Julia thread, and with
     threading on (`threaded = true`, or the default for complex data) the
-    `!` transforms split their independent subband FFTs between the threads.  The
+    workspace forms split their independent subband FFTs between the threads.  The
     choice is made per call.
 
 ## Using the stages on their own

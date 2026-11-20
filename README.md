@@ -32,14 +32,15 @@ denoising, compression and compressed-sensing reconstruction.
 - **Directional Filter Bank** (DFB) with the "23-45" Phoong et al. (1995) ladder
   filters, computed as the multichannel bank of Do's thesis (closed-form
   equivalent filters on the DFT grid, diagonal sampling per channel)
-- **CT**: `ct_forward` / `ct_inverse` — nearly critically sampled, O(N) complexity
-- **NSCT**: `nsct_forward` / `nsct_inverse` — invariant under circular shifts via
-  à trous upsampling
-- **TICT / STICT**: `tict_forward` / `stict_forward` (Eslami & Radha 2006) — a
+- **CT**: `CT` — nearly critically sampled, O(N) complexity
+- **NSCT**: `NSCT` — invariant under circular shifts via à trous upsampling
+- **TICT / STICT**: `TICT` / `STICT` (Eslami & Radha 2006) — a
   translation-invariant Laplacian pyramid with nonsubsampled or critically
   sampled directional filter banks
+- **One interface for all four**: `analyze` / `synthesize` and their `!` forms,
+  from [MultiscaleTransformsBase.jl](https://github.com/hakkelt/MultiscaleTransformsBase.jl)
 - **Workspace API**: reuse preallocated buffers across iterations with
-  `make_workspace` and the `workspace=ws` kwarg on both `ct_forward!` and `ct_forward`
+  `make_workspace` and the `workspace = ws` keyword of `analyze!` and `analyze`
 - Parabolic scaling utility `parabolic_levels` for optimal direction count per scale
 - **Multithreading**: the NSCT and TICT take a `threaded` keyword; by default
   real data runs SIMD-vectorised and complex data multi-threaded
@@ -61,29 +62,30 @@ Pkg.add("Contourlets")
 using Contourlets, Random
 
 img = randn(256, 256)
-params = ContourletParams(J=4, L_array=parabolic_levels(4))
+t = CT(J = 4, L_array = parabolic_levels(4))
 
 # Allocating API
-coeffs = ct_forward(img, params)
-img_rec = ct_inverse(coeffs, params)
+coeffs = analyze(t, img)
+img_rec = synthesize(t, coeffs)
 @assert maximum(abs, img_rec .- img) < 1e-12
 
 # Preallocated-buffer API (for iterative algorithms)
-ws = make_workspace(params, size(img))
-coeffs = similar_coefficients(params, size(img))
+ws = make_workspace(t, img)
+coeffs = similar_coefficients(t, img)
 img_out = similar(img)
 for iter in 1:100
-    ct_forward!(coeffs, img, params; workspace=ws)
+    analyze!(coeffs, t, img; workspace = ws)
     # … threshold / prox step on coeffs …
-    ct_inverse!(img_out, coeffs, params; workspace=ws)
+    synthesize!(img_out, t, coeffs; workspace = ws)
 end
 ```
 
-The `!` entry points accept the same `params` positional and optional `workspace`
-kwarg as the allocating forms; the only difference is that `!` writes into a
-caller-supplied output container instead of allocating one.  With `workspace=ws`
-the pyramid stage reuses preallocated scratch buffers — no per-iteration
-allocation.
+The `!` entry points take the same transform and optional `workspace` keyword
+as the allocating forms; the only difference is that `!` writes into a
+caller-supplied output instead of allocating one.  With `workspace = ws` the
+transform reuses preallocated scratch buffers, filters and FFT plans — no
+per-iteration allocation.  The transforms are frames, not tight frames:
+`synthesize` inverts `analyze`; it is not its adjoint.
 
 ## Related packages
 

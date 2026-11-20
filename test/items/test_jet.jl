@@ -6,7 +6,8 @@
     # ── Types / constructors ─────────────────────────────────────────────────
     @test_call target_modules = (Contourlets,) FilterPair([1.0, 2.0], [1.0, 2.0])
     @test_call target_modules = (Contourlets,) QuincunxFilterPair([0.25, 0.25])
-    @test_call target_modules = (Contourlets,) ContourletParams(J = 2, L_array = [1, 2])
+    @test_call target_modules = (Contourlets,) CT(J = 2, L_array = [1, 2])
+    @test_call target_modules = (Contourlets,) TICT(J = 2, L_array = [1, 2])
     @test_call target_modules = (Contourlets,) parabolic_levels(4)
 
     # ── Filters ──────────────────────────────────────────────────────────────
@@ -58,41 +59,23 @@
     nsbs = Contourlets.nsdfb_decompose(x, 2, Q2345, 1)
     @test_call target_modules = (Contourlets,) Contourlets.nsdfb_reconstruct(nsbs, Q2345, 1)
 
-    # ── Transforms ───────────────────────────────────────────────────────────
-    p = ContourletParams(J = 2, L_array = [1, 2])
-    @test_call target_modules = (Contourlets,) ct_forward(x, p)
-    coeffs = ct_forward(x, p)
-    @test_call target_modules = (Contourlets,) ct_inverse(coeffs, p)
-    @test_call target_modules = (Contourlets,) nsct_forward(x, p)
-    nc_coeffs = nsct_forward(x, p)
-    @test_call target_modules = (Contourlets,) nsct_inverse(nc_coeffs, p)
-
-    # ── Workspace ────────────────────────────────────────────────────────────
-    @test_call target_modules = (Contourlets,) make_workspace(p, (16, 16))
-    @test_call target_modules = (Contourlets,) make_nsct_workspace(p, (16, 16))
-    ws = make_workspace(p, (16, 16))
-
-    @test_call target_modules = (Contourlets,) similar_coefficients(p, (16, 16))
-    @test_call target_modules = (Contourlets,) similar_nsct_coefficients(p, (16, 16))
-    sc = similar_coefficients(p, (16, 16))
-    @test_call target_modules = (Contourlets,) ct_forward!(sc, x, p; workspace = ws)
+    # ── Transforms, allocating and with workspaces ───────────────────────────
+    ts = (CT(J = 2, L_array = [1, 2]), NSCT(J = 2, L_array = [1, 2]), TICT(J = 2, L_array = [1, 2]), STICT(J = 2, L_array = [1, 2]))
     rec = similar(x)
-    @test_call target_modules = (Contourlets,) ct_inverse!(rec, sc, p; workspace = ws)
-    nsws = make_nsct_workspace(p, (16, 16))
-    nsc = similar_nsct_coefficients(p, (16, 16))
-    @test_call target_modules = (Contourlets,) nsct_forward!(nsc, x, p; workspace = nsws)
-    @test_call target_modules = (Contourlets,) nsct_inverse!(rec, nsc, p; workspace = nsws)
-
-    # ── TICT / STICT ─────────────────────────────────────────────────────────
-    @test_call target_modules = (Contourlets,) tict_forward(x, p)
-    @test_call target_modules = (Contourlets,) stict_forward(x, p)
-    tc, sc2 = tict_forward(x, p), stict_forward(x, p)
-    @test_call target_modules = (Contourlets,) tict_inverse(tc, p)
-    @test_call target_modules = (Contourlets,) stict_inverse(sc2, p)
-    @test_call target_modules = (Contourlets,) make_tict_workspace(p, (16, 16))
-    @test_call target_modules = (Contourlets,) make_stict_workspace(p, (16, 16))
-    @test_call target_modules = (Contourlets,) similar_tict_coefficients(p, (16, 16))
-    @test_call target_modules = (Contourlets,) similar_stict_coefficients(p, (16, 16))
+    for t in ts
+        @test_call target_modules = (Contourlets,) analyze(t, x)
+        c = analyze(t, x)
+        @test_call target_modules = (Contourlets,) synthesize(t, c)
+        @test_call target_modules = (Contourlets,) make_workspace(t, Float64, (16, 16))
+        @test_call target_modules = (Contourlets,) make_workspace(t, x)
+        @test_call target_modules = (Contourlets,) similar_coefficients(t, x)
+        @test_call target_modules = (Contourlets,) subband_layout(t, (16, 16))
+        ws = make_workspace(t, x)
+        @test_call target_modules = (Contourlets,) analyze!(c, t, x; workspace = ws)
+        @test_call target_modules = (Contourlets,) synthesize!(rec, t, c; workspace = ws)
+        @test_call target_modules = (Contourlets,) analyze!(c, ws, x)
+        @test_call target_modules = (Contourlets,) synthesize(ws, c)
+    end
 end
 
 @testitem "@test_opt Contourlets core functions" tags = [:jet] begin
@@ -123,28 +106,17 @@ end
     @test_opt target_modules = (Contourlets,) Contourlets.dfb_reconstruct(sbs, Q2345)
 
     # ── Transforms ───────────────────────────────────────────────────────────
-    p = ContourletParams(J = 2, L_array = [1, 2])
-    @test_opt target_modules = (Contourlets,) ct_forward(x, p)
-    coeffs = ct_forward(x, p)
-    @test_opt target_modules = (Contourlets,) ct_inverse(coeffs, p)
-    @test_opt target_modules = (Contourlets,) nsct_forward(x, p)
-    nc = nsct_forward(x, p)
-    @test_opt target_modules = (Contourlets,) nsct_inverse(nc, p)
-
-    # ── Workspace API ────────────────────────────────────────────────────────
-    ws = make_workspace(p, (16, 16))
-    sc = similar_coefficients(p, (16, 16))
-    @test_opt target_modules = (Contourlets,) ct_forward!(sc, x, p; workspace = ws)
+    # The workspace paths are the hot loops: no dynamic dispatch.
+    ts = (CT(J = 2, L_array = [1, 2]), NSCT(J = 2, L_array = [1, 2]), TICT(J = 2, L_array = [1, 2]), STICT(J = 2, L_array = [1, 2]))
     rec = similar(x)
-    @test_opt target_modules = (Contourlets,) ct_inverse!(rec, sc, p; workspace = ws)
-
-    # The TICT/STICT workspace paths are the hot loops: no dynamic dispatch.
-    tws, sws = make_tict_workspace(p, (16, 16)), make_stict_workspace(p, (16, 16))
-    tc, stc = similar_tict_coefficients(p, (16, 16)), similar_stict_coefficients(p, (16, 16))
-    @test_opt target_modules = (Contourlets,) tict_forward!(tc, x, p; workspace = tws)
-    @test_opt target_modules = (Contourlets,) tict_inverse!(rec, tc, p; workspace = tws)
-    @test_opt target_modules = (Contourlets,) stict_forward!(stc, x, p; workspace = sws)
-    @test_opt target_modules = (Contourlets,) stict_inverse!(rec, stc, p; workspace = sws)
+    for t in ts
+        @test_opt target_modules = (Contourlets,) analyze(t, x)
+        c = analyze(t, x)
+        @test_opt target_modules = (Contourlets,) synthesize(t, c)
+        ws = make_workspace(t, x)
+        @test_opt target_modules = (Contourlets,) analyze!(c, t, x; workspace = ws)
+        @test_opt target_modules = (Contourlets,) synthesize!(rec, t, c; workspace = ws)
+    end
 end
 
 @testitem "@test_call Contourlets in-place and threading API" tags = [:jet] begin
@@ -152,12 +124,11 @@ end
     Random.seed!(102)
     M = (Contourlets,)
     x = randn(16, 16)
-    p = ContourletParams(J = 2, L_array = [1, 2])
 
     # ── Threading policies ───────────────────────────────────────────────────
     @test_call target_modules = M FilterPair(CDF97.h, CDF97.g)
-    @test_call target_modules = M ct_forward(x, p; threaded = false)
-    @test_call target_modules = M nsct_forward(x, p; threaded = true)
+    @test_call target_modules = M analyze(CT(J = 2, L_array = [1, 2]), x; threaded = false)
+    @test_call target_modules = M analyze(NSCT(J = 2, L_array = [1, 2]), x; threaded = true)
 
     # ── Primitives (in place) ────────────────────────────────────────────────
     y = Contourlets.rect_downsample(x)
@@ -183,32 +154,23 @@ end
     @test_call target_modules = M Contourlets.dfb_decompose!([similar(s) for s in sbs], x, 2, Q2345)
     @test_call target_modules = M Contourlets.dfb_reconstruct!(similar(x), sbs, Q2345)
 
-    # ── Coefficient / workspace types (through their constructors) ───────────
-    ws = make_workspace(p, (16, 16))
-    @test_call target_modules = M similar_coefficients(p, (16, 16))
-    @test_call target_modules = M make_nsct_workspace(p, (16, 16))
-    @test_call target_modules = M similar_nsct_coefficients(p, (16, 16))
-    @test ws isa CTWorkspace
-    @test similar_coefficients(p, (16, 16)) isa ContourletCoefficients
-    @test similar_nsct_coefficients(p, (16, 16)) isa NSCTCoefficients
-    @test make_nsct_workspace(p, (16, 16)) isa NSCTWorkspace
-    @test similar_tict_coefficients(p, (16, 16)) isa TICTCoefficients
-    @test similar_stict_coefficients(p, (16, 16)) isa TICTCoefficients
-    @test make_tict_workspace(p, (16, 16)) isa TICTWorkspace
-    @test make_stict_workspace(p, (16, 16)) isa STICTWorkspace
-
-    # ── TICT / STICT (in place) ──────────────────────────────────────────────
-    tws, sws = make_tict_workspace(p, (16, 16)), make_stict_workspace(p, (16, 16))
-    tc, stc = similar_tict_coefficients(p, (16, 16)), similar_stict_coefficients(p, (16, 16))
+    # ── Workspaces and coefficients, threaded and not ───────────────────────
     rec = similar(x)
-    @test_call target_modules = M tict_forward!(tc, x, p; workspace = tws)
-    @test_call target_modules = M tict_forward!(tc, x, p; workspace = tws, threaded = false)
-    @test_call target_modules = M tict_inverse!(rec, tc, p; workspace = tws)
-    @test_call target_modules = M stict_forward!(stc, x, p; workspace = sws)
-    @test_call target_modules = M stict_inverse!(rec, stc, p; workspace = sws)
-    @test_call target_modules = M nsct_forward!(
-        similar_nsct_coefficients(p, (16, 16)), x, p; workspace = make_nsct_workspace(p, (16, 16)), threaded = false
-    )
+    for t in (NSCT(J = 2, L_array = [1, 2]), TICT(J = 2, L_array = [1, 2]))
+        ws = make_workspace(t, x)
+        c = similar_coefficients(t, x)
+        @test c isa Array{Float64, 3}
+        for threaded in (false, true)
+            @test_call target_modules = M analyze!(c, t, x; workspace = ws, threaded)
+            @test_call target_modules = M synthesize!(rec, t, c; workspace = ws, threaded)
+        end
+    end
+    @test make_workspace(CT(J = 2, L_array = [1, 2]), x) isa CTWorkspace
+    @test make_workspace(NSCT(J = 2, L_array = [1, 2]), x) isa NSCTWorkspace
+    @test make_workspace(TICT(J = 2, L_array = [1, 2]), x) isa TICTWorkspace
+    @test make_workspace(STICT(J = 2, L_array = [1, 2]), x) isa STICTWorkspace
+    @test similar_coefficients(CT(J = 2, L_array = [1, 2]), x) isa SubbandVector{Float64}
+    @test similar_coefficients(STICT(J = 2, L_array = [1, 2]), x) isa SubbandVector{Float64}
 end
 
 @testitem "@test_opt Contourlets remaining API" tags = [:jet] begin
@@ -220,12 +182,11 @@ end
     k = randn(3, 3)
     h = [1.0, 2.0, 1.0]
     dst = similar(x)
-    p = ContourletParams(J = 2, L_array = [1, 2])
 
     # ── Types / constructors / filters ───────────────────────────────────────
     @test_opt target_modules = M FilterPair([1.0, 2.0], [1.0, 2.0])
     @test_opt target_modules = M QuincunxFilterPair([0.25, 0.25])
-    @test_opt target_modules = M ContourletParams(J = 2, L_array = [1, 2])
+    @test_opt target_modules = M NSCT(J = 2, L_array = [1, 2])
     @test_opt target_modules = M parabolic_levels(4)
     @test_opt target_modules = M upsample_filter([1.0, 2.0, 3.0], 2)
     @test_opt target_modules = M Contourlets.upsample_kernel([1.0 2.0; 3.0 4.0], 2)
@@ -267,24 +228,16 @@ end
     nsbs = Contourlets.nsdfb_decompose(x, 2, Q2345, 1)
     @test_opt target_modules = M Contourlets.nsdfb_reconstruct(nsbs, Q2345, 1)
 
-    # ── Workspaces, coefficient containers and the remaining in-place paths ──
-    @test_opt target_modules = M make_workspace(p, (16, 16))
-    @test_opt target_modules = M make_nsct_workspace(p, (16, 16))
-    @test_opt target_modules = M make_tict_workspace(p, (16, 16))
-    @test_opt target_modules = M make_stict_workspace(p, (16, 16))
-    @test_opt target_modules = M similar_coefficients(p, (16, 16))
-    @test_opt target_modules = M similar_nsct_coefficients(p, (16, 16))
-    @test_opt target_modules = M similar_tict_coefficients(p, (16, 16))
-    @test_opt target_modules = M similar_stict_coefficients(p, (16, 16))
-    nsws = make_nsct_workspace(p, (16, 16))
-    nsc = similar_nsct_coefficients(p, (16, 16))
-    @test_opt target_modules = M nsct_forward!(nsc, x, p; workspace = nsws)
-    @test_opt target_modules = M nsct_inverse!(dst, nsc, p; workspace = nsws)
-    @test_opt target_modules = M tict_forward(x, p)    # builds its own workspace
-    @test_opt target_modules = M stict_forward(x, p)
-    @test_opt target_modules = M tict_inverse!(dst, similar_tict_coefficients(p, (16, 16)), p; workspace = make_tict_workspace(p, (16, 16)))
-    tcs = tict_forward(x, p)
-    scs = stict_forward(x, p)
-    @test_opt target_modules = M tict_inverse(tcs, p)
-    @test_opt target_modules = M stict_inverse(scs, p)
+    # ── Workspaces and coefficients ──────────────────────────────────────────
+    ts = (CT(J = 2, L_array = [1, 2]), NSCT(J = 2, L_array = [1, 2]), TICT(J = 2, L_array = [1, 2]), STICT(J = 2, L_array = [1, 2]))
+    for t in ts
+        @test_opt target_modules = M make_workspace(t, Float64, (16, 16))
+        @test_opt target_modules = M make_workspace(t, x)
+        @test_opt target_modules = M similar_coefficients(t, x)
+        ws = make_workspace(t, x)
+        c = similar_coefficients(t, x)
+        @test_opt target_modules = M analyze!(c, ws, x)
+        @test_opt target_modules = M synthesize!(dst, ws, c)
+        @test_opt target_modules = M synthesize(t, c; workspace = ws)
+    end
 end

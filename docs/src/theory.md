@@ -257,21 +257,16 @@ angular wedges (from the DFB):
 
 ```@example theory
 N = 128
-params = ContourletParams(J=2, L_array=[2, 1])
+tc = CT(J = 2, L_array = [2, 1])
 composite_freq = zeros(N, N)
 
-# Compute frequency response of the coarse low-pass level
-c = ct_forward(zeros(N, N), params)
-c.coarse[size(c.coarse,1)÷2+1, size(c.coarse,2)÷2+1] = 1.0
-composite_freq .= max.(composite_freq, abs.(fftshift(fft(ct_inverse(c, params)))))
-
-# Compute frequency responses of all directional wedges across both scales
-for j in 1:length(c.subbands)
-    for k in 1:length(c.subbands[j])
-        c_dir = ct_forward(zeros(N, N), params)
-        c_dir.subbands[j][k][size(c_dir.subbands[j][k],1)÷2+1, size(c_dir.subbands[j][k],2)÷2+1] = 1.0
-        composite_freq .= max.(composite_freq, abs.(fftshift(fft(ct_inverse(c_dir, params)))))
-    end
+# Frequency responses of the coarse low-pass level (subband 1) and of all
+# directional wedges across both scales
+for i in 1:nsubbands(tc, (N, N))
+    c_i = analyze(tc, zeros(N, N))
+    sb = subband(tc, c_i, i)
+    sb[size(sb, 1) ÷ 2 + 1, size(sb, 2) ÷ 2 + 1] = 1.0
+    composite_freq .= max.(composite_freq, abs.(fftshift(fft(synthesize(tc, c_i)))))
 end
 
 p_ct = heatmap(log1p.(composite_freq), color = :viridis, title = "Contourlet Frequency Tiling",
@@ -289,16 +284,17 @@ of the directional subbands at each scale; the crop doubles with the scale:
 
 ```@example theory
 Na = 256
-pa = ContourletParams(J = 3, L_array = [3, 3, 2])
+ta = CT(J = 3, L_array = [3, 3, 2])
+layout_a = subband_layout(ta, (Na, Na))
 function ct_atom(j, k)
-    c = ct_forward(zeros(Na, Na), pa)
-    sb = c.subbands[j][k]
+    c = analyze(ta, zeros(Na, Na))
+    sb = subband(ta, c, findfirst(==((scale = j, direction = k)), layout_a))
     sb[size(sb, 1) ÷ 2 + 1, size(sb, 2) ÷ 2 + 1] = 1.0
-    return ct_inverse(c, pa)
+    return synthesize(ta, c)
 end
 pat = plot(layout = (3, 4), size = (860, 660))
 for j in 1:3
-    n = 2^pa.L_array[j]
+    n = 2^ta.L_array[j]
     for (col, k) in enumerate(round.(Int, range(1, n; length = 4)))
         a = ct_atom(j, k)
         i0, j0 = Tuple(argmax(abs.(a)))
@@ -358,41 +354,38 @@ of a 2-level NSCT:
 
 ```@example theory
 N_nsct = 64
-params_nsct = ContourletParams(J=2, L_array=[2, 1])
-ref_nsct = nsct_forward(zeros(N_nsct, N_nsct), params_nsct)
-n_l1 = length(ref_nsct.subbands[1])   # 4  (2^L_array[1])
-n_l2 = length(ref_nsct.subbands[2])   # 2  (2^L_array[2])
+t_nsct = NSCT(J = 2, L_array = [2, 1])
+layout_nsct = subband_layout(t_nsct, (N_nsct, N_nsct))
+n_l1 = count(s -> s.scale == 1, layout_nsct)   # 4  (2^L_array[1])
+n_l2 = count(s -> s.scale == 2, layout_nsct)   # 2  (2^L_array[2])
 mid = N_nsct ÷ 2 + 1
 
-function nsct_spec(params, j, k)        # j=0 → coarse
-    c = nsct_forward(zeros(N_nsct, N_nsct), params)
-    if j == 0
-        c.coarse[mid, mid] = 1.0
-    else
-        c.subbands[j][k][mid, mid] = 1.0
-    end
-    log1p.(abs.(fftshift(fft(nsct_inverse(c, params)))))
+function nsct_spec(t, j, k)        # j=0 → coarse
+    c = analyze(t, zeros(N_nsct, N_nsct))
+    i = j == 0 ? 1 : findfirst(==((scale = j, direction = k)), subband_layout(t, (N_nsct, N_nsct)))
+    subband(t, c, i)[mid, mid] = 1.0
+    log1p.(abs.(fftshift(fft(synthesize(t, c)))))
 end
 
 # Layout: row 1 = 4 finest-scale subbands, row 2 = 2 coarser subbands + coarse LP + composite
 p_nsct = plot(layout = (2, 4), size = (860, 440))
 
 for k in 1:n_l1
-    heatmap!(p_nsct[k], nsct_spec(params_nsct, 1, k), color = :viridis,
+    heatmap!(p_nsct[k], nsct_spec(t_nsct, 1, k), color = :viridis,
         title = "scale 1, dir $k", aspect_ratio = :equal, axis = false, colorbar = false)
 end
 for k in 1:n_l2
-    heatmap!(p_nsct[n_l1 + k], nsct_spec(params_nsct, 2, k), color = :viridis,
+    heatmap!(p_nsct[n_l1 + k], nsct_spec(t_nsct, 2, k), color = :viridis,
         title = "scale 2, dir $k", aspect_ratio = :equal, axis = false, colorbar = false)
 end
-heatmap!(p_nsct[n_l1 + n_l2 + 1], nsct_spec(params_nsct, 0, 0), color = :viridis,
+heatmap!(p_nsct[n_l1 + n_l2 + 1], nsct_spec(t_nsct, 0, 0), color = :viridis,
     title = "coarse LP", aspect_ratio = :equal, axis = false, colorbar = false)
 
 # Composite: per-pixel max across all channels
 composite_nsct = zeros(N_nsct, N_nsct)
-composite_nsct .= max.(composite_nsct, exp.(nsct_spec(params_nsct, 0, 0)) .- 1)
-for j in 1:length(ref_nsct.subbands), k in 1:length(ref_nsct.subbands[j])
-    composite_nsct .= max.(composite_nsct, exp.(nsct_spec(params_nsct, j, k)) .- 1)
+composite_nsct .= max.(composite_nsct, exp.(nsct_spec(t_nsct, 0, 0)) .- 1)
+for s in layout_nsct[2:end]
+    composite_nsct .= max.(composite_nsct, exp.(nsct_spec(t_nsct, s.scale, s.direction)) .- 1)
 end
 heatmap!(p_nsct[n_l1 + n_l2 + 2], log1p.(composite_nsct), color = :viridis,
     title = "composite", aspect_ratio = :equal, axis = false, colorbar = false)
@@ -446,13 +439,14 @@ and 60 % of ``K_2``'s in the other one:
 Nt = 64
 δt = zeros(Nt, Nt); δt[1, 1] = 1.0
 # The analysis of an impulse is each channel's impulse response.
-t0 = tict_forward(δt, ContourletParams(J = 1, L_array = [0]))
+tt0 = TICT(J = 1, L_array = [0])
+t0 = analyze(tt0, δt)    # subband 1 is the lowpass, then one subband per channel
 ptl = plot(layout = (1, 5), size = (900, 210))
 for c in 1:4
-    heatmap!(ptl[c], fftshift(abs.(fft(t0.subbands[1][c][1]))); color = :viridis,
+    heatmap!(ptl[c], fftshift(abs.(fft(subband(tt0, t0, c + 1)))); color = :viridis,
         title = "K$(c - 1)", aspect_ratio = :equal, axis = false, colorbar = false)
 end
-heatmap!(ptl[5], fftshift(abs.(fft(t0.coarse))); color = :viridis,
+heatmap!(ptl[5], fftshift(abs.(fft(subband(tt0, t0, 1)))); color = :viridis,
     title = "lowpass", aspect_ratio = :equal, axis = false, colorbar = false)
 savefig(ptl, "tilp_channels.png"); nothing # hide
 ```
@@ -476,12 +470,15 @@ product of a TILP channel and a directional filter.  Rows are the channels
 ``K_0`` to ``K_3``: the full trees give four subbands, the half trees three:
 
 ```@example theory
-t2 = tict_forward(δt, ContourletParams(J = 1, L_array = [2]))
+tt2 = TICT(J = 1, L_array = [2])
+t2 = analyze(tt2, δt)
+layout2 = subband_layout(tt2, size(δt))
 pts = plot(layout = (4, 4), size = (760, 760))
 for c in 1:4, d in 1:4
     i = (c - 1) * 4 + d
-    if d <= length(t2.subbands[1][c])
-        heatmap!(pts[i], fftshift(abs.(fft(t2.subbands[1][c][d]))); color = :viridis,
+    k = findfirst(==((level = 1, channel = c, direction = d)), layout2)
+    if k !== nothing
+        heatmap!(pts[i], fftshift(abs.(fft(subband(tt2, t2, k)))); color = :viridis,
             title = "K$(c - 1), dir $d", aspect_ratio = :equal, axis = false,
             colorbar = false)
     else

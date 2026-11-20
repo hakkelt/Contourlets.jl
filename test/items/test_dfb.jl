@@ -260,13 +260,14 @@ end
 
 @testitem "NSCT is directionally selective for oriented inputs" tags = [:nsct, :directional] begin
     n = 128
-    p = ContourletParams(J = 1, L_array = [3])
+    t = NSCT(J = 1, L_array = [3])
     for deg in (30, 60, 90, 120, 150)
         x = [
             cos(2π * 0.42 * (cos(deg * π / 180) * j + sin(deg * π / 180) * i))
                 for i in 1:n, j in 1:n
         ]
-        e = [sum(abs2, s) for s in nsct_forward(x, p; threaded = false).subbands[1]]
+        c = analyze(t, x; threaded = false)
+        e = [sum(abs2, subband(t, c, k)) for k in 2:9]
         @test maximum(e) > 0.5 * sum(e)
     end
 end
@@ -276,17 +277,13 @@ end
     Random.seed!(99)
     n = 32
     x = randn(n, n)
-    p = ContourletParams(J = 1, L_array = [3])
-    c0 = nsct_forward(x, p; threaded = false)
+    t = NSCT(J = 1, L_array = [3])
+    c0 = analyze(t, x; threaded = false)
     for shift in ((3, 0), (0, 5), (2, 7))
-        cs = nsct_forward(circshift(x, shift), p; threaded = false)
-        # LP residual
-        @test maximum(abs, c0.coarse .- circshift(cs.coarse, .-shift)) < 1.0e-10
-        # Directional subbands
-        for j in 1:length(c0.subbands)
-            for (a, b) in zip(c0.subbands[j], cs.subbands[j])
-                @test maximum(abs, a .- circshift(b, .-shift)) < 1.0e-10
-            end
+        cs = analyze(t, circshift(x, shift); threaded = false)
+        # The lowpass and the directional subbands
+        for k in axes(c0, 3)
+            @test maximum(abs, subband(t, c0, k) .- circshift(subband(t, cs, k), .-shift)) < 1.0e-10
         end
     end
 end
@@ -386,8 +383,7 @@ end
     Random.seed!(71)
     x = randn(32, 32)
     l = 2
-    p = ContourletParams(J = 1, L_array = [l])
-    ws = make_workspace(p, (32, 32))
+    ws = make_workspace(CT(J = 1, L_array = [l]), Float64, (32, 32))
     subbands = [zeros(16, 16) for _ in 1:4]
     Contourlets.dfb_decompose!(subbands, x, l, Q2345; workspace = ws)
     ref = Contourlets.dfb_decompose(x, l, Q2345)
@@ -400,8 +396,7 @@ end
     using Random
     Random.seed!(72)
     x = randn(64, 64)
-    p = ContourletParams(J = 1, L_array = [2])        # Q2345
-    ws = make_workspace(p, (64, 64))
+    ws = make_workspace(CT(J = 1, L_array = [2]), Float64, (64, 64))     # Q2345
     q2 = QuincunxFilterPair([0.25, 0.25])
     ref = Contourlets.dfb_decompose(x, 2, q2)
     msg_filters = "built with different DFB filters"
@@ -423,7 +418,7 @@ end
     # Half trees are never held by a CTWorkspace
     @test_throws "full-tree DFBs only" Contourlets.dfb_decompose(x, 2, Q2345; half = :first, workspace = ws)
     # Workspaces of the other transforms
-    wn = make_nsct_workspace(p, (64, 64))
+    wn = make_workspace(NSCT(J = 1, L_array = [2]), Float64, (64, 64))
     @test_throws "workspace must be a CTWorkspace or nothing" Contourlets.dfb_decompose(x, 2, Q2345; workspace = wn)
     # A matching workspace still serves the call
     @test all(maximum(abs, a .- b) < 1.0e-12 for (a, b) in zip(Contourlets.dfb_decompose(x, 2, Q2345; workspace = ws), Contourlets.dfb_decompose(x, 2, Q2345)))
@@ -455,8 +450,7 @@ end
     Random.seed!(73)
     x = randn(32, 32)
     l = 2
-    p = ContourletParams(J = 1, L_array = [l])
-    ws = make_workspace(p, (32, 32))
+    ws = make_workspace(CT(J = 1, L_array = [l]), Float64, (32, 32))
     sbs = Contourlets.dfb_decompose(x, l, Q2345)
     bp = zeros(32, 32)
     Contourlets.dfb_reconstruct!(bp, sbs, Q2345; workspace = ws)

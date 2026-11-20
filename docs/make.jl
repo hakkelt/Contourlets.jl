@@ -1,21 +1,28 @@
-using Documenter, Contourlets, MultiscaleFilterBanks
+using Documenter, Contourlets, MultiscaleFilterBanks, MultiscaleTransformsBase
 
 DocMeta.setdocmeta!(Contourlets, :DocTestSetup, :(using Contourlets, Random); recursive = true)
 DocMeta.setdocmeta!(
     MultiscaleFilterBanks, :DocTestSetup,
     :(using MultiscaleFilterBanks, Random); recursive = true
 )
+DocMeta.setdocmeta!(
+    MultiscaleTransformsBase, :DocTestSetup,
+    :(using MultiscaleTransformsBase); recursive = true
+)
 
 makedocs(;
-    # MultiscaleFilterBanks is in the list because Contourlets re-exports its
-    # `FilterPair` and `CDF97`, whose docstrings live there.  Its other public
-    # names are documented in its own manual, so `checkdocs` skips it.
-    modules = [Contourlets, MultiscaleFilterBanks],
-    checkdocs_ignored_modules = [MultiscaleFilterBanks],
+    # MultiscaleFilterBanks and MultiscaleTransformsBase are in the list because
+    # Contourlets re-exports names whose docstrings live there (`FilterPair`,
+    # `CDF97`; the interface).  Their other public names are documented in their
+    # own manuals, so `checkdocs` skips them.
+    modules = [Contourlets, MultiscaleFilterBanks, MultiscaleTransformsBase],
+    checkdocs_ignored_modules = [MultiscaleFilterBanks, MultiscaleTransformsBase],
     sitename = "Contourlets.jl",
     remotes = Dict(
         pkgdir(MultiscaleFilterBanks) =>
             Documenter.Remotes.GitHub("hakkelt", "MultiscaleFilterBanks.jl"),
+        pkgdir(MultiscaleTransformsBase) =>
+            Documenter.Remotes.GitHub("hakkelt", "MultiscaleTransformsBase.jl"),
     ),
     authors = "Tamás Hakkel",
     format = Documenter.HTML(;

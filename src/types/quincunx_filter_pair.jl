@@ -37,6 +37,10 @@ QuincunxFilterPair(f_ladder::AbstractVector{T}) where {T <: AbstractFloat} =
 
 Base.eltype(::QuincunxFilterPair{T}) where {T} = T
 
+# Pairs with equal ladder filters are equal and hash alike.
+Base.:(==)(a::QuincunxFilterPair, b::QuincunxFilterPair) = a.f_ladder == b.f_ladder
+Base.hash(q::QuincunxFilterPair, h::UInt) = hash(q.f_ladder, hash(:QuincunxFilterPair, h))
+
 # Convert a QuincunxFilterPair to element type T (no-op when already T).
 # Both methods bound `T <: AbstractFloat`: with an unbounded `T` the diagonal
 # identity method is *less* specific than the converting one, so it never ran and

@@ -4,166 +4,108 @@
 #   coarse ← image
 #   for j = 1 … J:
 #       coarse_j, bandpass_j = lp_decompose(coarse, lp_filters)
-#       subbands[j] = dfb_decompose(bandpass_j, L_array[j], dfb_filters)
+#       subbands of level j = dfb_decompose(bandpass_j, L_array[j], dfb_filters)
 #       coarse = coarse_j
 #
 # Inverse (runs j = J … 1):
-#       bandpass_j = dfb_reconstruct(subbands[j], dfb_filters)
+#       bandpass_j = dfb_reconstruct(subbands of level j, dfb_filters)
 #       coarse = lp_reconstruct(coarse, bandpass_j, lp_filters)
+#
+# The coefficients are a `SubbandVector`: the lowpass, then the subbands of
+# level 1, 2, …, J (`subband_layout`).  The directional filter banks write
+# straight into its subbands, which are reshaped views of its storage.
 #
 # Reference: M. N. Do & M. Vetterli, "The contourlet transform: an efficient
 # directional multiresolution image representation", IEEE TIP 14(12), 2005 (the
 # pyramidal directional filter bank).
 
-"""
-    ct_forward(image, params::ContourletParams; workspace=nothing) -> ContourletCoefficients
-
-Discrete Contourlet Transform forward pass.
-
-Pass a preallocated `CTWorkspace` via `workspace` to reuse scratch
-buffers across calls (allocation-free pyramid stage).
-
-# Examples
-```jldoctest
-julia> using Contourlets, Random; Random.seed!(1);
-
-julia> x = randn(64, 64);
-
-julia> p = ContourletParams(J=2, L_array=[1,2]);
-
-julia> coeffs = ct_forward(x, p);
-
-julia> length(coeffs.subbands[2])
-4
-```
-
-# References
-1. M. N. Do and M. Vetterli, "The Contourlet Transform: An Efficient Directional
-   Multiresolution Image Representation", *IEEE Transactions on Image Processing*,
-   14(12):2091–2106, 2005.
-   [doi:10.1109/TIP.2005.859376](https://doi.org/10.1109/TIP.2005.859376)
-2. P. J. Burt and E. H. Adelson, "The Laplacian Pyramid as a Compact Image Code",
-   *IEEE Transactions on Communications*, 31(4):532–540, 1983.
-   [doi:10.1109/TCOM.1983.1095851](https://doi.org/10.1109/TCOM.1983.1095851)
-3. R. H. Bamberger and M. J. T. Smith, "A Filter Bank for the Directional
-   Decomposition of Images: Theory and Design", *IEEE Transactions on Signal
-   Processing*, 40(4):882–893, 1992.
-   [doi:10.1109/78.127960](https://doi.org/10.1109/78.127960)
-"""
-function ct_forward(
-        image::AbstractMatrix, params::ContourletParams;
-        workspace::Union{CTWorkspace, Nothing} = nothing
-    )
-    if workspace !== nothing
-        Tw = eltype(workspace)
-        coeffs = _similar_coefficients(params, size(image), Tw, Matrix{Tw})
-        img = Tw === eltype(image) ? image : Tw.(image)
-        # Not `ct_forward!`: the coefficients are new on every call, so a device
-        # graph captured with them would never replay.
-        _ct_forward_inner!(coeffs, img, workspace)
-        return coeffs
+# The subband layout of a CT on a `dims` image, and the index of the first
+# subband of each level.
+function _layout(t::CT, dims::NTuple{2, Int})
+    n1, n2 = dims
+    levels = Vector{Vector{NTuple{2, Int}}}(undef, t.J)
+    for j in 1:t.J
+        levels[j] = dfb_subband_sizes(n1, n2, t.L_array[j])
+        n1, n2 = cld(n1, 2), cld(n2, 2)
     end
-    # No-workspace: direct construction keeps the return type concrete (type-stable).
-    Td = data_eltype(image)
+    return _stack_levels((n1, n2), levels, dims)
+end
+
+# The layout of a lowpass of size `coarse` followed by the subbands of `groups`,
+# and the index of each group's first subband.
+function _stack_levels(coarse::NTuple{2, Int}, groups::Vector{Vector{NTuple{2, Int}}}, dims::NTuple{2, Int})
+    sizes = [coarse]
+    first = Vector{Int}(undef, length(groups))
+    for (g, s) in enumerate(groups)
+        first[g] = length(sizes) + 1
+        append!(sizes, s)
+    end
+    return SubbandLayout(sizes, dims), first
+end
+
+# Without a workspace: the pyramid convolves, and each level builds its DFB.
+function _analyze_direct!(c::SubbandVector, first::Vector{Int}, t::CT, image::AbstractMatrix)
+    Td = eltype(c)
     Tf = filter_eltype(Td)
-    img = Td === eltype(image) ? image : Td.(image)
-    J = params.J
-    L = params.L_array
-    p_out = _convert_params(Tf, params)
-    fp, qfp = p_out.lp_filters, p_out.dfb_filters
-    subbands = Vector{Vector{Matrix{Td}}}(undef, J)
-    coarse = img
-    for j in 1:J
+    p = _convert_transform(Tf, t)
+    fp, qfp = p.lp_filters, p.dfb_filters
+    coarse = Td === eltype(image) ? image : Td.(image)
+    for j in 1:p.J
         coarse_j, bp_j = lp_decompose(coarse, fp)
-        subbands[j] = dfb_decompose(bp_j, L[j], qfp)
+        l = p.L_array[j]
+        dfb_decompose!(_Bands(c, first[j], 1 << l), bp_j, l, qfp)
         coarse = coarse_j
     end
-    return ContourletCoefficients(coarse, subbands)
+    copyto!(subband(c, 1), coarse)
+    return c
 end
 
-"""
-    ct_forward!(coeffs::ContourletCoefficients, image, params::ContourletParams; workspace=nothing) -> coeffs
-
-In-place CT forward pass writing into the preallocated `coeffs`.
-
-Pass a `CTWorkspace` via `workspace` for an allocation-free pyramid
-stage (the directional stage still allocates its tree when no workspace is
-given).  Allocate `coeffs` with [`similar_coefficients`](@ref).
-"""
-function ct_forward!(
-        coeffs::ContourletCoefficients,
-        image::AbstractMatrix,
-        params::ContourletParams;
-        workspace::Union{CTWorkspace, Nothing} = nothing
-    )
-    workspace === nothing && return _ct_forward_noworkspace!(coeffs, image, params)
-    return _ct_forward_ws_barrier!(coeffs, image, workspace)
+function _synthesize_direct!(x::AbstractMatrix, first::Vector{Int}, t::CT, c::SubbandVector)
+    Tf = filter_eltype(eltype(c))
+    p = _convert_transform(Tf, t)
+    fp, qfp = p.lp_filters, p.dfb_filters
+    coarse = copy(subband(c, 1))
+    for j in p.J:-1:1
+        bp = dfb_reconstruct(_Bands(c, first[j], 1 << p.L_array[j]), qfp)
+        coarse = lp_reconstruct(coarse, bp, fp)
+    end
+    return copyto!(x, coarse)
 end
 
-# Typed dispatch barrier — forces specialization on the concrete workspace type,
-# avoiding Union-boxing overhead on the hot workspace path.
-function _ct_forward_ws_barrier!(
-        coeffs::ContourletCoefficients,
-        image::AbstractMatrix,
-        ws::CTWorkspace
-    )
+# Typed dispatch barrier: the workspace keyword is untyped.  `capture` selects the
+# seam that `ContourletsCUDAExt` overloads to capture device graphs.
+function _ragged_forward!(c::SubbandVector, image::AbstractMatrix, ws::CTWorkspace, capture::Bool)
     T = eltype(ws)
     img = T === eltype(image) ? image : T.(image)
-    return _ct_forward_ws!(coeffs, img, ws)
+    capture ? _ct_forward_ws!(c, img, ws) : _ct_forward_inner!(c, img, ws)
+    return c
 end
 
-# Internal dispatch seam — overloaded by ContourletsCUDAExt for graph capture.
-function _ct_forward_ws!(
-        coeffs::ContourletCoefficients{T},
-        image::AbstractMatrix,
-        ws::CTWorkspace{T}
-    ) where {T}
-    _ct_forward_inner!(coeffs, image, ws)
-    return coeffs
+function _ragged_inverse!(x::AbstractMatrix, c::SubbandVector, ws::CTWorkspace, capture::Bool)
+    capture ? _ct_inverse_ws!(x, c, ws) : _ct_inverse_inner!(x, c, ws)
+    return x
 end
 
-# No-workspace in-place path: mirrors the allocating body but writes into coeffs.
-function _ct_forward_noworkspace!(
-        coeffs::ContourletCoefficients,
-        image::AbstractMatrix,
-        params::ContourletParams
-    )
-    Td = eltype(coeffs.coarse)
-    Tf = filter_eltype(Td)
-    img = Td === eltype(image) ? image : Td.(image)
-    J = params.J
-    L = params.L_array
-    p_out = _convert_params(Tf, params)
-    fp, qfp = p_out.lp_filters, p_out.dfb_filters
-    coarse = img
-    for j in 1:J
-        coarse_j, bp_j = lp_decompose(coarse, fp)
-        sbs = dfb_decompose(bp_j, L[j], qfp)
-        for (k, sb) in enumerate(sbs)
-            copyto!(coeffs.subbands[j][k], sb)
-        end
-        coarse = coarse_j
-    end
-    copyto!(coeffs.coarse, coarse)
-    return coeffs
+# Internal dispatch seams — overloaded by ContourletsCUDAExt for graph capture.
+function _ct_forward_ws!(c::SubbandVector{T}, image::AbstractMatrix, ws::CTWorkspace{T}) where {T}
+    _ct_forward_inner!(c, image, ws)
+    return c
 end
 
-function _ct_forward_inner!(
-        coeffs::ContourletCoefficients{T},
-        image::AbstractMatrix,
-        ws::CTWorkspace{T}
-    ) where {T}
-    params = ws.params
-    J = params.J
-    L = params.L_array
-    fp = params.lp_filters
-    qfp = params.dfb_filters
+function _ct_inverse_ws!(image::AbstractMatrix{T}, c::SubbandVector{T}, ws::CTWorkspace{T}) where {T}
+    _ct_inverse_inner!(image, c, ws)
+    return image
+end
 
+function _ct_forward_inner!(c::SubbandVector{T}, image::AbstractMatrix, ws::CTWorkspace{T}) where {T}
+    p = ws.params
+    L = p.L_array
+    fp, qfp = p.lp_filters, p.dfb_filters
     img = T === eltype(image) ? image : T.(image)
     _arena_reset!(ws.fwd_scratch)
     return _with_arena(ws.fwd_scratch) do
         current = img
-        for j in 1:J
+        for j in 1:p.J
             n1, n2 = size(current)
             coarse_j = _scratch_like(current, cld(n1, 2), cld(n2, 2))
             bp_j = _scratch_like(current, n1, n2)
@@ -172,128 +114,28 @@ function _ct_forward_inner!(
 
             lp_decompose!(coarse_j, bp_j, current, fp; tmp = tmp_j, tmp2 = tmp2_j)
             # The workspace runner holds this level's filters, buffers and plans.
-            dfb_decompose!(coeffs.subbands[j], bp_j, L[j], qfp; workspace = ws)
+            dfb_decompose!(_Bands(c, ws.first[j], 1 << L[j]), bp_j, L[j], qfp; workspace = ws)
             current = coarse_j
         end
-        copyto!(coeffs.coarse, current)
+        copyto!(subband(c, 1), current)
     end
 end
 
-"""
-    ct_inverse(coeffs::ContourletCoefficients, params::ContourletParams; workspace=nothing) -> Matrix
-
-Discrete Contourlet Transform inverse pass.
-
-Pass a preallocated `CTWorkspace` via `workspace` to reuse scratch
-buffers across calls.
-
-# Examples
-```jldoctest
-julia> using Contourlets, Random
-
-julia> x = randn(Xoshiro(1), 64, 64);
-
-julia> p = ContourletParams(J = 2, L_array = [1, 2]);
-
-julia> rec = ct_inverse(ct_forward(x, p), p);
-
-julia> maximum(abs, rec .- x) < 1e-12
-true
-```
-"""
-function ct_inverse(
-        coeffs::ContourletCoefficients,
-        params::ContourletParams;
-        workspace::Union{CTWorkspace, Nothing} = nothing
-    )
-    if workspace !== nothing
-        Tw = eltype(workspace)
-        M = _ws_matrix_type(workspace)
-        image = _allocate_zeros(M, Tw, workspace.image_size)
-        # Not `ct_inverse!`: as in `ct_forward`, a graph would never replay.
-        _ct_inverse_inner!(image, coeffs, workspace)
-        return image
-    end
-    return _ct_inverse_alloc(coeffs, params)
-end
-
-"""
-    ct_inverse!(image, coeffs::ContourletCoefficients, params::ContourletParams; workspace=nothing) -> image
-
-In-place CT inverse pass writing the reconstruction into `image`.
-
-Pass a `CTWorkspace` via `workspace` for an allocation-free pyramid
-stage.  The `image` array must match the size and element type of the original
-input image (use `similar(original_image)` or `similar_coefficients` helpers).
-"""
-function ct_inverse!(
-        image::AbstractMatrix,
-        coeffs::ContourletCoefficients,
-        params::ContourletParams;
-        workspace::Union{CTWorkspace, Nothing} = nothing
-    )
-    workspace === nothing && return (copyto!(image, _ct_inverse_alloc(coeffs, params)); image)
-    return _ct_inverse_ws_barrier!(image, coeffs, workspace)
-end
-
-# Typed dispatch barrier — forces specialization on the concrete workspace type.
-function _ct_inverse_ws_barrier!(
-        image::AbstractMatrix,
-        coeffs::ContourletCoefficients,
-        ws::CTWorkspace
-    )
-    return _ct_inverse_ws!(image, coeffs, ws)
-end
-
-# Internal dispatch seam — overloaded by ContourletsCUDAExt for graph capture.
-function _ct_inverse_ws!(
-        image::AbstractMatrix{T},
-        coeffs::ContourletCoefficients{T},
-        ws::CTWorkspace{T}
-    ) where {T}
-    _ct_inverse_inner!(image, coeffs, ws)
-    return image
-end
-
-# Allocating inverse — the reconstructed image size requires running the DFB,
-# so we cannot pre-allocate from params alone without running the transform.
-function _ct_inverse_alloc(
-        coeffs::ContourletCoefficients,
-        params::ContourletParams
-    )
-    Tf = filter_eltype(eltype(coeffs.coarse))
-    p_out = _convert_params(Tf, params)
-    J = p_out.J
-    fp = p_out.lp_filters
-    qfp = p_out.dfb_filters
-    coarse = copy(coeffs.coarse)
-
-    for j in J:-1:1
-        bp = dfb_reconstruct(coeffs.subbands[j], qfp)
-        coarse = lp_reconstruct(coarse, bp, fp)
-    end
-    return coarse
-end
-
-function _ct_inverse_inner!(
-        image::AbstractMatrix{T},
-        coeffs::ContourletCoefficients{T},
-        ws::CTWorkspace{T}
-    ) where {T}
-    params = ws.params
-    J = params.J
-    fp = params.lp_filters
-    qfp = params.dfb_filters
+function _ct_inverse_inner!(image::AbstractMatrix{T}, c::SubbandVector{T}, ws::CTWorkspace{T}) where {T}
+    p = ws.params
+    L = p.L_array
+    fp, qfp = p.lp_filters, p.dfb_filters
 
     _arena_reset!(ws.inv_scratch)
     _with_arena(ws.inv_scratch) do
-        current = _scratch_like(image, size(coeffs.coarse, 1), size(coeffs.coarse, 2))
-        copyto!(current, coeffs.coarse)
+        lowpass = subband(c, 1)
+        current = _scratch_like(image, size(lowpass, 1), size(lowpass, 2))
+        copyto!(current, lowpass)
 
-        for j in J:-1:1
+        for j in p.J:-1:1
             n1, n2 = ws.bp_dims[j]
             bp = _scratch_like(current, n1, n2)
-            dfb_reconstruct!(bp, coeffs.subbands[j], qfp; workspace = ws)
+            dfb_reconstruct!(bp, _Bands(c, ws.first[j], 1 << L[j]), qfp; workspace = ws)
             tmp_j = _scratch_like(current, n1, n2)
             tmp2_j = _scratch_like(current, n1, n2)
             if j > 1
@@ -309,49 +151,11 @@ function _ct_inverse_inner!(
 end
 
 # Grow the workspace scratch arena to its steady-state size by running one forward
-# + inverse pass on zeros, so the first real call allocates nothing.  Called from
-# `make_workspace(...; prewarm=true)`.
+# + inverse pass on zeros, so the first real call allocates nothing.
 function _prewarm_ct!(ws::CTWorkspace{Td, Tf, M}) where {Td, Tf, M}
     img = _allocate_zeros(M, Td, ws.image_size)
-    coeffs = _similar_coefficients(ws.params, ws.image_size, Td, M)
-    ct_forward!(coeffs, img, ws.params; workspace = ws)
-    ct_inverse!(img, coeffs, ws.params; workspace = ws)
+    c = SubbandVector(fill!(similar(img, Td, length(ws.layout)), zero(Td)), ws.layout)
+    _ct_forward_inner!(c, img, ws)
+    _ct_inverse_inner!(img, c, ws)
     return ws
-end
-
-"""
-    similar_coefficients(params::ContourletParams, image_size) -> ContourletCoefficients
-
-Allocate a `ContourletCoefficients` structure with the correct buffer sizes for an
-image of size `image_size`, without computing any transform.  Useful together with
-`ct_forward!` in iterative algorithms.
-"""
-function similar_coefficients(
-        params::ContourletParams{Tf},
-        image_size::Tuple{Int, Int};
-        Td::Type = Tf,
-        M::Type{<:AbstractMatrix} = Matrix{Td}
-    ) where {Tf}
-    return _similar_coefficients(params, image_size, Td, M)
-end
-
-# Positional form: the data and matrix types are type parameters, so the builder
-# specialises on them (keyword arguments of type `Type` do not).
-function _similar_coefficients(
-        params::ContourletParams, image_size::Tuple{Int, Int}, ::Type{Td}, ::Type{M}
-    ) where {Td, M}
-    J = params.J
-    L = params.L_array
-    n1, n2 = image_size
-    A = typeof(_allocate_zeros(M, Td, (1, 1)))
-    subbands = Vector{Vector{A}}(undef, J)
-    cur_n1, cur_n2 = n1, n2
-    for j in 1:J
-        szs = dfb_subband_sizes(cur_n1, cur_n2, L[j])
-        subbands[j] = [_allocate_zeros(M, Td, s) for s in szs]
-        cur_n1 = cld(cur_n1, 2)
-        cur_n2 = cld(cur_n2, 2)
-    end
-    coarse = _allocate_zeros(M, Td, (cur_n1, cur_n2))
-    return ContourletCoefficients(coarse, subbands)
 end

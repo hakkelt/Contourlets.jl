@@ -1,84 +1,75 @@
 # Complex-data support: the transforms are linear with real filters, so a complex
 # image is filtered as complex·real (filters are never promoted to complex) and
-#   T(x + i·y) == T(x) + i·T(y)
-# holds bit-for-bit.
+#   T(x + i·y) ≈ T(x) + i·T(y).
+# Complex data runs through complex FFTs and real data through real ones, so the
+# two sides agree to rounding, not bit for bit.
 
 @testitem "CT complex round-trip and eltype" tags = [:ct] begin
     using Random
     Random.seed!(40)
-    p = ContourletParams(J = 3, L_array = parabolic_levels(3))
+    t = CT(J = 3, L_array = parabolic_levels(3))
     z = complex.(randn(64, 64), randn(64, 64))
-    c = ct_forward(z, p)
-    @test eltype(c.coarse) == ComplexF64
-    @test all(eltype(sb) == ComplexF64 for level in c.subbands for sb in level)
-    rec = ct_inverse(c, p)
+    c = analyze(t, z)
+    @test eltype(c) == ComplexF64
+    rec = synthesize(t, c)
     @test eltype(rec) == ComplexF64
     @test maximum(abs, rec .- z) < 1.0e-12
 end
 
-@testitem "CT complex linearity (real filters)" tags = [:ct] begin
+@testitem "complex linearity (real filters)" tags = [:ct, :nsct, :tict] begin
     using Random
     Random.seed!(41)
-    p = ContourletParams(J = 2, L_array = [2, 3])
     x = randn(64, 64)
     y = randn(64, 64)
-    cz = ct_forward(complex.(x, y), p)
-    cx = ct_forward(x, p)
-    cy = ct_forward(y, p)
-    # Approximate equality: a real-filtered complex transform splits over re/im parts.
-    # The real path's @simd loops may reorder floating-point sums, so this is
-    # approximate, not bit-for-bit.
-    @test cz.coarse ≈ cx.coarse .+ im .* cy.coarse
-    for j in 1:p.J, k in eachindex(cz.subbands[j])
-        @test cz.subbands[j][k] ≈ cx.subbands[j][k] .+ im .* cy.subbands[j][k]
+    for t in (CT(J = 2, L_array = [2, 3]), NSCT(J = 2, L_array = [2, 3]), TICT(J = 2, L_array = [2, 3]), STICT(J = 2, L_array = [2, 3]))
+        cz = analyze(t, complex.(x, y))
+        @test cz ≈ complex.(analyze(t, x), analyze(t, y))
     end
 end
 
 @testitem "NSCT complex round-trip and shift-invariance" tags = [:nsct] begin
     using Random
     Random.seed!(42)
-    p = ContourletParams(J = 2, L_array = [2, 3])
+    t = NSCT(J = 2, L_array = [2, 3])
     z = complex.(randn(48, 48), randn(48, 48))
-    c = nsct_forward(z, p)
-    @test eltype(c.coarse) == ComplexF64
-    rec = nsct_inverse(c, p)
+    c = analyze(t, z)
+    @test eltype(c) == ComplexF64
+    rec = synthesize(t, c)
     @test maximum(abs, rec .- z) < 1.0e-12
     # circular-shift invariance carries over to complex data
     s = (5, 3)
-    cs = nsct_forward(circshift(z, s), p)
-    for j in 1:p.J, k in eachindex(c.subbands[j])
-        @test maximum(abs, cs.subbands[j][k] .- circshift(c.subbands[j][k], s)) < 1.0e-10
+    cs = analyze(t, circshift(z, s))
+    for i in 2:size(c, 3)
+        @test maximum(abs, subband(t, cs, i) .- circshift(subband(t, c, i), s)) < 1.0e-10
     end
 end
 
 @testitem "ComplexF32 precision is preserved" tags = [:ct, :nsct] begin
     using Random
     Random.seed!(43)
-    p = ContourletParams(J = 2, L_array = [2, 3])
     z = ComplexF32.(complex.(randn(Float32, 64, 64), randn(Float32, 64, 64)))
-    c = ct_forward(z, p)
-    @test eltype(c.coarse) == ComplexF32
-    @test maximum(abs, ct_inverse(c, p) .- z) < 1.0f-4
-    n = nsct_forward(z, p)
-    @test eltype(n.coarse) == ComplexF32
-    @test maximum(abs, nsct_inverse(n, p) .- z) < 1.0f-4
+    for t in (CT(J = 2, L_array = [2, 3]), NSCT(J = 2, L_array = [2, 3]))
+        c = analyze(t, z)
+        @test eltype(c) == ComplexF32
+        @test maximum(abs, synthesize(t, c) .- z) < 1.0f-4
+    end
 end
 
 @testitem "complex workspace path matches allocating" tags = [:ct, :nsct] begin
     using Random
     Random.seed!(44)
-    p = ContourletParams(J = 2, L_array = [1, 2])
     z = complex.(randn(64, 64), randn(64, 64))
-
-    ws = make_workspace(ComplexF64, (64, 64), p)
+    t = CT(J = 2, L_array = [1, 2])
+    ws = make_workspace(t, ComplexF64, (64, 64))
     @test ws isa CTWorkspace{ComplexF64, Float64}
-    cw = ct_forward(z, p; workspace = ws)
-    @test cw.coarse ≈ ct_forward(z, p).coarse
-    @test maximum(abs, ct_inverse(cw, p) .- z) < 1.0e-12
+    cw = analyze(t, z; workspace = ws)
+    @test subband(t, cw, 1) ≈ subband(t, analyze(t, z), 1)
+    @test maximum(abs, synthesize(t, cw) .- z) < 1.0e-12
 
-    wsn = make_nsct_workspace(ComplexF64, (64, 64), p)
-    nw = nsct_forward(z, p; workspace = wsn)
-    @test nw.coarse ≈ nsct_forward(z, p).coarse
+    tn = NSCT(J = 2, L_array = [1, 2])
+    wsn = make_workspace(tn, ComplexF64, (64, 64))
+    nw = analyze(tn, z; workspace = wsn)
+    @test subband(tn, nw, 1) ≈ subband(tn, analyze(tn, z), 1)
 end
 
 @testitem "primitive conv2d_sep with complex data, real filter" tags = [:primitives] begin

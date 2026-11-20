@@ -7,7 +7,8 @@
   device (`_adapt_bank`, `_like`) and an FFT for the array type (cuFFT, rocFFT;
   JLArrays through FFTW on host memory — not OpenCL). JLArrays' `rfft` returns
   a `Matrix`, so allocate outputs with `similar` and fill them via plans + `mul!`.
-  Coefficients stay device-resident (`ContourletCoefficients{Td,A}`,
-  `A<:AbstractMatrix`); use `Array(·)` / `Adapt.adapt(Array, coeffs)` to bring them
-  back. `ContourletsCUDAExt` adds CUDA graph capture for the workspace paths. Load
+  Coefficients are allocated like the input (a device stacked array or a
+  `SubbandVector` over a device vector), so they stay device-resident; use
+  `Adapt.adapt(Array, c)` (or `Array(parent(c))` for a `SubbandVector`) to bring
+  them back. `ContourletsCUDAExt` adds CUDA graph capture for the workspace paths. Load
   the `my-gpu-ext` skill before touching any file under `ext/`.

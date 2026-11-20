@@ -17,26 +17,27 @@ Pkg.add("Contourlets")
 using Contourlets
 
 img    = randn(256, 256)
-params = ContourletParams(J = 4, L_array = parabolic_levels(4))
+t      = CT(J = 4, L_array = parabolic_levels(4))
+tn     = NSCT(J = 4, L_array = parabolic_levels(4))
 
-coeffs = ct_forward(img, params)        # critically sampled
-rec    = ct_inverse(coeffs, params)
+coeffs = analyze(t, img)                # critically sampled
+rec    = synthesize(t, coeffs)
 
-ns     = nsct_forward(img, params)      # shift-invariant, redundant
-ns_rec = nsct_inverse(ns, params)
+ns     = analyze(tn, img)               # shift-invariant, redundant
+ns_rec = synthesize(tn, ns)
 ```
 
 For iterative algorithms, preallocate the scratch buffers and the output once:
 
 ```julia
-ws  = make_workspace(params, size(img))
-buf = similar_coefficients(params, size(img))
+ws  = make_workspace(t, img)
+buf = similar_coefficients(t, img)
 out = similar(img)
 
 for _ in 1:100
-    ct_forward!(buf, img, params; workspace = ws)
-    # … threshold / prox step on buf.subbands …
-    ct_inverse!(out, buf, params; workspace = ws)
+    analyze!(buf, t, img; workspace = ws)
+    # … threshold / prox step on buf …
+    synthesize!(out, t, buf; workspace = ws)
 end
 ```
 
@@ -54,19 +55,19 @@ shearlet transforms built on the same core.
 
 | Component | Description |
 |-----------|-------------|
-| [`ContourletParams`](@ref) | Scales `J`, direction counts `L_array`, filter pair |
-| [`ct_forward`](@ref) / [`ct_inverse`](@ref) | Contourlet transform, critically sampled |
-| [`nsct_forward`](@ref) / [`nsct_inverse`](@ref) | Nonsubsampled contourlet transform, shift-invariant |
-| [`tict_forward`](@ref) / [`tict_inverse`](@ref) | Translation-invariant CT (Eslami & Radha), shift-invariant |
-| [`stict_forward`](@ref) / [`stict_inverse`](@ref) | Semi-translation-invariant CT: invariant pyramid, decimated DFB, redundancy `4J + 1` |
-| [`make_workspace`](@ref) / [`make_nsct_workspace`](@ref) | Preallocated buffers for iterative algorithms |
-| [`make_tict_workspace`](@ref) / [`make_stict_workspace`](@ref) | The same for the TICT and STICT |
+| [`CT`](@ref) | Contourlet transform, critically sampled; each transform holds its scales `J`, direction counts `L_array` and filters |
+| [`NSCT`](@ref) | Nonsubsampled contourlet transform, shift-invariant |
+| [`TICT`](@ref) | Translation-invariant CT (Eslami & Radha), shift-invariant |
+| [`STICT`](@ref) | Semi-translation-invariant CT: invariant pyramid, decimated DFB, redundancy `4J + 1` |
+| [`analyze`](@ref) / [`synthesize`](@ref) (and [`analyze!`](@ref) / [`synthesize!`](@ref)) | Run a transform |
+| [`make_workspace`](@ref) / [`similar_coefficients`](@ref) | Preallocated buffers for iterative algorithms |
+| [`subband_layout`](@ref) / [`subband`](@ref) | Which subband is which, and its coefficients |
 | [`parabolic_levels`](@ref) | Direction counts following the parabolic scaling rule |
 | [`CDF97`](@ref) / [`Q2345`](@ref) | Default pyramid and ladder DFB filter pairs |
 
 Threading is chosen per element type by default — SIMD for real data,
 multi-threaded batching for complex — and the NSCT and TICT take a `threaded`
-keyword to override it. The whole transform runs on the GPU with CUDA.jl,
+keyword to override it (the CT and STICT accept it and ignore it). The whole transform runs on the GPU with CUDA.jl,
 AMDGPU.jl or Metal.jl; OpenCL.jl is supported but much slower than the CPU,
 because it has no FFT. Both are covered in [Performance, threading and
 GPUs](@ref performance).

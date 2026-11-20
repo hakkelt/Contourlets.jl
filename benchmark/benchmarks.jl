@@ -78,127 +78,114 @@ for sz in TEST_SIZES
         SUITE["CT"][sz_str] = BenchmarkGroup()
 
         # Setup CT with J=3, L_array=[2, 3, 4]
-        p_ct = ContourletParams(J = 3, L_array = [2, 3, 4])
-        ws_ct = make_workspace(T, (sz, sz), p_ct)
-        coeffs_ct_alloc = similar_coefficients(p_ct, (sz, sz); Td = T)
+        t_ct = CT(J = 3, L_array = [2, 3, 4])
+        ws_ct = make_workspace(t_ct, img)
+        coeffs_ct_alloc = similar_coefficients(t_ct, img)
 
         # CT Forward: allocating version
-        SUITE["CT"][sz_str]["forward"] = @benchmarkable ct_forward($img, $p_ct)
+        SUITE["CT"][sz_str]["forward"] = @benchmarkable analyze($t_ct, $img)
 
         # CT Forward: in-place with workspace
-        SUITE["CT"][sz_str]["forward!"] = @benchmarkable ct_forward!($coeffs_ct_alloc, $img, $p_ct; workspace = $ws_ct)
+        SUITE["CT"][sz_str]["forward!"] = @benchmarkable analyze!($coeffs_ct_alloc, $t_ct, $img; workspace = $ws_ct)
 
         # Get coefficients for inverse benchmarks
-        coeffs_ct = ct_forward(img, p_ct)
+        coeffs_ct = analyze(t_ct, img)
 
         # CT Inverse: allocating version
-        SUITE["CT"][sz_str]["inverse"] = @benchmarkable ct_inverse($coeffs_ct, $p_ct)
+        SUITE["CT"][sz_str]["inverse"] = @benchmarkable synthesize($t_ct, $coeffs_ct)
 
         # CT Inverse: in-place with workspace
         img_out_ct = similar(img)
-        SUITE["CT"][sz_str]["inverse!"] = @benchmarkable ct_inverse!($img_out_ct, $coeffs_ct, $p_ct; workspace = $ws_ct)
+        SUITE["CT"][sz_str]["inverse!"] = @benchmarkable synthesize!($img_out_ct, $t_ct, $coeffs_ct; workspace = $ws_ct)
 
         # Setup NSCT with J=3, L_array=[2, 3, 4] to highlight the FFT cascade speedup
-        p_nsct = ContourletParams(J = 3, L_array = [2, 3, 4])
-        ws_nsct = make_nsct_workspace(T, (sz, sz), p_nsct)
-        coeffs_nsct_alloc = similar_nsct_coefficients(p_nsct, (sz, sz); Td = T)
+        t_nsct = NSCT(J = 3, L_array = [2, 3, 4])
+        ws_nsct = make_workspace(t_nsct, img)
+        coeffs_nsct_alloc = similar_coefficients(t_nsct, img)
 
         # NSCT Forward: allocating version
-        SUITE["NSCT"][sz_str]["forward"] = @benchmarkable nsct_forward($img, $p_nsct)
+        SUITE["NSCT"][sz_str]["forward"] = @benchmarkable analyze($t_nsct, $img)
 
         # NSCT Forward: in-place with workspace
-        SUITE["NSCT"][sz_str]["forward!"] = @benchmarkable nsct_forward!($coeffs_nsct_alloc, $img, $p_nsct; workspace = $ws_nsct)
+        SUITE["NSCT"][sz_str]["forward!"] = @benchmarkable analyze!($coeffs_nsct_alloc, $t_nsct, $img; workspace = $ws_nsct)
 
         # Get NSCT coefficients for inverse benchmark
-        coeffs_nsct = nsct_forward(img, p_nsct)
+        coeffs_nsct = analyze(t_nsct, img)
 
         # NSCT Inverse: allocating version
-        SUITE["NSCT"][sz_str]["inverse"] = @benchmarkable nsct_inverse($coeffs_nsct, $p_nsct)
+        SUITE["NSCT"][sz_str]["inverse"] = @benchmarkable synthesize($t_nsct, $coeffs_nsct)
 
         # NSCT Inverse: in-place with workspace
         img_out_nsct = similar(img)
-        SUITE["NSCT"][sz_str]["inverse!"] = @benchmarkable nsct_inverse!($img_out_nsct, $coeffs_nsct, $p_nsct; workspace = $ws_nsct)
+        SUITE["NSCT"][sz_str]["inverse!"] = @benchmarkable synthesize!($img_out_nsct, $t_nsct, $coeffs_nsct; workspace = $ws_nsct)
 
         # Subband FFTs split between threads (one task per Julia thread)
-        SUITE["NSCT"][sz_str]["forward! threaded"] = @benchmarkable nsct_forward!($coeffs_nsct_alloc, $img, $p_nsct; workspace = $ws_nsct, threaded = true)
-        SUITE["NSCT"][sz_str]["inverse! threaded"] = @benchmarkable nsct_inverse!($img_out_nsct, $coeffs_nsct, $p_nsct; workspace = $ws_nsct, threaded = true)
+        SUITE["NSCT"][sz_str]["forward! threaded"] = @benchmarkable analyze!($coeffs_nsct_alloc, $t_nsct, $img; workspace = $ws_nsct, threaded = true)
+        SUITE["NSCT"][sz_str]["inverse! threaded"] = @benchmarkable synthesize!($img_out_nsct, $t_nsct, $coeffs_nsct; workspace = $ws_nsct, threaded = true)
 
         # TICT / STICT (Eslami & Radha): workspace paths, same parameters as the NSCT
-        for (name, mk, sim, fwd!, inv!) in (
-                ("TICT", make_tict_workspace, similar_tict_coefficients, tict_forward!, tict_inverse!),
-                ("STICT", make_stict_workspace, similar_stict_coefficients, stict_forward!, stict_inverse!),
-            )
-            ws_ti = mk(p_nsct, (sz, sz); T = T)
-            coeffs_ti = sim(p_nsct, (sz, sz); Td = T)
+        for (name, t_ti) in (("TICT", TICT(J = 3, L_array = [2, 3, 4])), ("STICT", STICT(J = 3, L_array = [2, 3, 4])))
+            ws_ti = make_workspace(t_ti, img)
+            coeffs_ti = similar_coefficients(t_ti, img)
             img_out_ti = similar(img)
-            SUITE[name][sz_str]["forward!"] = @benchmarkable $fwd!($coeffs_ti, $img, $p_nsct; workspace = $ws_ti)
-            SUITE[name][sz_str]["inverse!"] = @benchmarkable $inv!($img_out_ti, $coeffs_ti, $p_nsct; workspace = $ws_ti)
+            SUITE[name][sz_str]["forward!"] = @benchmarkable analyze!($coeffs_ti, $t_ti, $img; workspace = $ws_ti)
+            SUITE[name][sz_str]["inverse!"] = @benchmarkable synthesize!($img_out_ti, $t_ti, $coeffs_ti; workspace = $ws_ti)
         end
-        ws_tt = make_tict_workspace(p_nsct, (sz, sz); T = T)
-        coeffs_tt = similar_tict_coefficients(p_nsct, (sz, sz); Td = T)
+        t_tt = TICT(J = 3, L_array = [2, 3, 4])
+        ws_tt = make_workspace(t_tt, img)
+        coeffs_tt = similar_coefficients(t_tt, img)
         img_out_tt = similar(img)
-        SUITE["TICT"][sz_str]["forward! threaded"] = @benchmarkable tict_forward!($coeffs_tt, $img, $p_nsct; workspace = $ws_tt, threaded = true)
-        SUITE["TICT"][sz_str]["inverse! threaded"] = @benchmarkable tict_inverse!($img_out_tt, $coeffs_tt, $p_nsct; workspace = $ws_tt, threaded = true)
+        SUITE["TICT"][sz_str]["forward! threaded"] = @benchmarkable analyze!($coeffs_tt, $t_tt, $img; workspace = $ws_tt, threaded = true)
+        SUITE["TICT"][sz_str]["inverse! threaded"] = @benchmarkable synthesize!($img_out_tt, $t_tt, $coeffs_tt; workspace = $ws_tt, threaded = true)
 
         # Optional GPU Benchmarks if a backend is available
         if @isdefined(GPU_BACKEND)
             img_gpu = to_gpu(GPU_BACKEND, img)
-            Tf = real(T)
-            p_ct_gpu = ContourletParams(
-                J = 3, L_array = [2, 3, 4],
-                lp_filters = FilterPair{Tf}(Tf.(CDF97.h), Tf.(CDF97.g)),
-                dfb_filters = QuincunxFilterPair{Tf}(Tf.(Q2345.f_ladder))
-            )
-            ws_ct_gpu = make_workspace(img_gpu, p_ct_gpu)
-            coeffs_ct_gpu_alloc = similar_coefficients(p_ct_gpu, (sz, sz); Td = T, M = typeof(img_gpu))
+            ws_ct_gpu = make_workspace(t_ct, img_gpu)
+            coeffs_ct_gpu_alloc = similar_coefficients(t_ct, img_gpu)
 
             SUITE["CT"][sz_str]["forward_gpu"] = @benchmarkable begin
-                ct_forward($img_gpu, $p_ct_gpu)
+                analyze($t_ct, $img_gpu)
                 synchronize_backend($GPU_BACKEND)
             end
             SUITE["CT"][sz_str]["forward!_gpu"] = @benchmarkable begin
-                ct_forward!($coeffs_ct_gpu_alloc, $img_gpu, $p_ct_gpu; workspace = $ws_ct_gpu)
+                analyze!($coeffs_ct_gpu_alloc, $t_ct, $img_gpu; workspace = $ws_ct_gpu)
                 synchronize_backend($GPU_BACKEND)
             end
 
-            coeffs_ct_gpu = ct_forward(img_gpu, p_ct_gpu)
+            coeffs_ct_gpu = analyze(t_ct, img_gpu)
             SUITE["CT"][sz_str]["inverse_gpu"] = @benchmarkable begin
-                ct_inverse($coeffs_ct_gpu, $p_ct_gpu)
+                synthesize($t_ct, $coeffs_ct_gpu)
                 synchronize_backend($GPU_BACKEND)
             end
 
             img_out_ct_gpu = similar(img_gpu)
             SUITE["CT"][sz_str]["inverse!_gpu"] = @benchmarkable begin
-                ct_inverse!($img_out_ct_gpu, $coeffs_ct_gpu, $p_ct_gpu; workspace = $ws_ct_gpu)
+                synthesize!($img_out_ct_gpu, $t_ct, $coeffs_ct_gpu; workspace = $ws_ct_gpu)
                 synchronize_backend($GPU_BACKEND)
             end
 
-            p_nsct_gpu = ContourletParams(
-                J = 3, L_array = [2, 3, 4],
-                lp_filters = FilterPair{Tf}(Tf.(CDF97.h), Tf.(CDF97.g)),
-                dfb_filters = QuincunxFilterPair{Tf}(Tf.(Q2345.f_ladder))
-            )
-            ws_nsct_gpu = make_nsct_workspace(img_gpu, p_nsct_gpu)
-            coeffs_nsct_gpu_alloc = similar_nsct_coefficients(p_nsct_gpu, (sz, sz); Td = T, M = typeof(img_gpu))
+            ws_nsct_gpu = make_workspace(t_nsct, img_gpu)
+            coeffs_nsct_gpu_alloc = similar_coefficients(t_nsct, img_gpu)
 
             SUITE["NSCT"][sz_str]["forward_gpu"] = @benchmarkable begin
-                nsct_forward($img_gpu, $p_nsct_gpu)
+                analyze($t_nsct, $img_gpu)
                 synchronize_backend($GPU_BACKEND)
             end
             SUITE["NSCT"][sz_str]["forward!_gpu"] = @benchmarkable begin
-                nsct_forward!($coeffs_nsct_gpu_alloc, $img_gpu, $p_nsct_gpu; workspace = $ws_nsct_gpu)
+                analyze!($coeffs_nsct_gpu_alloc, $t_nsct, $img_gpu; workspace = $ws_nsct_gpu)
                 synchronize_backend($GPU_BACKEND)
             end
 
-            coeffs_nsct_gpu = nsct_forward(img_gpu, p_nsct_gpu)
+            coeffs_nsct_gpu = analyze(t_nsct, img_gpu)
             SUITE["NSCT"][sz_str]["inverse_gpu"] = @benchmarkable begin
-                nsct_inverse($coeffs_nsct_gpu, $p_nsct_gpu)
+                synthesize($t_nsct, $coeffs_nsct_gpu)
                 synchronize_backend($GPU_BACKEND)
             end
 
             img_out_nsct_gpu = similar(img_gpu)
             SUITE["NSCT"][sz_str]["inverse!_gpu"] = @benchmarkable begin
-                nsct_inverse!($img_out_nsct_gpu, $coeffs_nsct_gpu, $p_nsct_gpu; workspace = $ws_nsct_gpu)
+                synthesize!($img_out_nsct_gpu, $t_nsct, $coeffs_nsct_gpu; workspace = $ws_nsct_gpu)
                 synchronize_backend($GPU_BACKEND)
             end
         end

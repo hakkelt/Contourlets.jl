@@ -119,6 +119,14 @@ QuincunxFilterPair
 parabolic_levels
 ```
 
+`FilterPair` and `CDF97` come from MultiscaleFilterBanks, as do these two
+helpers their documentation refers to:
+
+```@docs
+MultiscaleFilterBanks.upsample_filter
+MultiscaleFilterBanks.ReadOnlyTaps
+```
+
 The filter utilities below are public but not exported.
 
 ```@docs

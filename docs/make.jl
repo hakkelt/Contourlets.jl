@@ -14,7 +14,7 @@ makedocs(;
     # MultiscaleFilterBanks and MultiscaleTransformsBase are in the list because
     # Contourlets re-exports names whose docstrings live there (`FilterPair`,
     # `CDF97`; the interface).  Their other public names are documented in their
-    # own manuals, so `checkdocs` skips them.
+    # own manuals, so `checkdocs` skips them (Documenter ≥ 1.20 for listed modules).
     modules = [Contourlets, MultiscaleFilterBanks, MultiscaleTransformsBase],
     checkdocs_ignored_modules = [MultiscaleFilterBanks, MultiscaleTransformsBase],
     sitename = "Contourlets.jl",

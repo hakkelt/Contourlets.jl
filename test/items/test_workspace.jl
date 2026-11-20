@@ -123,15 +123,17 @@ end
 @testitem "make_workspace return type is concrete (no Union)" tags = [:ct] begin
     # `make_workspace`'s inferred return type must stay a single concrete type: a
     # downstream package that builds a type parameter from
-    # `typeof(make_workspace(...))` cannot resolve a `Union`.  (The NSCT and TICT
-    # workspaces hold a MultiscaleFilterBanks `MaskBankEngine`, whose constructor
-    # infers to a `Union`.)
-    for t in (CT(J = 2, L_array = [1, 2]), STICT(J = 2, L_array = [1, 2]))
-        for args in ((typeof(t), Type{Float64}, Tuple{Int, Int}), (typeof(t), Matrix{Float32}))
+    # `typeof(make_workspace(...))` cannot resolve a `Union`.  Checked for host
+    # arrays; a device NSCT/TICT workspace's engine type depends on the runtime
+    # `tune` keyword.
+    for t in (CT(J = 2, L_array = [1, 2]), STICT(J = 2, L_array = [1, 2]), NSCT(J = 2, L_array = [1, 2]), TICT(J = 2, L_array = [1, 2]))
+        for args in ((typeof(t), Type{Float64}, Tuple{Int, Int}), (typeof(t), Matrix{Float32}), (typeof(t), Matrix{ComplexF32}))
             rt = Base.return_types(make_workspace, args)
             @test length(rt) == 1
             @test isconcretetype(only(rt))
         end
+        @inferred make_workspace(t, ComplexF64, (16, 16); prewarm = false)
+        @inferred make_workspace(t, zeros(Float32, 16, 16); prewarm = false)
     end
 end
 

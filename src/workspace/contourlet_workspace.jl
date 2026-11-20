@@ -168,17 +168,15 @@ Keywords, accepted by the workspaces of all four transforms:
   that the first call is compiled and allocates nothing;
 - `threaded = nothing`: threading of that warm-up pass (the calls choose their
   own threading);
-- `tune = true`: for [`NSCT`](@ref) and [`TICT`](@ref) workspaces on a device,
+- `tune = false`: for [`NSCT`](@ref) and [`TICT`](@ref) workspaces on a device,
   measure how many subbands each batched FFT should take, and whether the
-  synthesis should be batched too (`MultiscaleFilterBanks.tune_mask_bank`).  This
-  runs a few transforms at construction, which on an A100 costs 40–240 ms and
-  makes each later synthesis up to 2.5× faster; `tune = false` builds faster
-  for a workspace used only a few hundred times or less.  Host workspaces
-  thread over their subbands instead, and the [`CT`](@ref) and [`STICT`](@ref)
-  have nothing to tune: there it does nothing."""
+  synthesis should be batched too (`MultiscaleFilterBanks.tune_mask_bank`); this
+  runs a few transforms at construction.  Host workspaces thread over their
+  subbands instead, and the [`CT`](@ref) and [`STICT`](@ref) have nothing to
+  tune: there it does nothing."""
 
 """
-    make_workspace(t::Union{CT, NSCT, TICT, STICT}, T::Type{<:Number}, dims; prewarm = true, threaded = nothing, tune = true)
+    make_workspace(t::Union{CT, NSCT, TICT, STICT}, T::Type{<:Number}, dims; prewarm = true, threaded = nothing, tune = false)
     make_workspace(t::Union{CT, NSCT, TICT, STICT}, x::AbstractMatrix; kwargs...)
 
 The workspace of the contourlet transform `t` ([`CTWorkspace`](@ref),
@@ -206,7 +204,7 @@ julia> transform(ws) == t, eltype(ws), size(ws)
 """
 function MultiscaleTransformsBase.make_workspace(
         t::CT, ::Type{T}, dims::Dims; prewarm::Bool = true,
-        threaded::Union{Bool, Nothing} = nothing, tune::Bool = true
+        threaded::Union{Bool, Nothing} = nothing, tune::Bool = false
     ) where {T <: Number}
     Td = data_eltype(T)
     return _ct_workspace(t, Td, _check_image(dims), Matrix{Td}, prewarm)
@@ -214,7 +212,7 @@ end
 
 function MultiscaleTransformsBase.make_workspace(
         t::CT, x::AbstractArray; prewarm::Bool = true,
-        threaded::Union{Bool, Nothing} = nothing, tune::Bool = true
+        threaded::Union{Bool, Nothing} = nothing, tune::Bool = false
     )
     Td = data_eltype(x)
     return _ct_workspace(t, Td, _check_image(size(x)), _matrix_type(x, Td), prewarm)
@@ -241,7 +239,7 @@ end
 
 function MultiscaleTransformsBase.make_workspace(
         t::NSCT, ::Type{T}, dims::Dims; prewarm::Bool = true,
-        threaded::Union{Bool, Nothing} = nothing, tune::Bool = true
+        threaded::Union{Bool, Nothing} = nothing, tune::Bool = false
     ) where {T <: Number}
     Td = data_eltype(T)
     return _nsct_workspace(t, Td, _check_image(dims), Matrix{Td}, prewarm, threaded, tune)
@@ -249,7 +247,7 @@ end
 
 function MultiscaleTransformsBase.make_workspace(
         t::NSCT, x::AbstractArray; prewarm::Bool = true,
-        threaded::Union{Bool, Nothing} = nothing, tune::Bool = true
+        threaded::Union{Bool, Nothing} = nothing, tune::Bool = false
     )
     Td = data_eltype(x)
     return _nsct_workspace(t, Td, _check_image(size(x)), _matrix_type(x, Td), prewarm, threaded, tune)

@@ -42,7 +42,7 @@ Base.show(io::IO, ws::TICTWorkspace) = print(io, "TICTWorkspace(", ws.transform,
 
 function MultiscaleTransformsBase.make_workspace(
         t::TICT, ::Type{T}, dims::Dims; prewarm::Bool = true,
-        threaded::Union{Bool, Nothing} = nothing, tune::Bool = true
+        threaded::Union{Bool, Nothing} = nothing, tune::Bool = false
     ) where {T <: Number}
     Td = data_eltype(T)
     return _tict_workspace(t, Td, _check_image(dims), Matrix{Td}, prewarm, threaded, tune)
@@ -50,7 +50,7 @@ end
 
 function MultiscaleTransformsBase.make_workspace(
         t::TICT, x::AbstractArray; prewarm::Bool = true,
-        threaded::Union{Bool, Nothing} = nothing, tune::Bool = true
+        threaded::Union{Bool, Nothing} = nothing, tune::Bool = false
     )
     Td = data_eltype(x)
     return _tict_workspace(t, Td, _check_image(size(x)), _matrix_type(x, Td), prewarm, threaded, tune)

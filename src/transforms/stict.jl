@@ -48,7 +48,7 @@ end
 
 function MultiscaleTransformsBase.make_workspace(
         t::STICT, ::Type{T}, dims::Dims; prewarm::Bool = true,
-        threaded::Union{Bool, Nothing} = nothing, tune::Bool = false
+        threaded::Union{Bool, Nothing} = nothing, tune::Bool = true
     ) where {T <: Number}
     Td = data_eltype(T)
     return _stict_workspace(t, Td, _check_image(dims), Matrix{Td}, prewarm)
@@ -56,7 +56,7 @@ end
 
 function MultiscaleTransformsBase.make_workspace(
         t::STICT, x::AbstractArray; prewarm::Bool = true,
-        threaded::Union{Bool, Nothing} = nothing, tune::Bool = false
+        threaded::Union{Bool, Nothing} = nothing, tune::Bool = true
     )
     Td = data_eltype(x)
     return _stict_workspace(t, Td, _check_image(size(x)), _matrix_type(x, Td), prewarm)

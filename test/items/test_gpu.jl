@@ -533,8 +533,8 @@ end
             for backend in GPUBackends.fft_backends
                 xg = to_gpu(backend, x)
                 # Without tuning, the synthesis is not chunked.
-                @test make_workspace(t, xg).engine.tuning[2] === nothing
-                ws = make_workspace(t, xg; tune = true)
+                @test make_workspace(t, xg; tune = false).engine.tuning[2] === nothing
+                ws = make_workspace(t, xg)  # tunes by default
                 @test ws.engine.tuning[2] === Contourlets._ns_forward_batch_plan
                 c = similar_coefficients(t, xg)
                 analyze!(c, t, xg; workspace = ws)

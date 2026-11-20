@@ -48,7 +48,7 @@ using Compat: @compat
 using MultiscaleFilterBanks: MultiscaleFilterBanks,
     FilterPair, CDF97,
     data_eltype, filter_eltype, with_fftw_threads, clamp_idx, nsp_atrous_filters, nsp_responses, centred_dtft,
-    MaskItem, MaskBank, MaskBankEngine, mask_bank_forward!, mask_bank_inverse!
+    MaskItem, MaskBank, MaskBankEngine, mask_bank_forward!, mask_bank_inverse!, tune_mask_bank
 
 # ── Types (must come before filters which use them) ──────────────────────────
 include("types/quincunx_filter_pair.jl")

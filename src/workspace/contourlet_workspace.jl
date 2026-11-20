@@ -211,7 +211,7 @@ end
 
 """
     make_nsct_workspace(params::ContourletParams, image_size::Tuple{Int,Int}; T=Float64,
-                        threaded=nothing) -> NSCTWorkspace
+                        threaded=nothing, tune=false) -> NSCTWorkspace
     make_nsct_workspace(T::Type, image_size::Tuple{Int,Int}, params::ContourletParams)
                         -> NSCTWorkspace
 
@@ -224,6 +224,12 @@ The second form is a convenience overload with the element type as the first pos
     `nsct_inverse!` split their independent subband FFTs between threads when their
     own `threaded` keyword says so, call by call.  The `threaded` keyword here only
     applies to the warm-up pass.
+
+`tune = true` (device workspaces, e.g. from the `image` form with a GPU array)
+measures how many subbands each batched FFT should take, and whether the synthesis
+should be batched too, on this device (`MultiscaleFilterBanks.tune_mask_bank`); this
+runs a few transforms at construction.  A host workspace threads over its subbands
+instead and ignores it.
 """
 make_nsct_workspace(
     T::Type{<:Number}, image_size::Tuple{Int, Int},
@@ -248,7 +254,8 @@ function make_nsct_workspace(
         T::Type{<:Number} = Float64,
         M::Type{<:AbstractMatrix} = Matrix{promote_type(Tp, T)},
         prewarm::Bool = true,
-        threaded::Union{Bool, Nothing} = nothing
+        threaded::Union{Bool, Nothing} = nothing,
+        tune::Bool = false
     ) where {Tp}
     Td = promote_type(Tp, T)         # data buffer type (may be complex)
     Tf = filter_eltype(Td)          # real filter precision
@@ -277,7 +284,8 @@ function make_nsct_workspace(
     ana = [_like(X, a) for a in ana]
     syn = [_like(X, a) for a in syn]
     items = [MaskItem((j, k), j, j, k) for j in 1:J for k in eachindex(banks[j].ana)]
-    engine = _mask_bank_engine(x, X, pfwd, pbwd, ana[1:J], syn[1:J], ana[J + 1], syn[J + 1], banks, items)
+    engine = _mask_bank_engine(x, X, pfwd, pbwd, ana[1:J], syn[1:J], ana[J + 1], syn[J + 1], banks, items; tunable = tune)
+    engine = _maybe_tune(engine, tune, tune ? _similar_nsct_coefficients(p2, image_size, Td, M) : nothing, x)
     ws = NSCTWorkspace{Td, Tf, M, typeof(engine)}(p2, image_size, ScratchArena{M}(), ScratchArena{M}(), engine)
     prewarm && _prewarm_nsct!(ws; threaded = threaded)
     return ws

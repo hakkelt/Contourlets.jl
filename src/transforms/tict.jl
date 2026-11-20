@@ -29,25 +29,31 @@ end
 Base.eltype(::TICTWorkspace{Td}) where {Td} = Td
 
 """
-    make_tict_workspace(params, image_size; T=Float64, M=Matrix{T}) -> TICTWorkspace
-    make_tict_workspace(image, params) -> TICTWorkspace
+    make_tict_workspace(params, image_size; T=Float64, M=Matrix{T}, tune=false) -> TICTWorkspace
+    make_tict_workspace(image, params; tune=false) -> TICTWorkspace
 
 Workspace for [`tict_forward`](@ref) / [`tict_inverse`](@ref) at `image_size` for
 data of element type `T` stored as `M` (pass a device matrix type, or use the
 `image` form, to run on a GPU).  With it the `!` transforms allocate nothing.
+
+`tune = true` (device workspaces) measures how many subbands each batched FFT
+should take, and whether the synthesis should be batched too, on this device
+(`MultiscaleFilterBanks.tune_mask_bank`); this runs a few transforms at
+construction.  A host workspace threads over its subbands instead and ignores it.
 """
-make_tict_workspace(image::AbstractMatrix, params::ContourletParams{Tp}) where {Tp} =
-    make_tict_workspace(params, size(image); T = eltype(image), M = typeof(similar(image, promote_type(Tp, eltype(image)), 0, 0)))
+make_tict_workspace(image::AbstractMatrix, params::ContourletParams{Tp}; kwargs...) where {Tp} =
+    make_tict_workspace(params, size(image); T = eltype(image), M = typeof(similar(image, promote_type(Tp, eltype(image)), 0, 0)), kwargs...)
 
 function make_tict_workspace(
         params::ContourletParams{Tp}, image_size::Tuple{Int, Int};
-        T::Type{<:Number} = Float64, M::Type{<:AbstractMatrix} = Matrix{promote_type(Tp, T)}
+        T::Type{<:Number} = Float64, M::Type{<:AbstractMatrix} = Matrix{promote_type(Tp, T)},
+        tune::Bool = false
     ) where {Tp}
-    return _make_tict_workspace(params, image_size, T, M)
+    return _make_tict_workspace(params, image_size, T, M, tune)
 end
 
 function _make_tict_workspace(
-        params::ContourletParams, image_size::Tuple{Int, Int}, ::Type{T}, ::Type{M}
+        params::ContourletParams, image_size::Tuple{Int, Int}, ::Type{T}, ::Type{M}, tune::Bool = false
     ) where {T, M}
     Td, Tf = _tict_types(params, T)
     p = _convert_params(Tf, params)
@@ -73,8 +79,9 @@ function _make_tict_workspace(
     X, pfwd, pbwd = _ns_unnormalised_plans(ref; measured = true)
     engine = _mask_bank_engine(
         ref, X, pfwd, pbwd, reduce(vcat, masks.ana), reduce(vcat, masks.syn), masks.coarse_ana, masks.coarse_syn,
-        banks, items
+        banks, items; tunable = tune
     )
+    engine = _maybe_tune(engine, tune, tune ? _similar_tict_coefficients(p, image_size, Td, M) : nothing, ref)
     Mw = typeof(ref)
     return TICTWorkspace{Td, Tf, Mw, typeof(engine)}(p, (n1, n2), ScratchArena{Mw}(), ScratchArena{Mw}(), engine)
 end

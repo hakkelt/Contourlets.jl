@@ -10,10 +10,19 @@ MultiscaleFilterBanks.mask_bank_subband(c::TICTCoefficients, i::NTuple{3, Int}) 
 # the plans of `_ns_unnormalised_plans`.  The analysis folds the inverse FFT's
 # 1/N into its masked products, which on a device saves a kernel per subband.
 # A device engine also runs its analysis in chunks of subbands, each one batched
-# FFT (`_ns_batch_plan`); a host engine threads over the subbands instead.
-function _mask_bank_engine(x::AbstractMatrix, X, pfwd, pbwd, pyramid_ana, pyramid_syn, coarse_ana, coarse_syn, banks, items)
+# FFT (`_ns_batch_plan`); a host engine threads over the subbands instead.  With
+# `tunable`, a device engine can chunk its synthesis too (`_ns_forward_batch_plan`);
+# that is only offered to `tune_mask_bank`, which keeps it where it measures
+# faster (small grids) and the per-subband synthesis loop elsewhere.
+function _mask_bank_engine(x::AbstractMatrix, X, pfwd, pbwd, pyramid_ana, pyramid_syn, coarse_ana, coarse_syn, banks, items; tunable::Bool = false)
     s = _ns_scale(x, X)
-    batched = x isa Array ? (;) : (; planner = _ns_batch_plan, output = x)
+    batched = if x isa Array
+        (;)
+    elseif tunable
+        (; planner = _ns_batch_plan, forward_planner = _ns_forward_batch_plan, output = x)
+    else
+        (; planner = _ns_batch_plan, output = x)
+    end
     return MaskBankEngine(
         [MaskBank(b.ana, b.syn) for b in banks], items, X, pfwd, s * pbwd;
         pyramid = MaskBank(pyramid_ana, pyramid_syn), lowpass = (coarse_ana, coarse_syn),
@@ -23,6 +32,14 @@ end
 
 # The unnormalised inverse FFT of a stack of spectra `B` to a stack of outputs `R`.
 _ns_batch_plan(B::AbstractArray, R::AbstractArray) = _ns_inverse_plan(B, R)
+
+# The forward FFT of a stack of outputs `R` to a stack of spectra like `B`.
+_ns_forward_batch_plan(R::AbstractArray{<:Real}, B::AbstractArray) = plan_rfft(R, 1:2)
+_ns_forward_batch_plan(R::AbstractArray, B::AbstractArray) = plan_fft(R, 1:2)
+
+# The engine `e` tuned on this device (`tune_mask_bank`) when `tune` is set,
+# timed on zero data through the coefficient set `coeffs`; `e` otherwise.
+_maybe_tune(e, tune::Bool, coeffs, x::AbstractArray) = tune ? tune_mask_bank(e, coeffs, fill!(x, zero(eltype(x)))) : e
 
 # ── Subbands stored as one array ──────────────────────────────────────────────
 #

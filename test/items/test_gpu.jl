@@ -592,3 +592,39 @@ end
         @test length(ws.graph_cache.entries) == (backend.name === :CUDA ? 1 : 0)
     end
 end
+
+@testitem "GPU NSCT/TICT workspaces tuned on the device" tags = [:gpu] setup = [GPUBackends] begin
+    using GPUEnv, Random
+    Random.seed!(12)
+    p = ContourletParams(
+        J = 2, L_array = [2, 3],
+        lp_filters = FilterPair{Float32}(Float32.(CDF97.h), Float32.(CDF97.g)),
+        dfb_filters = QuincunxFilterPair{Float32}(Float32.(Q2345.f_ladder))
+    )
+    flat(c::NSCTCoefficients) = reduce(vcat, c.subbands)
+    flat(c::TICTCoefficients) = reduce(vcat, reduce(vcat, c.subbands))
+    close(a, b) = maximum(abs, Array(a) .- b) < 1.0f-4
+    for x in (randn(Float32, 64, 64), complex.(randn(Float32, 64, 64), randn(Float32, 64, 64)))
+        for (fwd!, inv!, mk, sim) in (
+                (nsct_forward!, nsct_inverse!, make_nsct_workspace, similar_nsct_coefficients),
+                (tict_forward!, tict_inverse!, make_tict_workspace, similar_tict_coefficients),
+            )
+            ccpu = sim(p, size(x); Td = eltype(x))
+            fwd!(ccpu, x, p)
+            for backend in GPUBackends.fft_backends
+                xg = to_gpu(backend, x)
+                # Without tuning, the synthesis is not chunked.
+                @test mk(xg, p).engine.tuning[2] === nothing
+                ws = mk(xg, p; tune = true)
+                @test ws.engine.tuning[2] === Contourlets._ns_forward_batch_plan
+                c = sim(p, size(x); Td = eltype(x), M = typeof(xg))
+                fwd!(c, xg, p; workspace = ws)
+                @test close(c.coarse, ccpu.coarse)
+                @test all(close(a, b) for (a, b) in zip(flat(c), flat(ccpu)))
+                y = similar(xg)
+                inv!(y, c, p; workspace = ws)
+                @test close(y, x)
+            end
+        end
+    end
+end

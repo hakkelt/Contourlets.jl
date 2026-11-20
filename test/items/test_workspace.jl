@@ -259,3 +259,33 @@ end
     @test size(B) == (3, 4)
     @test !any(B)
 end
+
+@testitem "tune is a no-op for host NSCT/TICT workspaces" tags = [:nsct, :tict] begin
+    using Random
+    Random.seed!(93)
+    p = ContourletParams(J = 2, L_array = [2, 3])
+    x = randn(32, 32)
+    for (fwd!, inv!, mk, sim) in (
+            (nsct_forward!, nsct_inverse!, make_nsct_workspace, similar_nsct_coefficients),
+            (tict_forward!, tict_inverse!, make_tict_workspace, similar_tict_coefficients),
+        )
+        ws0, ws1 = mk(p, (32, 32)), mk(p, (32, 32); tune = true)
+        @test ws1.engine.tuning === nothing
+        @test typeof(ws1) === typeof(ws0)
+        c0, c1 = sim(p, (32, 32)), sim(p, (32, 32))
+        fwd!(c0, x, p; workspace = ws0)
+        fwd!(c1, x, p; workspace = ws1)
+        @test c1.coarse == c0.coarse
+        y0, y1 = similar(x), similar(x)
+        @test inv!(y1, c1, p; workspace = ws1) == inv!(y0, c0, p; workspace = ws0)
+    end
+end
+
+@testitem "batched forward FFT plan of the device synthesis" tags = [:nsct] begin
+    using FFTW
+    R = randn(8, 6, 3)
+    B = zeros(ComplexF64, 5, 6, 3)
+    @test Contourlets._ns_forward_batch_plan(R, B) * R ≈ rfft(R, 1:2)
+    Rc = randn(ComplexF64, 8, 6, 3)
+    @test Contourlets._ns_forward_batch_plan(Rc, similar(Rc)) * Rc ≈ fft(Rc, 1:2)
+end

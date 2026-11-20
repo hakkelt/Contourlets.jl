@@ -93,11 +93,12 @@ Conventions that are non-obvious or specific to this package's API contract:
   `Td = data_eltype(image)`, `Tf = filter_eltype(Td) = real(float(Td))` — so a
   complex image is filtered as complex·real (never complex·complex). Multiply
   kernels (`conv2d_sep!`, `conv2d` direct, `_sefilter2`, `_nsqfb_*`, `qfb`) take
-  `src::{Td}` / filter `::{Tf}` separately and accumulate in `Td`; coefficient and
-  workspace containers are 2-param `{Td, Tf}` (dispatch annotations `{T}` bind the
-  first param = data type). The transform is real-linear, so `T(x + i·y)` equals
-  `T(x) + i·T(y)` bit-for-bit — a useful correctness invariant. The FFTW conv
-  backend is real-only; complex data routes through the direct backend.
+  `src::{Td}` / filter `::{Tf}` separately and accumulate in `Td`; workspace types
+  start with the parameters `{Td, Tf}` (dispatch annotations `{T}` bind the first
+  param = data type). The transforms are real-linear, `T(x + i·y) ≈ T(x) + i·T(y)`,
+  to rounding only: complex data runs complex FFTs and real data real ones, so the
+  conformance tests use `exact_real_linear = false`. The FFTW conv backend is
+  real-only; complex data routes through the direct backend.
 - **Verbs and workspaces.** `analyze!(c, t, x; workspace, threaded)` writes into
   `c`, `analyze(t, x; ...)` allocates; likewise `synthesize!`/`synthesize`.  Every
   call takes `workspace` and `threaded` (the CT and STICT accept and ignore

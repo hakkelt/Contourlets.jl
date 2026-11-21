@@ -35,7 +35,7 @@ _unaligned_slices(::AbstractArray) = false
 # A device engine also runs its analysis in chunks of subbands, each one batched
 # FFT (`_ns_batch_plan`); a host engine threads over the subbands instead.  With
 # `tunable`, a device engine can chunk its synthesis too (`_ns_forward_batch_plan`);
-# that is only offered to `tune_mask_bank`, which keeps it where it measures
+# that is only offered to `mask_bank_tune`, which keeps it where it measures
 # faster (small grids) and the per-subband synthesis loop elsewhere.
 function _mask_bank_engine(x::AbstractMatrix, X, pfwd, pbwd, pyramid_ana, pyramid_syn, coarse_ana, coarse_syn, banks, items; tunable::Bool = false)
     s = _ns_scale(x, X)
@@ -60,9 +60,9 @@ _ns_batch_plan(B::AbstractArray, R::AbstractArray) = _ns_inverse_plan(B, R)
 _ns_forward_batch_plan(R::AbstractArray{<:Real}, B::AbstractArray) = plan_rfft(R, 1:2)
 _ns_forward_batch_plan(R::AbstractArray, B::AbstractArray) = plan_fft(R, 1:2)
 
-# The engine `e` tuned on this device (`tune_mask_bank`) when `tune` is set,
+# The engine `e` tuned on this device (`mask_bank_tune`) when `tune` is set,
 # timed on zero data through the coefficient set `coeffs`; `e` otherwise.
-_maybe_tune(e, tune::Bool, coeffs, x::AbstractArray) = tune ? tune_mask_bank(e, coeffs, fill!(x, zero(eltype(x)))) : e
+_maybe_tune(e, tune::Bool, coeffs, x::AbstractArray) = tune ? mask_bank_tune(e, coeffs, fill!(x, zero(eltype(x)))) : e
 # A host engine threads over its subbands and has nothing to tune; this method
 # also keeps the host workspace's type independent of `tune`.
 _maybe_tune(e, ::Bool, coeffs, ::Array) = e

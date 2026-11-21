@@ -55,8 +55,8 @@ using Compat: @compat
 
 using MultiscaleFilterBanks: MultiscaleFilterBanks,
     FilterPair, CDF97,
-    data_eltype, filter_eltype, with_fftw_threads, clamp_idx, nsp_atrous_filters, nsp_responses, centred_dtft,
-    MaskItem, MaskBank, MaskBankEngine, mask_bank_forward!, mask_bank_inverse!, tune_mask_bank
+    data_eltype, filter_eltype, with_fftw_threads, clamp_idx, nsp_atrous_filters, nsp_responses, centered_dtft,
+    MaskItem, MaskBank, MaskBankEngine, mask_bank_forward!, mask_bank_inverse!, mask_bank_tune
 
 # The interface's functions get their methods by qualified definitions
 # (`MultiscaleTransformsBase.analyze!(...) = ...`).

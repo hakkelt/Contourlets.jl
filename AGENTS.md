@@ -25,7 +25,7 @@ The shared surface with the core is small and explicit: `FilterPair`, `CDF97`
 (re-exported), and the internals `data_eltype`,
 `filter_eltype`, the scoped FFTW thread count
 (`with_fftw_threads`), `clamp_idx`, `nsp_atrous_filters`, and the
-pyramid's frequency responses (`nsp_responses`, `centred_dtft`), and the
+pyramid's frequency responses (`nsp_responses`, `centered_dtft`), and the
 mask-bank engine that runs the NSCT and TICT workspaces (`MaskBankEngine`,
 `MaskBank`, `MaskItem`, `mask_bank_forward!`, `mask_bank_inverse!`; this package adds
 `mask_bank_subband`/`mask_bank_coarse`/`mask_bank_storage` methods for its

@@ -16,7 +16,9 @@ A two-channel quincunx filter pair for the DFB stage: the quincunx ladder bank o
 Phoong et al. (1995), built from the symmetric, even-length 1-D ladder filter
 `f_ladder` (their β).  Perfect reconstruction is structural — exact for any
 `f_ladder`.  The DFB, NSDFB and the shear-based [`qfb_decompose`](@ref) all derive
-their filters from `f_ladder` (see [`Q2345`](@ref)).
+their filters from `f_ladder` (see [`Q2345`](@ref)).  The pair holds a copy of
+`f_ladder` at precision `T`, by default `float(eltype(f_ladder))`, so integer
+taps give a `Float64` pair.
 
 # Examples
 ```jldoctest
@@ -30,10 +32,10 @@ Float32
 """
 struct QuincunxFilterPair{T <: AbstractFloat}
     f_ladder::Vector{T}  # 1-D ladder (lifting) filter β, unmodulated
+    QuincunxFilterPair{T}(f_ladder) where {T <: AbstractFloat} = new{T}(collect(T, f_ladder))
 end
 
-QuincunxFilterPair(f_ladder::AbstractVector{T}) where {T <: AbstractFloat} =
-    QuincunxFilterPair{T}(collect(T, f_ladder))
+QuincunxFilterPair(f_ladder::AbstractVector) = QuincunxFilterPair{float(eltype(f_ladder))}(f_ladder)
 
 Base.eltype(::QuincunxFilterPair{T}) where {T} = T
 

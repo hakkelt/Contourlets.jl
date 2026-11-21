@@ -102,6 +102,36 @@ end
     end
 end
 
+@testitem "transform constructor forms agree" tags = [:ct] begin
+    lp32 = FilterPair(Float32.(CDF97.h), Float32.(CDF97.g))
+    q32 = QuincunxFilterPair(Float32.(Q2345.f_ladder))
+    for T in (CT, NSCT, TICT, STICT)
+        a = T(scales = 2, direction_levels = [1, 2])
+        @test a isa T{Float64}
+        @test T{Float64}(scales = 2, direction_levels = [1, 2]) == a
+        @test T{Float64}(2, [1, 2], CDF97, Q2345) == a
+        @test T{Float64}(direction_levels = [1, 2]) == a
+        @test T{Float64}(scales = Int32(2)) == T(scales = 2)
+        b = T{Float32}(scales = 2, direction_levels = [1, 2])
+        @test b isa T{Float32}
+        @test b == T(scales = 2, direction_levels = [1, 2], lp_filters = lp32, dfb_filters = q32)
+        @test b == T{Float32}(2, [1, 2], CDF97, Q2345)
+        @test b == Contourlets._convert_transform(Float32, a)
+        @test T{Float64}(scales = 2, lp_filters = lp32, dfb_filters = q32) isa T{Float64}
+    end
+end
+
+@testitem "QuincunxFilterPair constructor forms agree" tags = [:filters] begin
+    q = QuincunxFilterPair([1, 2, 2, 1])
+    @test q isa QuincunxFilterPair{Float64}
+    @test q == QuincunxFilterPair([1.0, 2.0, 2.0, 1.0]) == QuincunxFilterPair{Float64}([1, 2, 2, 1])
+    @test QuincunxFilterPair{Float32}([1, 2, 2, 1]) == QuincunxFilterPair(Float32[1, 2, 2, 1])
+    f = [0.25, 0.25]
+    qf = QuincunxFilterPair(f)
+    f[1] = 1.0
+    @test qf.f_ladder == [0.25, 0.25]    # the pair holds a copy
+end
+
 @testitem "transforms compare and hash by value" tags = [:ct] begin
     for T in (CT, NSCT, TICT, STICT)
         a = T(scales = 2, direction_levels = [2, 1])

@@ -51,12 +51,19 @@ for (name, what) in (
             end
         end
 
+        function $name{T}(;
+                scales = nothing, direction_levels = nothing,
+                lp_filters::FilterPair = CDF97, dfb_filters::QuincunxFilterPair = Q2345
+            ) where {T <: AbstractFloat}
+            return $name{T}(_resolve_levels(scales, direction_levels)..., lp_filters, dfb_filters)
+        end
+
         function $name(;
                 scales = nothing, direction_levels = nothing,
                 lp_filters::FilterPair = CDF97, dfb_filters::QuincunxFilterPair = Q2345
             )
             T = promote_type(eltype(lp_filters), eltype(dfb_filters))
-            return $name{T}(_resolve_levels(scales, direction_levels)..., lp_filters, dfb_filters)
+            return $name{T}(; scales, direction_levels, lp_filters, dfb_filters)
         end
 
         _family(::$name) = $name
@@ -78,13 +85,14 @@ At least one of `scales` and `direction_levels` must be given: `scales` alone
 takes `direction_levels = parabolic_levels(scales)` (see
 [`parabolic_levels`](@ref)), `direction_levels` alone has
 `scales = length(direction_levels)`, and when both are given they must agree.
-The filters are stored at the precision of the wider of the two pairs; a
-transform runs at the precision of its data (`Float32` data uses `Float32`
+The filters are stored at the precision of the wider of the two pairs, or at
+precision `T` with the `{T}` form; a transform runs at the precision of its data (`Float32` data uses `Float32`
 filters), whatever the precision it holds.  Transforms with equal parameters
 are `==` and hash alike."""
 
 """
     CT(; scales, direction_levels, lp_filters = CDF97, dfb_filters = Q2345)
+    CT{T}(; scales, direction_levels, lp_filters = CDF97, dfb_filters = Q2345)
 
 The discrete contourlet transform of Do & Vetterli (2005): a Laplacian
 pyramid of `scales` levels whose bandpass image at scale `j` is split by a
@@ -135,6 +143,7 @@ CT
 
 """
     NSCT(; scales, direction_levels, lp_filters = CDF97, dfb_filters = Q2345)
+    NSCT{T}(; scales, direction_levels, lp_filters = CDF97, dfb_filters = Q2345)
 
 The nonsubsampled contourlet transform of da Cunha, Zhou & Do (2006): the
 contourlet transform without its samplers (a nonsubsampled pyramid and
@@ -180,6 +189,7 @@ NSCT
 
 """
     TICT(; scales, direction_levels, lp_filters = CDF97, dfb_filters = Q2345)
+    TICT{T}(; scales, direction_levels, lp_filters = CDF97, dfb_filters = Q2345)
 
 The translation-invariant contourlet transform of Eslami & Radha (2006).  A
 translation-invariant Laplacian pyramid of `scales` levels gives, at every
@@ -232,6 +242,7 @@ TICT
 
 """
     STICT(; scales, direction_levels, lp_filters = CDF97, dfb_filters = Q2345)
+    STICT{T}(; scales, direction_levels, lp_filters = CDF97, dfb_filters = Q2345)
 
 The semi-translation-invariant contourlet transform of Eslami & Radha (2006):
 the translation-invariant Laplacian pyramid of [`TICT`](@ref) followed by

@@ -17,8 +17,8 @@ Pkg.add("Contourlets")
 using Contourlets
 
 img    = randn(256, 256)
-t      = CT(J = 4, L_array = parabolic_levels(4))
-tn     = NSCT(J = 4, L_array = parabolic_levels(4))
+t      = CT(scales = 4, direction_levels = parabolic_levels(4))
+tn     = NSCT(scales = 4, direction_levels = parabolic_levels(4))
 
 coeffs = analyze(t, img)                # critically sampled
 rec    = synthesize(t, coeffs)
@@ -55,10 +55,10 @@ shearlet transforms built on the same core.
 
 | Component | Description |
 |-----------|-------------|
-| [`CT`](@ref) | Contourlet transform, critically sampled; each transform holds its scales `J`, direction counts `L_array` and filters |
+| [`CT`](@ref) | Contourlet transform, critically sampled; each transform holds its number of scales `scales`, directional depths `direction_levels` and filters |
 | [`NSCT`](@ref) | Nonsubsampled contourlet transform, shift-invariant |
 | [`TICT`](@ref) | Translation-invariant CT (Eslami & Radha), shift-invariant |
-| [`STICT`](@ref) | Semi-translation-invariant CT: invariant pyramid, decimated DFB, redundancy `4J + 1` |
+| [`STICT`](@ref) | Semi-translation-invariant CT: invariant pyramid, decimated DFB, redundancy `4 scales + 1` |
 | [`analyze`](@ref) / [`synthesize`](@ref) (and [`analyze!`](@ref) / [`synthesize!`](@ref)) | Run a transform |
 | [`make_workspace`](@ref) / [`similar_coefficients`](@ref) | Preallocated buffers for iterative algorithms |
 | [`subband_layout`](@ref) / [`subband`](@ref) | Which subband is which, and its coefficients |

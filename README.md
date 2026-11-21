@@ -62,7 +62,7 @@ Pkg.add("Contourlets")
 using Contourlets, Random
 
 img = randn(256, 256)
-t = CT(J = 4, L_array = parabolic_levels(4))
+t = CT(scales = 4, direction_levels = parabolic_levels(4))
 
 # Allocating API
 coeffs = analyze(t, img)

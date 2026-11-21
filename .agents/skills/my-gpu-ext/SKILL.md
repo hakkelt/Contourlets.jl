@@ -37,14 +37,11 @@ For general Julia GPU programming, refer to KernelAbstractions.jl docs.
 ```julia
 # Confirm GPU round-trip matches CPU (to Float32 precision)
 using Contourlets, JLArrays
-x = jl(rand(Float32, 64, 64))
-params = ContourletParams(J=2)
-coeffs = ct_forward(x, params)
-x_rec  = ct_inverse(coeffs, params)
+x = JLArray(rand(Float32, 64, 64))
+t = CT(scales = 2)
+c = analyze(t, x; workspace = make_workspace(t, x))
+x_rec = synthesize(t, c)
 @assert maximum(abs, Array(x_rec) .- Array(x)) < 1f-4
-
-# Move coefficients to host
-coeffs_cpu = Adapt.adapt(Array, coeffs)
 ```
 
 ## Related Skills

@@ -77,8 +77,8 @@ for sz in TEST_SIZES
 
         SUITE["CT"][sz_str] = BenchmarkGroup()
 
-        # Setup CT with J=3, L_array=[2, 3, 4]
-        t_ct = CT(J = 3, L_array = [2, 3, 4])
+        # Setup CT with scales = 3, direction_levels = [2, 3, 4]
+        t_ct = CT(scales = 3, direction_levels = [2, 3, 4])
         ws_ct = make_workspace(t_ct, img)
         coeffs_ct_alloc = similar_coefficients(t_ct, img)
 
@@ -98,8 +98,8 @@ for sz in TEST_SIZES
         img_out_ct = similar(img)
         SUITE["CT"][sz_str]["inverse!"] = @benchmarkable synthesize!($img_out_ct, $t_ct, $coeffs_ct; workspace = $ws_ct)
 
-        # Setup NSCT with J=3, L_array=[2, 3, 4] to highlight the FFT cascade speedup
-        t_nsct = NSCT(J = 3, L_array = [2, 3, 4])
+        # Setup NSCT with scales = 3, direction_levels = [2, 3, 4] to highlight the FFT cascade speedup
+        t_nsct = NSCT(scales = 3, direction_levels = [2, 3, 4])
         ws_nsct = make_workspace(t_nsct, img)
         coeffs_nsct_alloc = similar_coefficients(t_nsct, img)
 
@@ -124,14 +124,14 @@ for sz in TEST_SIZES
         SUITE["NSCT"][sz_str]["inverse! threaded"] = @benchmarkable synthesize!($img_out_nsct, $t_nsct, $coeffs_nsct; workspace = $ws_nsct, threaded = true)
 
         # TICT / STICT (Eslami & Radha): workspace paths, same parameters as the NSCT
-        for (name, t_ti) in (("TICT", TICT(J = 3, L_array = [2, 3, 4])), ("STICT", STICT(J = 3, L_array = [2, 3, 4])))
+        for (name, t_ti) in (("TICT", TICT(scales = 3, direction_levels = [2, 3, 4])), ("STICT", STICT(scales = 3, direction_levels = [2, 3, 4])))
             ws_ti = make_workspace(t_ti, img)
             coeffs_ti = similar_coefficients(t_ti, img)
             img_out_ti = similar(img)
             SUITE[name][sz_str]["forward!"] = @benchmarkable analyze!($coeffs_ti, $t_ti, $img; workspace = $ws_ti)
             SUITE[name][sz_str]["inverse!"] = @benchmarkable synthesize!($img_out_ti, $t_ti, $coeffs_ti; workspace = $ws_ti)
         end
-        t_tt = TICT(J = 3, L_array = [2, 3, 4])
+        t_tt = TICT(scales = 3, direction_levels = [2, 3, 4])
         ws_tt = make_workspace(t_tt, img)
         coeffs_tt = similar_coefficients(t_tt, img)
         img_out_tt = similar(img)

@@ -3,8 +3,8 @@ using PrecompileTools: @setup_workload, @compile_workload
 @setup_workload begin
     img = zeros(Float64, 32, 32)
     img[16, 16] = 1.0
-    ct = CT(J = 2, L_array = [1, 2])
-    nsct = NSCT(J = 2, L_array = [1, 2])
+    ct = CT(scales = 2, direction_levels = [1, 2])
+    nsct = NSCT(scales = 2, direction_levels = [1, 2])
     @compile_workload begin
         # Allocating CT / NSCT round trips.
         synthesize(ct, analyze(ct, img))

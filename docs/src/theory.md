@@ -237,7 +237,7 @@ The CT couples `J` LP levels with one DFB per bandpass:
 coarse ← image
 for j = 1 … J:
     coarse_j, bandpass_j = LP(coarse, h, g)
-    subbands[j]          = DFB(bandpass_j, L_array[j], Q2345)
+    subbands[j]          = DFB(bandpass_j, direction_levels[j], Q2345)
     coarse               = coarse_j
 ```
 
@@ -257,7 +257,7 @@ angular wedges (from the DFB):
 
 ```@example theory
 N = 128
-tc = CT(J = 2, L_array = [2, 1])
+tc = CT(scales = 2, direction_levels = [2, 1])
 composite_freq = zeros(N, N)
 
 # Frequency responses of the coarse low-pass level (subband 1) and of all
@@ -284,7 +284,7 @@ of the directional subbands at each scale; the crop doubles with the scale:
 
 ```@example theory
 Na = 256
-ta = CT(J = 3, L_array = [3, 3, 2])
+ta = CT(scales = 3, direction_levels = [3, 3, 2])
 layout_a = subband_layout(ta, (Na, Na))
 function ct_atom(j, k)
     c = analyze(ta, zeros(Na, Na))
@@ -294,7 +294,7 @@ function ct_atom(j, k)
 end
 pat = plot(layout = (3, 4), size = (860, 660))
 for j in 1:3
-    n = 2^ta.L_array[j]
+    n = 2^ta.direction_levels[j]
     for (col, k) in enumerate(round.(Int, range(1, n; length = 4)))
         a = ct_atom(j, k)
         i0, j0 = Tuple(argmax(abs.(a)))
@@ -354,10 +354,10 @@ of a 2-level NSCT:
 
 ```@example theory
 N_nsct = 64
-t_nsct = NSCT(J = 2, L_array = [2, 1])
+t_nsct = NSCT(scales = 2, direction_levels = [2, 1])
 layout_nsct = subband_layout(t_nsct, (N_nsct, N_nsct))
-n_l1 = count(s -> s.scale == 1, layout_nsct)   # 4  (2^L_array[1])
-n_l2 = count(s -> s.scale == 2, layout_nsct)   # 2  (2^L_array[2])
+n_l1 = count(s -> s.scale == 1, layout_nsct)   # 4  (2^direction_levels[1])
+n_l2 = count(s -> s.scale == 2, layout_nsct)   # 2  (2^direction_levels[2])
 mid = N_nsct ÷ 2 + 1
 
 function nsct_spec(t, j, k)        # j=0 → coarse
@@ -439,7 +439,7 @@ and 60 % of ``K_2``'s in the other one:
 Nt = 64
 δt = zeros(Nt, Nt); δt[1, 1] = 1.0
 # The analysis of an impulse is each channel's impulse response.
-tt0 = TICT(J = 1, L_array = [0])
+tt0 = TICT(scales = 1, direction_levels = [0])
 t0 = analyze(tt0, δt)    # subband 1 is the lowpass, then one subband per channel
 ptl = plot(layout = (1, 5), size = (900, 210))
 for c in 1:4
@@ -470,7 +470,7 @@ product of a TILP channel and a directional filter.  Rows are the channels
 ``K_0`` to ``K_3``: the full trees give four subbands, the half trees three:
 
 ```@example theory
-tt2 = TICT(J = 1, L_array = [2])
+tt2 = TICT(scales = 1, direction_levels = [2])
 t2 = analyze(tt2, δt)
 layout2 = subband_layout(tt2, size(δt))
 pts = plot(layout = (4, 4), size = (760, 760))

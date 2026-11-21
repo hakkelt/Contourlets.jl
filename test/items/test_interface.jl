@@ -1,7 +1,7 @@
 @testitem "interface conformance: real data" tags = [:ct, :nsct, :tict] begin
     using MultiscaleTransformsBase.Testing: test_transform
     using Random
-    for t in (CT(J = 2, L_array = [2, 3]), NSCT(J = 2, L_array = [2, 3]), TICT(J = 2, L_array = [2, 1]), STICT(J = 2, L_array = [3, 2]))
+    for t in (CT(scales = 2, direction_levels = [2, 3]), NSCT(scales = 2, direction_levels = [2, 3]), TICT(scales = 2, direction_levels = [2, 1]), STICT(scales = 2, direction_levels = [3, 2]))
         test_transform(t, randn(Xoshiro(1), 64, 64); wrong_size = (32, 32))
         test_transform(t, randn(Xoshiro(2), Float32, 64, 64); wrong_size = (32, 32))
     end
@@ -12,7 +12,7 @@ end
 @testitem "interface conformance: complex data" tags = [:ct, :nsct, :tict] begin
     using MultiscaleTransformsBase.Testing: test_transform
     using Random
-    for t in (CT(J = 2, L_array = [2, 3]), NSCT(J = 2, L_array = [2, 3]), TICT(J = 2, L_array = [2, 1]), STICT(J = 2, L_array = [3, 2]))
+    for t in (CT(scales = 2, direction_levels = [2, 3]), NSCT(scales = 2, direction_levels = [2, 3]), TICT(scales = 2, direction_levels = [2, 1]), STICT(scales = 2, direction_levels = [3, 2]))
         test_transform(t, randn(Xoshiro(3), ComplexF64, 64, 64); wrong_size = (32, 32))
         test_transform(t, randn(Xoshiro(4), ComplexF32, 64, 64))
     end

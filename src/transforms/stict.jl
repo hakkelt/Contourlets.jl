@@ -42,7 +42,7 @@ Base.show(io::IO, ws::STICTWorkspace) = print(io, "STICTWorkspace(", ws.transfor
 # subband of each channel.
 function _layout(t::STICT, dims::NTuple{2, Int})
     n1, n2 = dims
-    groups = [dfb_subband_sizes(n1, n2, l; half = h) for l in t.L_array for h in _TILP_HALVES]
+    groups = [dfb_subband_sizes(n1, n2, l; half = h) for l in t.direction_levels for h in _TILP_HALVES]
     return _stack_levels(dims, groups, dims)
 end
 
@@ -67,7 +67,7 @@ function _stict_workspace(t::STICT, ::Type{Td}, image_size::NTuple{2, Int}, ::Ty
     p = _convert_transform(Tf, t)
     layout, firsts = _layout(p, image_size)
     ref = _allocate_zeros(M, Td, image_size)
-    masks = _adapt_masks(ref, _tilp_masks(Tf, p.lp_filters, image_size, p.J))
+    masks = _adapt_masks(ref, _tilp_masks(Tf, p.lp_filters, image_size, p.scales))
     R = _runner_type(ref, Tf)
     # One full bank per depth, the half trees sharing its masks (`_half_bank`), and
     # one buffer pool for every runner: the channels run one after another.  The
@@ -87,7 +87,7 @@ function _stict_workspace(t::STICT, ::Type{Td}, image_size::NTuple{2, Int}, ::Ty
         bank = l == 0 ? full(0) : _half_bank(full(l), full(1), half)
         _bank_runner(bank, ref; flags = flags, pool = pool)
     end
-    runners = [R[runner(l, h) for h in _TILP_HALVES] for l in p.L_array]
+    runners = [R[runner(l, h) for h in _TILP_HALVES] for l in p.direction_levels]
     X = fill!(similar(ref, Complex{Tf}, image_size), zero(Complex{Tf}))
     pfwd, pbwd = _inplace_plans(X, flags)
     Z = first(pool[(:Z, image_size)])
@@ -141,7 +141,7 @@ function _stict_forward_inner!(coeffs::SubbandVector, x::AbstractMatrix, ws::STI
     for i in eachindex(m.ana), c in 1:4
         g = 4 * (i - 1) + c
         r = ws.runners[i][c]
-        out = _Bands(coeffs, ws.first[g], _tict_n_subbands(ws.params.L_array[i], c))
+        out = _Bands(coeffs, ws.first[g], _tict_n_subbands(ws.params.direction_levels[i], c))
         R, K = r.X, m.ana[i][c]
         @.. R = K * X               # FastBroadcast: see `_mask_bank_forward_items!`
         _bank_analyze_spectrum!(out, r)
@@ -158,7 +158,7 @@ function _stict_inverse_inner!(x::AbstractMatrix, coeffs::SubbandVector, ws::STI
     fill!(X, zero(eltype(X)))
     for i in eachindex(m.syn), c in 1:4
         r = ws.runners[i][c]
-        sbs = _Bands(coeffs, ws.first[4 * (i - 1) + c], _tict_n_subbands(ws.params.L_array[i], c))
+        sbs = _Bands(coeffs, ws.first[4 * (i - 1) + c], _tict_n_subbands(ws.params.direction_levels[i], c))
         _bank_synthesize_spectrum!(sbs, r)
         R, K = r.X, m.syn[i][c]
         @.. X += K * R

@@ -120,7 +120,7 @@ end
 end
 
 @testitem "same-precision conversions are identities" tags = [:filters] begin
-    t = NSCT(J = 2, L_array = [1, 2])
+    t = NSCT(scales = 2, direction_levels = [1, 2])
     @test t isa NSCT{Float64}
     @test Contourlets._convert_transform(Float64, t) === t
     @test Contourlets._convert_qfp(Float64, Q2345) === Q2345
@@ -131,7 +131,7 @@ end
     @test t32 != t
     # Float32 filters make a Float32 transform.
     @test CT(
-        J = 1, L_array = [1], dfb_filters = QuincunxFilterPair(Float32.(Q2345.f_ladder)),
+        scales = 1, direction_levels = [1], dfb_filters = QuincunxFilterPair(Float32.(Q2345.f_ladder)),
         lp_filters = FilterPair(Float32.(CDF97.h), Float32.(CDF97.g))
     ) isa CT{Float32}
 end

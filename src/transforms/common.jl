@@ -10,13 +10,13 @@ const _RaggedTransform = Union{CT, STICT}
 
 # CT / NSCT: the lowpass, then the directions of each scale, finest first.
 _scale_layout(t::Union{CT, NSCT}) =
-    [(scale = t.J + 1, direction = 0); [(scale = j, direction = k) for j in 1:t.J for k in 1:(1 << t.L_array[j])]]
+    [(scale = t.scales + 1, direction = 0); [(scale = j, direction = k) for j in 1:t.scales for k in 1:(1 << t.direction_levels[j])]]
 
 # TICT / STICT: the lowpass, then the directions of each channel of each level,
 # finest level first.
 _channel_layout(t::Union{TICT, STICT}) = [
-    (level = t.J + 1, channel = 0, direction = 0);
-    [(level = i, channel = c, direction = k) for (i, l) in enumerate(t.L_array) for c in 1:4 for k in 1:_tict_n_subbands(l, c)]
+    (level = t.scales + 1, channel = 0, direction = 0);
+    [(level = i, channel = c, direction = k) for (i, l) in enumerate(t.direction_levels) for c in 1:4 for k in 1:_tict_n_subbands(l, c)]
 ]
 
 """
@@ -24,14 +24,14 @@ _channel_layout(t::Union{TICT, STICT}) = [
     subband_layout(t::Union{TICT, STICT}, dims) -> Vector{@NamedTuple{level::Int, channel::Int, direction::Int}}
 
 What each subband of the contourlet transform `t` is, in the order of
-[`subband`](@ref)'s index.  The lowpass comes first, as `scale = J + 1` (or
-`level = J + 1`) with `direction = 0` (and `channel = 0`).  Then, for each
-pyramid level from the finest (1) to the coarsest (`J`), the directional
+[`subband`](@ref)'s index.  The lowpass comes first, as `scale = scales + 1` (or
+`level = scales + 1`) with `direction = 0` (and `channel = 0`).  Then, for each
+pyramid level from the finest (1) to the coarsest (`scales`), the directional
 subbands `(scale = j, direction = k)` of the [`CT`](@ref) and [`NSCT`](@ref),
-`k = 1, …, 2^L_array[j]`; for the [`TICT`](@ref) and [`STICT`](@ref), channel
+`k = 1, …, 2^direction_levels[j]`; for the [`TICT`](@ref) and [`STICT`](@ref), channel
 `c = 1, …, 4` of each level in turn, `(level = i, channel = c, direction = k)`,
-with `2^L_array[i]` directions on channels 1 and 4 and `2^(L_array[i] - 1) + 1`
-on channels 2 and 3 (one direction on every channel where `L_array[i] = 0`).
+with `2^direction_levels[i]` directions on channels 1 and 4 and `2^(direction_levels[i] - 1) + 1`
+on channels 2 and 3 (one direction on every channel where `direction_levels[i] = 0`).
 
 The layout does not depend on `dims`, which must be the size of an image (two
 axes).
@@ -40,7 +40,7 @@ axes).
 ```jldoctest
 julia> using Contourlets
 
-julia> subband_layout(CT(J = 2, L_array = [1, 0]), (32, 32))
+julia> subband_layout(CT(scales = 2, direction_levels = [1, 0]), (32, 32))
 4-element Vector{@NamedTuple{scale::Int64, direction::Int64}}:
  (scale = 3, direction = 0)
  (scale = 1, direction = 1)
@@ -51,8 +51,8 @@ julia> subband_layout(CT(J = 2, L_array = [1, 0]), (32, 32))
 MultiscaleTransformsBase.subband_layout(t::Union{CT, NSCT}, dims::Dims) = (_check_image(dims); _scale_layout(t))
 MultiscaleTransformsBase.subband_layout(t::Union{TICT, STICT}, dims::Dims) = (_check_image(dims); _channel_layout(t))
 
-MultiscaleTransformsBase.nsubbands(t::Union{CT, NSCT}, dims::Dims) = (_check_image(dims); 1 + sum(l -> 1 << l, t.L_array))
-MultiscaleTransformsBase.nsubbands(t::Union{TICT, STICT}, dims::Dims) = (_check_image(dims); 1 + sum(l -> sum(c -> _tict_n_subbands(l, c), 1:4), t.L_array))
+MultiscaleTransformsBase.nsubbands(t::Union{CT, NSCT}, dims::Dims) = (_check_image(dims); 1 + sum(l -> 1 << l, t.direction_levels))
+MultiscaleTransformsBase.nsubbands(t::Union{TICT, STICT}, dims::Dims) = (_check_image(dims); 1 + sum(l -> sum(c -> _tict_n_subbands(l, c), 1:4), t.direction_levels))
 
 """
     subband(t::Union{CT, NSCT, TICT, STICT}, c, i) -> AbstractMatrix

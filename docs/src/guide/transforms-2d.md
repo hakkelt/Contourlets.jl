@@ -12,7 +12,7 @@ multiscale pyramid followed by a directional filter bank:
 | Typical use | compression, M-term approximation | denoising, feature extraction | denoising | denoising at low redundancy |
 
 Each transform is an immutable value built from keywords, such as
-`CT(J = 3, L_array = [2, 2, 1])`, and is run with [`analyze`](@ref) and
+`CT(scales = 3, direction_levels = [2, 2, 1])`, and is run with [`analyze`](@ref) and
 [`synthesize`](@ref).  The NSCT and TICT, whose subbands all have the image's
 size, return one array of size `(size(img)..., n)` with subband `i` in
 `c[:, :, i]`.  The CT and STICT, whose subbands have different sizes, return a
@@ -21,7 +21,7 @@ that broadcasts and reduces like any vector (`c .* 2`, `abs.(c)`, `norm(c)`).
 For all four, [`subband`](@ref)`(t, c, i)` is subband `i` as a matrix view, and
 [`subband_layout`](@ref)`(t, size(img))` says which subband each `i` is.  For
 the CT and NSCT the low-pass residual comes first, as
-`(scale = J + 1, direction = 0)`, followed by the `2^L_array[j]` directional
+`(scale = scales + 1, direction = 0)`, followed by the `2^direction_levels[j]` directional
 subbands `(scale = j, direction = k)` of every scale `j`, finest first and
 ordered by angle.  The TICT and STICT, described [below](@ref guide2d-tict),
 have four channels per level.  For
@@ -40,9 +40,9 @@ using Contourlets, TestImages, ImageCore, Colors, Plots, Statistics
 Plots.default(show = false)
 
 img = Float64.(Gray.(testimage("barbara")))[1:512, 100:611]
-t   = CT(J = 3, L_array = parabolic_levels(3))
+t   = CT(scales = 3, direction_levels = parabolic_levels(3))
 
-println("direction exponents: ", t.L_array)   # 2^L subbands per scale
+println("direction exponents: ", t.direction_levels)   # 2^L subbands per scale
 ```
 
 [`parabolic_levels`](@ref) applies the parabolic scaling rule (width ≈ length²),
@@ -56,7 +56,7 @@ rec    = synthesize(t, coeffs)
 layout = subband_layout(t, size(img))
 
 println("coarse size:        ", size(subband(t, coeffs, 1)))
-println("subbands per scale: ", [count(s -> s.scale == j, layout) for j in 1:t.J])
+println("subbands per scale: ", [count(s -> s.scale == j, layout) for j in 1:t.scales])
 println("PR error:           ", maximum(abs, rec .- img))
 @assert maximum(abs, rec .- img) < 1e-12
 ```
@@ -106,7 +106,7 @@ input resolution and a circular shift of the input shifts every subband by the
 same amount.
 
 ```@example guide2d
-tn = NSCT(J = 2, L_array = [2, 3])
+tn = NSCT(scales = 2, direction_levels = [2, 3])
 
 ns  = analyze(tn, img)
 rec = synthesize(tn, ns)
@@ -161,8 +161,8 @@ and mostly column frequencies, so they get half trees that split only that fan
 (see [Theory](@ref theory-tict)).
 
 ```@example guide2d
-tt  = TICT(J = 2, L_array = [3, 2])
-tst = STICT(J = 2, L_array = [3, 2])
+tt  = TICT(scales = 2, direction_levels = [3, 2])
+tst = STICT(scales = 2, direction_levels = [3, 2])
 
 ti  = analyze(tt, img)
 sti = analyze(tst, img)
@@ -177,7 +177,7 @@ println("PR errors: ", maximum(abs, synthesize(tt, ti) .- img), ", ",
 ```
 
 [`subband_layout`](@ref) names their subbands `(level = j, channel = ch, direction = d)`,
-after the low-pass residual `(level = J + 1, channel = 0, direction = 0)`: level by
+after the low-pass residual `(level = scales + 1, channel = 0, direction = 0)`: level by
 level from the finest, channels 1 to 4 within a level, then the directions of
 each channel.  Like
 the NSCT, the TICT commutes with circular shifts exactly:

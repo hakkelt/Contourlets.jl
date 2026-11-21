@@ -13,11 +13,11 @@
 
 # Subband (j, k) is slice `offsets[j] + k` of the coefficients.
 function _nsct_offsets(t::NSCT)
-    offsets = Vector{Int}(undef, t.J)
+    offsets = Vector{Int}(undef, t.scales)
     s = 1
-    for j in 1:t.J
+    for j in 1:t.scales
         offsets[j] = s
-        s += 1 << t.L_array[j]
+        s += 1 << t.direction_levels[j]
     end
     return offsets
 end
@@ -29,9 +29,9 @@ function _analyze_direct!(c::AbstractArray, t::NSCT, image::AbstractMatrix, thre
     fp, qfp = p.lp_filters, p.dfb_filters
     offsets = _nsct_offsets(p)
     coarse = Td === eltype(image) ? image : Td.(image)
-    for j in 1:p.J
+    for j in 1:p.scales
         coarse_j, bp_j = nsp_decompose(coarse, fp, j)
-        for (k, sb) in enumerate(nsdfb_decompose(bp_j, p.L_array[j], qfp, j))
+        for (k, sb) in enumerate(nsdfb_decompose(bp_j, p.direction_levels[j], qfp, j))
             copyto!(view(c, :, :, offsets[j] + k), sb)
         end
         coarse = coarse_j
@@ -46,8 +46,8 @@ function _synthesize_direct!(x::AbstractMatrix, t::NSCT, c::AbstractArray, threa
     fp, qfp = p.lp_filters, p.dfb_filters
     offsets = _nsct_offsets(p)
     coarse = copy(view(c, :, :, 1))
-    for j in p.J:-1:1
-        bands = [copy(view(c, :, :, offsets[j] + k)) for k in 1:(1 << p.L_array[j])]
+    for j in p.scales:-1:1
+        bands = [copy(view(c, :, :, offsets[j] + k)) for k in 1:(1 << p.direction_levels[j])]
         bp = nsdfb_reconstruct(bands, qfp, j)
         coarse = nsp_reconstruct(coarse, bp, fp, j)
     end

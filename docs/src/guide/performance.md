@@ -36,7 +36,7 @@ That evaluation is the part a workspace saves:
 ```@example perf
 using Contourlets, BenchmarkTools
 
-tn     = NSCT(J = 2, L_array = [2, 3])
+tn     = NSCT(scales = 2, direction_levels = [2, 3])
 img    = randn(256, 256)
 ws     = make_workspace(tn, img)
 buf    = similar_coefficients(tn, img)
@@ -56,11 +56,11 @@ The critically sampled CT uses the decimated DFB rather than the NSDFB, so it is
 substantially cheaper at equal image size:
 
 ```@example perf
-tc     = CT(J = 2, L_array = [2, 3])
+tc     = CT(scales = 2, direction_levels = [2, 3])
 t_ct   = @belapsed analyze($tc, $img)
 t_nsct = @belapsed analyze($tn, $img)
 
-println("CT analyze   (256×256, J=2, L=[2,3]): $(round(t_ct   * 1e3; digits = 1)) ms")
+println("CT analyze   (256×256, scales = 2, direction_levels = [2, 3]): $(round(t_ct   * 1e3; digits = 1)) ms")
 println("NSCT analyze                        : $(round(t_nsct * 1e3; digits = 1)) ms")
 println("ratio                               : $(round(t_nsct / t_ct; digits = 1))×")
 ```
@@ -86,7 +86,7 @@ little at image sizes).  Real data stays single-threaded by default there too;
 pass `threaded = true` to use the cores:
 
 ```@example perf
-tt = TICT(J = 3, L_array = [2, 3, 4])
+tt = TICT(scales = 3, direction_levels = [2, 3, 4])
 ws_t = make_workspace(tt, img)
 buf_t = similar_coefficients(tt, img)
 t_serial = @belapsed analyze!($buf_t, $tt, $img; workspace = $ws_t, threaded = false)
@@ -109,7 +109,7 @@ dispatch does the rest:
 
 ```julia
 using CUDA, Contourlets
-t = CT(J = 2, L_array = [2, 3])
+t = CT(scales = 2, direction_levels = [2, 3])
 coeffs = analyze(t, CuArray(img))        # a SubbandVector over a CuArray
 img_back = Array(synthesize(t, coeffs))
 ```

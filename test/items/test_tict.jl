@@ -3,18 +3,18 @@
     Random.seed!(80)
     for (dims, L) in (((32, 32), [2, 1]), ((64, 48), [3, 2, 0]), ((32, 64), [0]))
         for x in (randn(dims...), complex.(randn(dims...), randn(dims...)))
-            t = TICT(J = length(L), L_array = L)
+            t = TICT(direction_levels = L)
             c = analyze(t, x)
             @test c isa Array{eltype(x), 3}
             @test maximum(abs, synthesize(t, c) .- x) < 1.0e-12
-            st = STICT(J = length(L), L_array = L)
+            st = STICT(direction_levels = L)
             s = analyze(st, x)
             @test s isa SubbandVector{eltype(x)}
             @test maximum(abs, synthesize(st, s) .- x) < 1.0e-12
         end
     end
     x = randn(Float32, 32, 32)
-    t = TICT(J = 2, L_array = [2, 2])
+    t = TICT(scales = 2, direction_levels = [2, 2])
     rec = synthesize(t, analyze(t, x))
     @test eltype(rec) == Float32
     @test maximum(abs, rec .- x) < 1.0f-4
@@ -23,7 +23,7 @@ end
 @testitem "TICT and STICT redundancy and subband layout" tags = [:tict] begin
     x = zeros(64, 48)
     L = [3, 2, 0]
-    t, st = TICT(J = 3, L_array = L), STICT(J = 3, L_array = L)
+    t, st = TICT(scales = 3, direction_levels = L), STICT(scales = 3, direction_levels = L)
     c = analyze(t, x)
     s = analyze(st, x)
     layout = subband_layout(t, size(x))
@@ -42,13 +42,13 @@ end
     Random.seed!(81)
     x = randn(64, 64)
     sh = (5, -3)
-    t = TICT(J = 3, L_array = [3, 2, 2])
+    t = TICT(scales = 3, direction_levels = [3, 2, 2])
     c, cs = analyze(t, x), analyze(t, circshift(x, sh))
     for i in axes(c, 3)
         @test maximum(abs, circshift(subband(t, c, i), sh) .- subband(t, cs, i)) < 1.0e-10
     end
     # With no directional splitting the STICT is the TILP alone: translation invariant.
-    t0 = STICT(J = 2, L_array = [0, 0])
+    t0 = STICT(scales = 2, direction_levels = [0, 0])
     s, ss = analyze(t0, x), analyze(t0, circshift(x, sh))
     for i in 2:nsubbands(t0, size(x))
         @test maximum(abs, circshift(subband(t0, s, i), sh) .- subband(t0, ss, i)) < 1.0e-10
@@ -76,7 +76,7 @@ end
     end
     c1, d1 = lp(x)
     c2, d2 = lp(c1)
-    t = STICT(J = 2, L_array = [0, 0])
+    t = STICT(scales = 2, direction_levels = [0, 0])
     tilp = analyze(t, x)
     # With L = 0, subband 1 + 4(i - 1) + c is channel c of level i.
     channel(i, c) = subband(t, tilp, 1 + 4 * (i - 1) + c)
@@ -92,9 +92,9 @@ end
     Random.seed!(83)
     x = randn(64, 64)
     L = [3, 2]
-    t0 = STICT(J = 2, L_array = [0, 0])
+    t0 = STICT(scales = 2, direction_levels = [0, 0])
     channels = analyze(t0, x)
-    t, st = TICT(J = 2, L_array = L), STICT(J = 2, L_array = L)
+    t, st = TICT(scales = 2, direction_levels = L), STICT(scales = 2, direction_levels = L)
     c, s = analyze(t, x), analyze(st, x)
     layout = subband_layout(t, size(x))
     for i in 1:2, (ch, half) in enumerate((:both, :second, :first, :both))
@@ -115,7 +115,7 @@ end
     # almost empty; channel 3 is the transpose, with its unsplit fan last.
     n = 64
     wave(k) = [cos(2π * (k[1] * a + k[2] * b) / n) for a in 0:(n - 1), b in 0:(n - 1)]
-    t = TICT(J = 1, L_array = [3])
+    t = TICT(scales = 1, direction_levels = [3])
     layout = subband_layout(t, (n, n))
     function e(c, ch)
         idx = findall(b -> b.channel == ch, layout)
@@ -131,7 +131,7 @@ end
     using Random
     Random.seed!(84)
     for x in (randn(64, 64), complex.(randn(64, 64), randn(64, 64)))
-        t, st = TICT(J = 2, L_array = [3, 2]), STICT(J = 2, L_array = [3, 2])
+        t, st = TICT(scales = 2, direction_levels = [3, 2]), STICT(scales = 2, direction_levels = [3, 2])
         wt, ws = make_workspace(t, x), make_workspace(st, x)
         @test wt isa TICTWorkspace && ws isa STICTWorkspace
         ct = similar_coefficients(t, x)
@@ -161,7 +161,7 @@ end
 @testitem "TICT stages views and transposes through the workspace" tags = [:tict] begin
     using Random
     Random.seed!(42)
-    t = TICT(J = 2, L_array = [2, 1])
+    t = TICT(scales = 2, direction_levels = [2, 1])
     big = randn(40, 40)
     x = view(big, 3:34, 5:36)
     xd = collect(x)
@@ -186,15 +186,15 @@ end
 end
 
 @testitem "TICT/STICT argument checks" tags = [:tict] begin
-    t = TICT(J = 1, L_array = [2])
+    t = TICT(scales = 1, direction_levels = [2])
     ws = make_workspace(t, Float64, (32, 32))
     @test_throws DimensionMismatch analyze(t, zeros(16, 16); workspace = ws)
     # The `!` forms need the workspace's element type.
     c32 = similar_coefficients(t, zeros(Float32, 32, 32))
     @test_throws ArgumentError analyze!(c32, t, zeros(32, 32); workspace = ws)
     @test_throws ArgumentError synthesize!(zeros(Float32, 32, 32), t, analyze(t, zeros(32, 32)); workspace = ws)
-    st = STICT(J = 1, L_array = [2])
+    st = STICT(scales = 1, direction_levels = [2])
     sws = make_workspace(st, Float64, (32, 32))
     @test_throws ArgumentError synthesize(st, similar_coefficients(st, zeros(Float32, 32, 32)); workspace = sws)
-    @test_throws ArgumentError analyze(STICT(J = 1, L_array = [4]), zeros(20, 20))
+    @test_throws ArgumentError analyze(STICT(scales = 1, direction_levels = [4]), zeros(20, 20))
 end

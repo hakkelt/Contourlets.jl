@@ -46,9 +46,9 @@ against SurfBox there.
 
 | Contourlets.jl | MATLAB CT Toolbox | MATLAB NSCT Toolbox |
 |---------------|------------------|-------------------|
-| `analyze(t, img)`, `t = CT(J = n, L_array = [L1,…,Ln])` | `pdfbdec(img, '9-7', 'pkva', [L1,L2,…])` | — |
+| `analyze(t, img)`, `t = CT(scales = n, direction_levels = [L1,…,Ln])` | `pdfbdec(img, '9-7', 'pkva', [L1,L2,…])` | — |
 | `synthesize(t, coeffs)` | `pdfbrec(coeffs, '9-7', 'pkva')` | — |
-| `analyze(t, img)`, `t = NSCT(J = n, L_array = [L1,…,Ln])` | — | `nsctdec(img, [L1,L2,…])` |
+| `analyze(t, img)`, `t = NSCT(scales = n, direction_levels = [L1,…,Ln])` | — | `nsctdec(img, [L1,L2,…])` |
 | `synthesize(t, coeffs)` | — | `nsctrec(coeffs)` |
 | `lp_decompose(img, CDF97)` | `lpdec(img, '9-7')` | — |
 | `lp_reconstruct(c, bp, CDF97)` | `lprec(c, bp, '9-7')` | — |
@@ -56,7 +56,7 @@ against SurfBox there.
 | `dfb_reconstruct(sbs, Q2345)` | `dfbrec(sbs, 'pkva')` | — |
 | `nsdfb_decompose(bp, L, Q2345, tl)` | — | `nsdfbdec(bp, …)` |
 | `nsdfb_reconstruct(sbs, Q2345, tl)` | — | `nsdfbrec(sbs, …)` |
-| `parabolic_levels(J)` | manual `[1 2 3 4]` | manual |
+| `parabolic_levels(scales)` | manual `[1 2 3 4]` | manual |
 
 ---
 
@@ -65,14 +65,14 @@ against SurfBox there.
 Both the MATLAB toolboxes and Contourlets.jl reach perfect reconstruction (PR) in
 exact arithmetic; in `Float64` the residuals sit at the round-off floor. The
 values below are from the cross-validation run described under
-[Benchmarks](@ref comparison-benchmarks), on random `n × n` inputs with `J = 2`,
-`L_array = [2, 3]`:
+[Benchmarks](@ref comparison-benchmarks), on random `n × n` inputs with `scales = 2`,
+`direction_levels = [2, 3]`:
 
 | Check | Contourlets.jl | MATLAB reference |
 |---|---|---|
 | NSDFB, `L = 3` | 1.2e-14 … 1.4e-14 | 8.9e-15 … 1.1e-14 |
-| CT, `J = 2` | 5.6e-15 … 6.0e-15 | 6.8e-14 … 8.4e-14 |
-| NSCT, `J = 2` | 8.9e-15 … 1.1e-14 | 5.8e-15 … 7.5e-15 |
+| CT, `scales = 2` | 5.6e-15 … 6.0e-15 | 6.8e-14 … 8.4e-14 |
+| NSCT, `scales = 2` | 8.9e-15 … 1.1e-14 | 5.8e-15 … 7.5e-15 |
 
 The DFB uses the same filters as the toolbox and agrees with its `dfbdec_l` to
 1e-15 for `L ≤ 2` (a regression test locks this in).  From `L = 3` the two
@@ -170,7 +170,7 @@ described in [`matlab/README.md`](https://github.com/hakkelt/Contourlets.jl/blob
 then from MATLAB:
 
 ```matlab
-verify_vs_julia(2, [2 3], [64 128 256])   % J, L_array, sizes
+verify_vs_julia(2, [2 3], [64 128 256])   % J, direction_levels, sizes
 ```
 
 The script writes shared inputs, runs the Julia side as a subprocess

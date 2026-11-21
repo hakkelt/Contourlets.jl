@@ -40,9 +40,9 @@ _tict_n_subbands(l::Int, c::Int) = _bank_n_subbands(l, _TILP_HALVES[c])
 
 # Subband (i, c, k) is slice `offsets[4(i - 1) + c] + k` of TICT coefficients.
 function _tilp_offsets(t::Union{TICT, STICT})
-    offsets = Vector{Int}(undef, 4 * t.J)
+    offsets = Vector{Int}(undef, 4 * t.scales)
     s = 1
-    for (i, l) in enumerate(t.L_array), c in 1:4
+    for (i, l) in enumerate(t.direction_levels), c in 1:4
         offsets[4 * (i - 1) + c] = s
         s += _tict_n_subbands(l, c)
     end

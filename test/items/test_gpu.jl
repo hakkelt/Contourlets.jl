@@ -113,7 +113,7 @@ end
     using GPUEnv, Random
     Random.seed!(53)
     x = randn(Float32, 64, 64)
-    t = CT(J = 2, L_array = [2, 3])
+    t = CT(scales = 2, direction_levels = [2, 3])
     ccpu = analyze(t, x)
     for backend in GPUBackends.fft_backends
         xg = to_gpu(backend, x)
@@ -131,7 +131,7 @@ end
     using GPUEnv, Random
     Random.seed!(54)
     x = randn(Float32, 32, 32)
-    t = NSCT(J = 2, L_array = [2, 3])
+    t = NSCT(scales = 2, direction_levels = [2, 3])
     ncpu = analyze(t, x)
     for backend in GPUBackends.fft_backends
         xg = to_gpu(backend, x)
@@ -150,7 +150,7 @@ end
     using GPUEnv, Random
     Random.seed!(55)
     z = complex.(randn(Float32, 32, 32), randn(Float32, 32, 32))
-    for t in (CT(J = 2, L_array = [2, 3]), NSCT(J = 2, L_array = [2, 3]))
+    for t in (CT(scales = 2, direction_levels = [2, 3]), NSCT(scales = 2, direction_levels = [2, 3]))
         ccpu = analyze(t, z)
         for backend in GPUBackends.fft_backends
             zg = to_gpu(backend, z)
@@ -169,7 +169,7 @@ end
     for backend in GPUBackends.fft_backends
         xg = to_gpu(backend, x)
         DT = typeof(xg)
-        for t in (CT(J = 2, L_array = [2, 3]), NSCT(J = 2, L_array = [2, 3]), TICT(J = 2, L_array = [2, 3]), STICT(J = 2, L_array = [2, 3]))
+        for t in (CT(scales = 2, direction_levels = [2, 3]), NSCT(scales = 2, direction_levels = [2, 3]), TICT(scales = 2, direction_levels = [2, 3]), STICT(scales = 2, direction_levels = [2, 3]))
             c = analyze(t, xg)
             storage = c isa SubbandVector ? parent(c) : c
             @test !(storage isa Array)              # not transferred to host
@@ -273,7 +273,7 @@ end
     using GPUEnv, Random
     Random.seed!(74)
     for x in (randn(Float32, 32, 32), complex.(randn(Float32, 32, 32), randn(Float32, 32, 32)))
-        for t in (TICT(J = 2, L_array = [3, 2]), STICT(J = 2, L_array = [3, 2]))
+        for t in (TICT(scales = 2, direction_levels = [3, 2]), STICT(scales = 2, direction_levels = [3, 2]))
             ccpu = analyze(t, x)
             for backend in GPUBackends.fft_backends
                 xg = to_gpu(backend, x)
@@ -299,7 +299,7 @@ end
 @testitem "GPU NSCT workspace has its masks on the device" tags = [:gpu] setup = [GPUBackends] begin
     using GPUEnv, Random
     Random.seed!(75)
-    t = NSCT(J = 1, L_array = [2])
+    t = NSCT(scales = 1, direction_levels = [2])
     x = randn(Float32, 32, 32)
     for backend in GPUBackends.fft_backends
         xg = to_gpu(backend, x)
@@ -320,7 +320,7 @@ end
     x = randn(Float32, 32, 32)
     for backend in GPUBackends.backends
         xg = to_gpu(backend, x)
-        for t in (CT(J = 2, L_array = [2, 3]), NSCT(J = 2, L_array = [2, 3]))
+        for t in (CT(scales = 2, direction_levels = [2, 3]), NSCT(scales = 2, direction_levels = [2, 3]))
             cc = analyze(t, x)
             cc_dev = Adapt.adapt(typeof(xg).name.wrapper, cc)
             @test !((cc_dev isa SubbandVector ? parent(cc_dev) : cc_dev) isa Array)
@@ -334,7 +334,7 @@ end
 @testitem "GPU CT workspace path matches CPU" tags = [:gpu] setup = [GPUBackends] begin
     using GPUEnv, Random
     Random.seed!(42)
-    t = CT(J = 2, L_array = [2, 3])
+    t = CT(scales = 2, direction_levels = [2, 3])
     x = randn(Float32, 64, 64)
     ccpu = analyze(t, x)
     for backend in GPUBackends.fft_backends
@@ -365,7 +365,7 @@ end
 @testitem "GPU NSCT workspace path matches CPU" tags = [:gpu] setup = [GPUBackends] begin
     using GPUEnv, Random
     Random.seed!(42)
-    t = NSCT(J = 2, L_array = [2, 3])
+    t = NSCT(scales = 2, direction_levels = [2, 3])
     x = randn(Float32, 32, 32)
     ncpu = analyze(t, x)
     for backend in GPUBackends.fft_backends
@@ -421,7 +421,7 @@ end
     Random.seed!(11)
     close(a, b) = maximum(abs, host(a) .- host(b)) < 1.0f-4
     for x in (randn(Float32, 64, 64), complex.(randn(Float32, 64, 64), randn(Float32, 64, 64)))
-        for t in (NSCT(J = 2, L_array = [2, 3]), TICT(J = 2, L_array = [2, 3]))
+        for t in (NSCT(scales = 2, direction_levels = [2, 3]), TICT(scales = 2, direction_levels = [2, 3]))
             ccpu = analyze(t, x)
             for backend in GPUBackends.fft_backends
                 xg = to_gpu(backend, x)
@@ -445,7 +445,7 @@ end
         # STICT: a captured graph (CUDA) replays for a new input into the same
         # coefficients, and alternating coefficient sets replay their own graphs.
         x2 = x .+ 1
-        st = STICT(J = 2, L_array = [2, 3])
+        st = STICT(scales = 2, direction_levels = [2, 3])
         ref1, ref2 = analyze(st, x), analyze(st, x2)
         for backend in GPUBackends.fft_backends
             xg = to_gpu(backend, x)
@@ -476,7 +476,7 @@ end
     using GPUEnv, Random
     # A captured CT graph (CUDA) reads device filters it does not keep alive: they
     # live with the cache entry, so a replay after a GC still reads them.
-    t = CT(J = 3, L_array = [2, 3, 3])
+    t = CT(scales = 3, direction_levels = [2, 3, 3])
     x = randn(Xoshiro(3), Float32, 64, 64)
     ref = analyze(t, x)
     for backend in GPUBackends.fft_backends
@@ -496,7 +496,7 @@ end
     using GPUEnv, Random
     # Float64 replays read Float64 filters (not `cu`'s Float32), and a call that
     # resizes the scratch buffers a graph points at drops the cached graphs.
-    t = CT(J = 3, L_array = [2, 3, 3])
+    t = CT(scales = 3, direction_levels = [2, 3, 3])
     x = randn(Xoshiro(4), 64, 64)
     ref = analyze(t, x)
     for backend in GPUBackends.fft_backends
@@ -528,7 +528,7 @@ end
     Random.seed!(12)
     close(a, b) = maximum(abs, Array(a) .- b) < 1.0f-4
     for x in (randn(Float32, 64, 64), complex.(randn(Float32, 64, 64), randn(Float32, 64, 64)))
-        for t in (NSCT(J = 2, L_array = [2, 3]), TICT(J = 2, L_array = [2, 3]))
+        for t in (NSCT(scales = 2, direction_levels = [2, 3]), TICT(scales = 2, direction_levels = [2, 3]))
             ccpu = analyze(t, x)
             for backend in GPUBackends.fft_backends
                 xg = to_gpu(backend, x)
@@ -554,7 +554,7 @@ end
     for backend in GPUBackends.fft_backends
         backend.name === :JLArray || continue
         xg = to_gpu(backend, x)
-        for t in (CT(J = 2, L_array = [2, 3]), NSCT(J = 2, L_array = [2, 3]), TICT(J = 2, L_array = [2, 1]), STICT(J = 2, L_array = [3, 2]))
+        for t in (CT(scales = 2, direction_levels = [2, 3]), NSCT(scales = 2, direction_levels = [2, 3]), TICT(scales = 2, direction_levels = [2, 1]), STICT(scales = 2, direction_levels = [3, 2]))
             test_transform(t, xg; rtol = 1.0f-4)
         end
     end

@@ -1,18 +1,35 @@
 # The transform objects CT, NSCT, TICT and STICT: every parameter of a
-# decomposition (pyramid depth, per-level DFB depth, filters), with their
+# decomposition (number of scales, DFB depth per scale, filters), with their
 # validation, value equality and precision conversion, and the
-# `parabolic_levels` helper that builds a parabolic-scaling `L_array`.
+# `parabolic_levels` helper that builds parabolic-scaling `direction_levels`.
 
 # Supertype of the four transforms, which hold the same parameters.
 abstract type _ContourletTransform{T <: AbstractFloat} <: AbstractMultiscaleTransform end
 
 # The fields of a transform at filter precision `T`, validated.
-function _contourlet_fields(::Type{T}, J, L_array, lp_filters, dfb_filters) where {T <: AbstractFloat}
-    J >= 1 || throw(ArgumentError("J must be ≥ 1, got $(J)"))
-    length(L_array) == J || throw(ArgumentError("length(L_array) must equal J = $(J), got $(length(L_array))"))
-    all(>=(0), L_array) || throw(ArgumentError("L_array entries must be ≥ 0, got $(L_array)"))
+function _contourlet_fields(::Type{T}, scales, direction_levels, lp_filters, dfb_filters) where {T <: AbstractFloat}
+    scales >= 1 || throw(ArgumentError("scales must be ≥ 1, got $(scales)"))
+    length(direction_levels) == scales || throw(
+        ArgumentError("length(direction_levels) must equal scales = $(scales), got $(length(direction_levels))")
+    )
+    all(>=(0), direction_levels) || throw(ArgumentError("direction_levels entries must be ≥ 0, got $(direction_levels)"))
     lp = FilterPair{T}(T.(lp_filters.h), T.(lp_filters.g))
-    return Int(J), collect(Int, L_array), lp, _convert_qfp(T, dfb_filters)
+    return Int(scales), collect(Int, direction_levels), lp, _convert_qfp(T, dfb_filters)
+end
+
+# The number of scales and the direction levels from the constructor keywords,
+# either of which may be `nothing`: `scales` alone takes the parabolic-scaling
+# levels, `direction_levels` alone has one scale per entry.
+function _resolve_levels(scales, direction_levels)
+    if direction_levels === nothing
+        scales === nothing && throw(ArgumentError("give scales, direction_levels, or both"))
+        return scales, parabolic_levels(scales)
+    end
+    scales === nothing && return length(direction_levels), direction_levels
+    length(direction_levels) == scales || throw(
+        ArgumentError("scales = $(scales) disagrees with direction_levels = $(direction_levels), which has $(length(direction_levels)) entries")
+    )
+    return scales, direction_levels
 end
 
 for (name, what) in (
@@ -23,19 +40,23 @@ for (name, what) in (
     )
     @eval begin
         struct $name{T} <: _ContourletTransform{T}
-            J::Int
-            L_array::Vector{Int}
+            scales::Int
+            direction_levels::Vector{Int}
             lp_filters::FilterPair{T}
             dfb_filters::QuincunxFilterPair{T}
-            function $name{T}(J, L_array, lp_filters, dfb_filters) where {T <: AbstractFloat}
-                J, L_array, lp_filters, dfb_filters = _contourlet_fields(T, J, L_array, lp_filters, dfb_filters)
-                return new{T}(J, L_array, lp_filters, dfb_filters)
+            function $name{T}(scales, direction_levels, lp_filters, dfb_filters) where {T <: AbstractFloat}
+                scales, direction_levels, lp_filters, dfb_filters =
+                    _contourlet_fields(T, scales, direction_levels, lp_filters, dfb_filters)
+                return new{T}(scales, direction_levels, lp_filters, dfb_filters)
             end
         end
 
-        function $name(; J::Integer, L_array::AbstractVector{<:Integer}, lp_filters::FilterPair = CDF97, dfb_filters::QuincunxFilterPair = Q2345)
+        function $name(;
+                scales = nothing, direction_levels = nothing,
+                lp_filters::FilterPair = CDF97, dfb_filters::QuincunxFilterPair = Q2345
+            )
             T = promote_type(eltype(lp_filters), eltype(dfb_filters))
-            return $name{T}(J, L_array, lp_filters, dfb_filters)
+            return $name{T}(_resolve_levels(scales, direction_levels)..., lp_filters, dfb_filters)
         end
 
         _family(::$name) = $name
@@ -43,34 +64,40 @@ for (name, what) in (
 end
 
 const _TRANSFORM_KEYWORDS = """
-- `J`: the number of pyramid levels (≥ 1);
-- `L_array`: the directional depth of each level, `J` entries ≥ 0, finest level
-  first (see [`parabolic_levels`](@ref)); level `j` has `2^L_array[j]`
-  directions;
+- `scales`: the number of pyramid levels (≥ 1), `J` in the papers;
+- `direction_levels`: the depth of the directional filter bank at each scale,
+  `scales` entries ≥ 0, finest scale first; scale `j` has
+  `2^direction_levels[j]` directions.  These are the `l_j` of the papers and
+  the `nlevs` of the MATLAB toolboxes;
 - `lp_filters`: the pyramid's biorthogonal filter pair ([`CDF97`](@ref) by
   default);
 - `dfb_filters`: the ladder pair of the directional filter banks
   ([`Q2345`](@ref) by default).
 
+At least one of `scales` and `direction_levels` must be given: `scales` alone
+takes `direction_levels = parabolic_levels(scales)` (see
+[`parabolic_levels`](@ref)), `direction_levels` alone has
+`scales = length(direction_levels)`, and when both are given they must agree.
 The filters are stored at the precision of the wider of the two pairs; a
 transform runs at the precision of its data (`Float32` data uses `Float32`
 filters), whatever the precision it holds.  Transforms with equal parameters
 are `==` and hash alike."""
 
 """
-    CT(; J, L_array, lp_filters = CDF97, dfb_filters = Q2345)
+    CT(; scales, direction_levels, lp_filters = CDF97, dfb_filters = Q2345)
 
-The discrete contourlet transform of Do & Vetterli (2005): a `J`-level Laplacian
-pyramid whose bandpass image at level `j` is split by a decimated directional
-filter bank of depth `L_array[j]`.  It is nearly critically sampled (about
+The discrete contourlet transform of Do & Vetterli (2005): a Laplacian
+pyramid of `scales` levels whose bandpass image at scale `j` is split by a
+decimated directional filter bank of depth `direction_levels[j]`.  It is nearly critically sampled (about
 4/3 coefficients per pixel); its subbands have different sizes, so the
 coefficients are a [`SubbandVector`](@ref).
 
 $(_TRANSFORM_KEYWORDS)
 
 Subbands ([`subband_layout`](@ref)): the lowpass first, as
-`(scale = J + 1, direction = 0)`, then for `scale = 1` (the finest), 2, …, `J`
-its directional subbands `(scale = j, direction = k)`, `k = 1, …, 2^L_array[j]`.
+`(scale = scales + 1, direction = 0)`, then for `scale = 1` (the finest), 2, …,
+`scales`
+its directional subbands `(scale = j, direction = k)`, `k = 1, …, 2^direction_levels[j]`.
 The transform runs serially; `threaded` is accepted and ignored.
 
 # Examples
@@ -79,8 +106,8 @@ julia> using Contourlets, Random
 
 julia> x = randn(Xoshiro(1), 64, 64);
 
-julia> t = CT(J = 2, L_array = [1, 2])
-CT(J = 2, L_array = [1, 2])
+julia> t = CT(scales = 2, direction_levels = [1, 2])
+CT(scales = 2, direction_levels = [1, 2])
 
 julia> c = analyze(t, x);
 
@@ -107,7 +134,7 @@ true
 CT
 
 """
-    NSCT(; J, L_array, lp_filters = CDF97, dfb_filters = Q2345)
+    NSCT(; scales, direction_levels, lp_filters = CDF97, dfb_filters = Q2345)
 
 The nonsubsampled contourlet transform of da Cunha, Zhou & Do (2006): the
 contourlet transform without its samplers (a nonsubsampled pyramid and
@@ -118,8 +145,9 @@ are one array of size `(size(x)..., n)`, subband `i` being `c[:, :, i]`.
 $(_TRANSFORM_KEYWORDS)
 
 Subbands ([`subband_layout`](@ref)): the lowpass first, as
-`(scale = J + 1, direction = 0)`, then for `scale = 1` (the finest), 2, …, `J`
-its directional subbands `(scale = j, direction = k)`, `k = 1, …, 2^L_array[j]`.
+`(scale = scales + 1, direction = 0)`, then for `scale = 1` (the finest), 2, …,
+`scales`
+its directional subbands `(scale = j, direction = k)`, `k = 1, …, 2^direction_levels[j]`.
 
 With a workspace and `threaded = true` (the default `threaded = nothing` means
 `true` for complex data, `false` for real data) the independent subband FFTs of
@@ -131,7 +159,7 @@ julia> using Contourlets, Random
 
 julia> x = randn(Xoshiro(2), 32, 32);
 
-julia> t = NSCT(J = 2, L_array = [1, 2]);
+julia> t = NSCT(scales = 2, direction_levels = [1, 2]);
 
 julia> c = analyze(t, x);
 
@@ -151,27 +179,28 @@ true
 NSCT
 
 """
-    TICT(; J, L_array, lp_filters = CDF97, dfb_filters = Q2345)
+    TICT(; scales, direction_levels, lp_filters = CDF97, dfb_filters = Q2345)
 
 The translation-invariant contourlet transform of Eslami & Radha (2006).  A
-`J`-level translation-invariant Laplacian pyramid gives, at every level `i`,
+translation-invariant Laplacian pyramid of `scales` levels gives, at every level `i`,
 four full-size highpass channels; each is split by a translation-invariant
-directional filter bank of depth `L_array[i]`: the full tree for channels 1
-and 4 (`2^L_array[i]` subbands), a half tree for channels 2 and 3
-(`2^(L_array[i] - 1) + 1` subbands).  Every subband has the image's size, and
+directional filter bank of depth `direction_levels[i]`: the full tree for channels 1
+and 4 (`2^direction_levels[i]` subbands), a half tree for channels 2 and 3
+(`2^(direction_levels[i] - 1) + 1` subbands).  Every subband has the image's size, and
 the transform commutes with circular shifts of the image.  The coefficients are
 one array of size `(size(x)..., n)`, subband `i` being `c[:, :, i]`.
 
-The redundancy is `3 Σᵢ 2^L_array[i] + 2J + 1` when every `L_array[i] ≥ 1` (a
-level with `L_array[i] = 0` contributes its 4 channels).  [`STICT`](@ref) trades
-the directional stage's translation invariance for a redundancy of `4J + 1`.
+The redundancy is `3 Σᵢ 2^direction_levels[i] + 2 scales + 1` when every
+`direction_levels[i] ≥ 1` (a
+level with `direction_levels[i] = 0` contributes its 4 channels).  [`STICT`](@ref) trades
+the directional stage's translation invariance for a redundancy of `4 scales + 1`.
 `lp_filters` must be biorthogonal (as [`CDF97`](@ref) is).
 
 $(_TRANSFORM_KEYWORDS)
 
 Subbands ([`subband_layout`](@ref)): the lowpass first, as
-`(level = J + 1, channel = 0, direction = 0)`, then for `level = 1` (the
-finest), 2, …, `J`, for `channel = 1, …, 4`, the directional subbands
+`(level = scales + 1, channel = 0, direction = 0)`, then for `level = 1` (the
+finest), 2, …, `scales`, for `channel = 1, …, 4`, the directional subbands
 `(level = i, channel = c, direction = k)`.
 
 Threading as for [`NSCT`](@ref).
@@ -182,7 +211,7 @@ julia> using Contourlets, Random
 
 julia> x = randn(Xoshiro(1), 32, 32);
 
-julia> t = TICT(J = 2, L_array = [2, 1]);
+julia> t = TICT(scales = 2, direction_levels = [2, 1]);
 
 julia> c = analyze(t, x);
 
@@ -202,13 +231,13 @@ true
 TICT
 
 """
-    STICT(; J, L_array, lp_filters = CDF97, dfb_filters = Q2345)
+    STICT(; scales, direction_levels, lp_filters = CDF97, dfb_filters = Q2345)
 
 The semi-translation-invariant contourlet transform of Eslami & Radha (2006):
 the translation-invariant Laplacian pyramid of [`TICT`](@ref) followed by
 critically sampled directional filter banks (full tree on channels 1 and 4, half
 trees on 2 and 3).  The pyramid commutes with circular shifts; the directional
-subbands are those of the decimated DFB.  Redundancy `4J + 1`; the subbands
+subbands are those of the decimated DFB.  Redundancy `4 scales + 1`; the subbands
 have different sizes, so the coefficients are a [`SubbandVector`](@ref).
 
 Both image dimensions must be divisible by `2^max(L - 1, 1)` for the deepest
@@ -225,7 +254,7 @@ julia> using Contourlets, Random
 
 julia> x = randn(Xoshiro(1), 32, 32);
 
-julia> t = STICT(J = 2, L_array = [3, 2]);
+julia> t = STICT(scales = 2, direction_levels = [3, 2]);
 
 julia> c = analyze(t, x);
 
@@ -245,17 +274,17 @@ true
 STICT
 
 function Base.:(==)(a::_ContourletTransform, b::_ContourletTransform)
-    return _family(a) === _family(b) && a.J == b.J && a.L_array == b.L_array &&
+    return _family(a) === _family(b) && a.scales == b.scales && a.direction_levels == b.direction_levels &&
         a.lp_filters == b.lp_filters && a.dfb_filters == b.dfb_filters
 end
 
 function Base.hash(t::_ContourletTransform, h::UInt)
     h = hash(nameof(_family(t)), h)
-    return hash(t.dfb_filters, hash(t.lp_filters, hash(t.L_array, hash(t.J, h))))
+    return hash(t.dfb_filters, hash(t.lp_filters, hash(t.direction_levels, hash(t.scales, h))))
 end
 
 function Base.show(io::IO, t::_ContourletTransform{T}) where {T}
-    print(io, nameof(_family(t)), "(J = ", t.J, ", L_array = ", t.L_array)
+    print(io, nameof(_family(t)), "(scales = ", t.scales, ", direction_levels = ", t.direction_levels)
     t.lp_filters == _convert_pair(T, CDF97) || print(io, ", lp_filters = ", t.lp_filters)
     t.dfb_filters == _convert_qfp(T, Q2345) || print(io, ", dfb_filters = ", t.dfb_filters)
     return print(io, ")")
@@ -267,23 +296,23 @@ _convert_pair(::Type{T}, fp::FilterPair) where {T <: AbstractFloat} = FilterPair
 # The transform `t` at filter precision `Tf` (`t` itself when it already is).
 _convert_transform(::Type{Tf}, t::_ContourletTransform{Tf}) where {Tf <: AbstractFloat} = t
 _convert_transform(::Type{Tf}, t::_ContourletTransform) where {Tf <: AbstractFloat} =
-    _family(t){Tf}(t.J, t.L_array, t.lp_filters, t.dfb_filters)
+    _family(t){Tf}(t.scales, t.direction_levels, t.lp_filters, t.dfb_filters)
 
 # Images only: the contourlet transforms are planar.
 _check_image(dims::Dims{2}) = dims
 _check_image(dims::Dims) = throw(ArgumentError("the contourlet transforms take images (two axes), got data of size $(dims)"))
 
 """
-    parabolic_levels(J, l_j0=1) -> Vector{Int}
+    parabolic_levels(scales, l_j0 = 1) -> Vector{Int}
 
 Compute the per-scale DFB depth array following the parabolic scaling law
 
-    l_j = l_j0 + ⌊(j0 - j) / 2⌋,    j0 = J,
+    l_j = l_j0 + ⌊(j0 - j) / 2⌋,    j0 = scales,
 
 so that the number of directions doubles every other scale — the discrete
 counterpart of parabolic scaling, width ∝ length², in Do & Vetterli (2005).  Index `j` matches
-the scale ordering of the transforms' `L_array`: `j = 1`
-is the *finest* scale (first pyramid split) and `j = J` the coarsest, hence
+the scale ordering of the transforms' `direction_levels`: `j = 1`
+is the *finest* scale (first pyramid split) and `j = scales` the coarsest, hence
 finer scales receive more directional subbands.  `l_j0` is the DFB depth at the
 coarsest scale.
 
@@ -313,8 +342,7 @@ julia> parabolic_levels(5, 2)
    14(12):2091–2106, 2005.
    [doi:10.1109/TIP.2005.859376](https://doi.org/10.1109/TIP.2005.859376)
 """
-function parabolic_levels(J::Integer, l_j0::Integer = 1)::Vector{Int}
-    J, l_j0 = Int(J), Int(l_j0)
-    j0 = J
-    return [max(0, l_j0 + (j0 - j) ÷ 2) for j in 1:J]
+function parabolic_levels(scales::Integer, l_j0::Integer = 1)::Vector{Int}
+    scales, l_j0 = Int(scales), Int(l_j0)
+    return [max(0, l_j0 + (scales - j) ÷ 2) for j in 1:scales]
 end

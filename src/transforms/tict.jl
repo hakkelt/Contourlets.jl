@@ -66,7 +66,7 @@ function _tict_workspace(
     real_data = Td <: Real
     ref = _allocate_zeros(M, Td, image_size)
     rows = real_data ? (1:(n1 ÷ 2 + 1)) : (1:n1)
-    masks = _adapt_masks(ref, _tilp_masks(Tf, p.lp_filters, image_size, p.J; rows = rows))
+    masks = _adapt_masks(ref, _tilp_masks(Tf, p.lp_filters, image_size, p.scales; rows = rows))
     B = _bank_type(ref, Tf)
     # One full bank per depth (the identity bank at depth 0); the half trees share
     # its masks (`_half_bank`).
@@ -75,11 +75,11 @@ function _tict_workspace(
         _adapt_bank(ref, _directional_bank(Tf, image_size, l, p.dfb_filters.f_ladder; decimated = false, real_data = real_data))
     end
     bank(l, half) = l == 0 ? full(0) : _half_bank(full(l), full(1), half)
-    banks = B[bank(l, h) for l in p.L_array for h in _TILP_HALVES]
+    banks = B[bank(l, h) for l in p.direction_levels for h in _TILP_HALVES]
     g(i, c) = 4 * (i - 1) + c                   # pyramid mask and bank of channel c of level i
     items = [
         MaskItem((i, c, k), g(i, c), g(i, c), k)
-            for (i, l) in enumerate(p.L_array) for c in 1:4 for k in 1:_tict_n_subbands(l, c)
+            for (i, l) in enumerate(p.direction_levels) for c in 1:4 for k in 1:_tict_n_subbands(l, c)
     ]
     X, pfwd, pbwd = _ns_unnormalized_plans(ref; measured = true, unaligned = _unaligned_slices(ref))
     engine = _mask_bank_engine(

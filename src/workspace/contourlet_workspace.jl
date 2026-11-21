@@ -126,7 +126,7 @@ function _dfb_level_runners(ref::AbstractMatrix, p::CT, bp_dims, ::Type{Tf}) whe
             _adapt_bank(ref, _directional_bank(Tf, dims, l, p.dfb_filters.f_ladder; decimated = true)),
             ref; flags = flags, pool = pool
         )
-            for (l, dims) in zip(p.L_array, bp_dims) if l > 0
+            for (l, dims) in zip(p.direction_levels, bp_dims) if l > 0
     ]
 end
 
@@ -198,7 +198,7 @@ $(_WORKSPACE_KEYWORDS)
 ```jldoctest
 julia> using Contourlets
 
-julia> t = CT(J = 2, L_array = [1, 2]);
+julia> t = CT(scales = 2, direction_levels = [1, 2]);
 
 julia> ws = make_workspace(t, Float64, (64, 64));
 
@@ -225,7 +225,7 @@ end
 function _ct_workspace(t::CT, ::Type{Td}, image_size::NTuple{2, Int}, ::Type{M}, prewarm::Bool) where {Td, M}
     Tf = filter_eltype(Td)          # real filter precision
     p2 = _convert_transform(Tf, t)
-    bp_dims = _bandpass_dims(image_size, p2.J)
+    bp_dims = _bandpass_dims(image_size, p2.scales)
     layout, firsts = _layout(p2, image_size)
     ref = _allocate_zeros(M, Td, (1, 1))
     # The DFB equivalent filters, FFT buffers and plans of every level are built
@@ -263,13 +263,13 @@ function _nsct_workspace(
     ) where {Td, M}
     Tf = filter_eltype(Td)          # real filter precision
     p2 = _convert_transform(Tf, t)
-    J = p2.J
+    J = p2.scales
     # Precompute the NSDFB equivalent filters (the bank depends on the pyramid level
     # only through its depth and its filter upsampling; levels with equal keys share
     # one bank, and depth 0 is the identity bank) and the pyramid masks; the `!`
     # paths then never rebuild them per call.
     ref = _allocate_zeros(M, Td, (1, 1))
-    keys_j = [(p2.L_array[j], p2.L_array[j] == 0 ? 0 : _nsdfb_upsampling(j)) for j in 1:J]
+    keys_j = [(p2.direction_levels[j], p2.direction_levels[j] == 0 ? 0 : _nsdfb_upsampling(j)) for j in 1:J]
     built = Dict{NTuple{2, Int}, _bank_type(ref, Tf)}()
     banks = map(keys_j) do (l, m)
         get!(built, (l, m)) do

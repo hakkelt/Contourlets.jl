@@ -71,7 +71,7 @@ print_header("Contourlet Transform — forward")
 for n in SIZES
     x = randn(Float32, n, n)
     xg = to_gpu(GPU_BACKEND, x)
-    t = CT(J = 3, L_array = parabolic_levels(3))
+    t = CT(scales = 3, direction_levels = parabolic_levels(3))
 
     ws_cpu = make_workspace(t, x)
     ws_gpu = make_workspace(t, xg)
@@ -86,7 +86,7 @@ print_header("Contourlet Transform — inverse")
 for n in SIZES
     x = randn(Float32, n, n)
     xg = to_gpu(GPU_BACKEND, x)
-    t = CT(J = 3, L_array = parabolic_levels(3))
+    t = CT(scales = 3, direction_levels = parabolic_levels(3))
 
     ws_cpu = make_workspace(t, x)
     ws_gpu = make_workspace(t, xg)
@@ -113,7 +113,7 @@ print_header("Nonsubsampled Contourlet Transform — forward")
 for n in SIZES
     x = randn(Float32, n, n)
     xg = to_gpu(GPU_BACKEND, x)
-    t = NSCT(J = 2, L_array = [2, 3])
+    t = NSCT(scales = 2, direction_levels = [2, 3])
 
     ws_cpu = make_workspace(t, x)
     ws_gpu = make_workspace(t, xg)
@@ -128,7 +128,7 @@ print_header("Nonsubsampled Contourlet Transform — inverse")
 for n in SIZES
     x = randn(Float32, n, n)
     xg = to_gpu(GPU_BACKEND, x)
-    t = NSCT(J = 2, L_array = [2, 3])
+    t = NSCT(scales = 2, direction_levels = [2, 3])
 
     ws_cpu = make_workspace(t, x)
     ws_gpu = make_workspace(t, xg)

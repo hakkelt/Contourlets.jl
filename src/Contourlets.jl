@@ -20,7 +20,7 @@ whose interface this package re-exports.
 
 ```julia
 using Contourlets
-t = NSCT(J = 3, L_array = parabolic_levels(3))
+t = NSCT(scales = 3, direction_levels = parabolic_levels(3))
 c = analyze(t, x)          # size (size(x)..., nsubbands(t, size(x)))
 x̂ = synthesize(t, c)
 ```

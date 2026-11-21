@@ -260,7 +260,7 @@ end
 
 @testitem "NSCT is directionally selective for oriented inputs" tags = [:nsct, :directional] begin
     n = 128
-    t = NSCT(J = 1, L_array = [3])
+    t = NSCT(scales = 1, direction_levels = [3])
     for deg in (30, 60, 90, 120, 150)
         x = [
             cos(2π * 0.42 * (cos(deg * π / 180) * j + sin(deg * π / 180) * i))
@@ -277,7 +277,7 @@ end
     Random.seed!(99)
     n = 32
     x = randn(n, n)
-    t = NSCT(J = 1, L_array = [3])
+    t = NSCT(scales = 1, direction_levels = [3])
     c0 = analyze(t, x; threaded = false)
     for shift in ((3, 0), (0, 5), (2, 7))
         cs = analyze(t, circshift(x, shift); threaded = false)
@@ -383,7 +383,7 @@ end
     Random.seed!(71)
     x = randn(32, 32)
     l = 2
-    ws = make_workspace(CT(J = 1, L_array = [l]), Float64, (32, 32))
+    ws = make_workspace(CT(scales = 1, direction_levels = [l]), Float64, (32, 32))
     subbands = [zeros(16, 16) for _ in 1:4]
     Contourlets.dfb_decompose!(subbands, x, l, Q2345; workspace = ws)
     ref = Contourlets.dfb_decompose(x, l, Q2345)
@@ -396,7 +396,7 @@ end
     using Random
     Random.seed!(72)
     x = randn(64, 64)
-    ws = make_workspace(CT(J = 1, L_array = [2]), Float64, (64, 64))     # Q2345
+    ws = make_workspace(CT(scales = 1, direction_levels = [2]), Float64, (64, 64))     # Q2345
     q2 = QuincunxFilterPair([0.25, 0.25])
     ref = Contourlets.dfb_decompose(x, 2, q2)
     msg_filters = "built with different DFB filters"
@@ -418,7 +418,7 @@ end
     # Half trees are never held by a CTWorkspace
     @test_throws "full-tree DFBs only" Contourlets.dfb_decompose(x, 2, Q2345; half = :first, workspace = ws)
     # Workspaces of the other transforms
-    wn = make_workspace(NSCT(J = 1, L_array = [2]), Float64, (64, 64))
+    wn = make_workspace(NSCT(scales = 1, direction_levels = [2]), Float64, (64, 64))
     @test_throws "workspace must be a CTWorkspace or nothing" Contourlets.dfb_decompose(x, 2, Q2345; workspace = wn)
     # A matching workspace still serves the call
     @test all(maximum(abs, a .- b) < 1.0e-12 for (a, b) in zip(Contourlets.dfb_decompose(x, 2, Q2345; workspace = ws), Contourlets.dfb_decompose(x, 2, Q2345)))
@@ -450,7 +450,7 @@ end
     Random.seed!(73)
     x = randn(32, 32)
     l = 2
-    ws = make_workspace(CT(J = 1, L_array = [l]), Float64, (32, 32))
+    ws = make_workspace(CT(scales = 1, direction_levels = [l]), Float64, (32, 32))
     sbs = Contourlets.dfb_decompose(x, l, Q2345)
     bp = zeros(32, 32)
     Contourlets.dfb_reconstruct!(bp, sbs, Q2345; workspace = ws)

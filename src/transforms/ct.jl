@@ -4,7 +4,7 @@
 #   coarse ← image
 #   for j = 1 … J:
 #       coarse_j, bandpass_j = lp_decompose(coarse, lp_filters)
-#       subbands of level j = dfb_decompose(bandpass_j, L_array[j], dfb_filters)
+#       subbands of level j = dfb_decompose(bandpass_j, direction_levels[j], dfb_filters)
 #       coarse = coarse_j
 #
 # Inverse (runs j = J … 1):
@@ -23,9 +23,9 @@
 # subband of each level.
 function _layout(t::CT, dims::NTuple{2, Int})
     n1, n2 = dims
-    levels = Vector{Vector{NTuple{2, Int}}}(undef, t.J)
-    for j in 1:t.J
-        levels[j] = dfb_subband_sizes(n1, n2, t.L_array[j])
+    levels = Vector{Vector{NTuple{2, Int}}}(undef, t.scales)
+    for j in 1:t.scales
+        levels[j] = dfb_subband_sizes(n1, n2, t.direction_levels[j])
         n1, n2 = cld(n1, 2), cld(n2, 2)
     end
     return _stack_levels((n1, n2), levels, dims)
@@ -50,9 +50,9 @@ function _analyze_direct!(c::SubbandVector, first::Vector{Int}, t::CT, image::Ab
     p = _convert_transform(Tf, t)
     fp, qfp = p.lp_filters, p.dfb_filters
     coarse = Td === eltype(image) ? image : Td.(image)
-    for j in 1:p.J
+    for j in 1:p.scales
         coarse_j, bp_j = lp_decompose(coarse, fp)
-        l = p.L_array[j]
+        l = p.direction_levels[j]
         dfb_decompose!(_Bands(c, first[j], 1 << l), bp_j, l, qfp)
         coarse = coarse_j
     end
@@ -65,8 +65,8 @@ function _synthesize_direct!(x::AbstractMatrix, first::Vector{Int}, t::CT, c::Su
     p = _convert_transform(Tf, t)
     fp, qfp = p.lp_filters, p.dfb_filters
     coarse = copy(subband(c, 1))
-    for j in p.J:-1:1
-        bp = dfb_reconstruct(_Bands(c, first[j], 1 << p.L_array[j]), qfp)
+    for j in p.scales:-1:1
+        bp = dfb_reconstruct(_Bands(c, first[j], 1 << p.direction_levels[j]), qfp)
         coarse = lp_reconstruct(coarse, bp, fp)
     end
     return copyto!(x, coarse)
@@ -99,13 +99,13 @@ end
 
 function _ct_forward_inner!(c::SubbandVector{T}, image::AbstractMatrix, ws::CTWorkspace{T}) where {T}
     p = ws.params
-    L = p.L_array
+    L = p.direction_levels
     fp, qfp = p.lp_filters, p.dfb_filters
     img = T === eltype(image) ? image : T.(image)
     _arena_reset!(ws.fwd_scratch)
     return _with_arena(ws.fwd_scratch) do
         current = img
-        for j in 1:p.J
+        for j in 1:p.scales
             n1, n2 = size(current)
             coarse_j = _scratch_like(current, cld(n1, 2), cld(n2, 2))
             bp_j = _scratch_like(current, n1, n2)
@@ -123,7 +123,7 @@ end
 
 function _ct_inverse_inner!(image::AbstractMatrix{T}, c::SubbandVector{T}, ws::CTWorkspace{T}) where {T}
     p = ws.params
-    L = p.L_array
+    L = p.direction_levels
     fp, qfp = p.lp_filters, p.dfb_filters
 
     _arena_reset!(ws.inv_scratch)
@@ -132,7 +132,7 @@ function _ct_inverse_inner!(image::AbstractMatrix{T}, c::SubbandVector{T}, ws::C
         current = _scratch_like(image, size(lowpass, 1), size(lowpass, 2))
         copyto!(current, lowpass)
 
-        for j in p.J:-1:1
+        for j in p.scales:-1:1
             n1, n2 = ws.bp_dims[j]
             bp = _scratch_like(current, n1, n2)
             dfb_reconstruct!(bp, _Bands(c, ws.first[j], 1 << L[j]), qfp; workspace = ws)

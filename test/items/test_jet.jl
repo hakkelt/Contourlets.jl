@@ -6,8 +6,8 @@
     # ── Types / constructors ─────────────────────────────────────────────────
     @test_call target_modules = (Contourlets,) FilterPair([1.0, 2.0], [1.0, 2.0])
     @test_call target_modules = (Contourlets,) QuincunxFilterPair([0.25, 0.25])
-    @test_call target_modules = (Contourlets,) CT(scales = 2, direction_levels = [1, 2])
-    @test_call target_modules = (Contourlets,) TICT(scales = 2, direction_levels = [1, 2])
+    @test_call target_modules = (Contourlets,) CT(scales = 2, direction_levels = [2, 1])
+    @test_call target_modules = (Contourlets,) TICT(scales = 2, direction_levels = [2, 1])
     @test_call target_modules = (Contourlets,) parabolic_levels(4)
 
     # ── Filters ──────────────────────────────────────────────────────────────
@@ -60,7 +60,7 @@
     @test_call target_modules = (Contourlets,) Contourlets.nsdfb_reconstruct(nsbs, Q2345, 1)
 
     # ── Transforms, allocating and with workspaces ───────────────────────────
-    ts = (CT(scales = 2, direction_levels = [1, 2]), NSCT(scales = 2, direction_levels = [1, 2]), TICT(scales = 2, direction_levels = [1, 2]), STICT(scales = 2, direction_levels = [1, 2]))
+    ts = (CT(scales = 2, direction_levels = [2, 1]), NSCT(scales = 2, direction_levels = [2, 1]), TICT(scales = 2, direction_levels = [2, 1]), STICT(scales = 2, direction_levels = [2, 1]))
     rec = similar(x)
     for t in ts
         @test_call target_modules = (Contourlets,) analyze(t, x)
@@ -107,7 +107,7 @@ end
 
     # ── Transforms ───────────────────────────────────────────────────────────
     # The workspace paths are the hot loops: no dynamic dispatch.
-    ts = (CT(scales = 2, direction_levels = [1, 2]), NSCT(scales = 2, direction_levels = [1, 2]), TICT(scales = 2, direction_levels = [1, 2]), STICT(scales = 2, direction_levels = [1, 2]))
+    ts = (CT(scales = 2, direction_levels = [2, 1]), NSCT(scales = 2, direction_levels = [2, 1]), TICT(scales = 2, direction_levels = [2, 1]), STICT(scales = 2, direction_levels = [2, 1]))
     rec = similar(x)
     for t in ts
         @test_opt target_modules = (Contourlets,) analyze(t, x)
@@ -127,8 +127,8 @@ end
 
     # ── Threading policies ───────────────────────────────────────────────────
     @test_call target_modules = M FilterPair(CDF97.h, CDF97.g)
-    @test_call target_modules = M analyze(CT(scales = 2, direction_levels = [1, 2]), x; threaded = false)
-    @test_call target_modules = M analyze(NSCT(scales = 2, direction_levels = [1, 2]), x; threaded = true)
+    @test_call target_modules = M analyze(CT(scales = 2, direction_levels = [2, 1]), x; threaded = false)
+    @test_call target_modules = M analyze(NSCT(scales = 2, direction_levels = [2, 1]), x; threaded = true)
 
     # ── Primitives (in place) ────────────────────────────────────────────────
     y = Contourlets.rect_downsample(x)
@@ -156,7 +156,7 @@ end
 
     # ── Workspaces and coefficients, threaded and not ───────────────────────
     rec = similar(x)
-    for t in (NSCT(scales = 2, direction_levels = [1, 2]), TICT(scales = 2, direction_levels = [1, 2]))
+    for t in (NSCT(scales = 2, direction_levels = [2, 1]), TICT(scales = 2, direction_levels = [2, 1]))
         ws = make_workspace(t, x)
         c = similar_coefficients(t, x)
         @test c isa Array{Float64, 3}
@@ -165,12 +165,12 @@ end
             @test_call target_modules = M synthesize!(rec, t, c; workspace = ws, threaded)
         end
     end
-    @test make_workspace(CT(scales = 2, direction_levels = [1, 2]), x) isa CTWorkspace
-    @test make_workspace(NSCT(scales = 2, direction_levels = [1, 2]), x) isa NSCTWorkspace
-    @test make_workspace(TICT(scales = 2, direction_levels = [1, 2]), x) isa TICTWorkspace
-    @test make_workspace(STICT(scales = 2, direction_levels = [1, 2]), x) isa STICTWorkspace
-    @test similar_coefficients(CT(scales = 2, direction_levels = [1, 2]), x) isa SubbandVector{Float64}
-    @test similar_coefficients(STICT(scales = 2, direction_levels = [1, 2]), x) isa SubbandVector{Float64}
+    @test make_workspace(CT(scales = 2, direction_levels = [2, 1]), x) isa CTWorkspace
+    @test make_workspace(NSCT(scales = 2, direction_levels = [2, 1]), x) isa NSCTWorkspace
+    @test make_workspace(TICT(scales = 2, direction_levels = [2, 1]), x) isa TICTWorkspace
+    @test make_workspace(STICT(scales = 2, direction_levels = [2, 1]), x) isa STICTWorkspace
+    @test similar_coefficients(CT(scales = 2, direction_levels = [2, 1]), x) isa SubbandVector{Float64}
+    @test similar_coefficients(STICT(scales = 2, direction_levels = [2, 1]), x) isa SubbandVector{Float64}
 end
 
 @testitem "@test_opt Contourlets remaining API" tags = [:jet] begin
@@ -186,7 +186,7 @@ end
     # ── Types / constructors / filters ───────────────────────────────────────
     @test_opt target_modules = M FilterPair([1.0, 2.0], [1.0, 2.0])
     @test_opt target_modules = M QuincunxFilterPair([0.25, 0.25])
-    @test_opt target_modules = M NSCT(scales = 2, direction_levels = [1, 2])
+    @test_opt target_modules = M NSCT(scales = 2, direction_levels = [2, 1])
     @test_opt target_modules = M parabolic_levels(4)
     @test_opt target_modules = M upsample_filter([1.0, 2.0, 3.0], 2)
     @test_opt target_modules = M Contourlets.upsample_kernel([1.0 2.0; 3.0 4.0], 2)
@@ -229,7 +229,7 @@ end
     @test_opt target_modules = M Contourlets.nsdfb_reconstruct(nsbs, Q2345, 1)
 
     # ── Workspaces and coefficients ──────────────────────────────────────────
-    ts = (CT(scales = 2, direction_levels = [1, 2]), NSCT(scales = 2, direction_levels = [1, 2]), TICT(scales = 2, direction_levels = [1, 2]), STICT(scales = 2, direction_levels = [1, 2]))
+    ts = (CT(scales = 2, direction_levels = [2, 1]), NSCT(scales = 2, direction_levels = [2, 1]), TICT(scales = 2, direction_levels = [2, 1]), STICT(scales = 2, direction_levels = [2, 1]))
     for t in ts
         @test_opt target_modules = M make_workspace(t, Float64, (16, 16))
         @test_opt target_modules = M make_workspace(t, x)

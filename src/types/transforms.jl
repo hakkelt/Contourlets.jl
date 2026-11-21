@@ -66,7 +66,7 @@ end
 const _TRANSFORM_KEYWORDS = """
 - `scales`: the number of pyramid levels (≥ 1), `J` in the papers;
 - `direction_levels`: the depth of the directional filter bank at each scale,
-  `scales` entries ≥ 0, finest scale first; scale `j` has
+  `scales` entries ≥ 0, coarsest scale first; scale `j` has
   `2^direction_levels[j]` directions.  These are the `l_j` of the papers and
   the `nlevs` of the MATLAB toolboxes;
 - `lp_filters`: the pyramid's biorthogonal filter pair ([`CDF97`](@ref) by
@@ -88,16 +88,16 @@ are `==` and hash alike."""
 
 The discrete contourlet transform of Do & Vetterli (2005): a Laplacian
 pyramid of `scales` levels whose bandpass image at scale `j` is split by a
-decimated directional filter bank of depth `direction_levels[j]`.  It is nearly critically sampled (about
-4/3 coefficients per pixel); its subbands have different sizes, so the
+decimated directional filter bank of depth `direction_levels[j]`.  It is nearly
+critically sampled (about 4/3 coefficients per pixel); its subbands have different sizes, so the
 coefficients are a [`SubbandVector`](@ref).
 
 $(_TRANSFORM_KEYWORDS)
 
 Subbands ([`subband_layout`](@ref)): the lowpass first, as
-`(scale = scales + 1, direction = 0)`, then for `scale = 1` (the finest), 2, …,
-`scales`
-its directional subbands `(scale = j, direction = k)`, `k = 1, …, 2^direction_levels[j]`.
+`(scale = 0, direction = 0)`, then for `scale = 1` (the coarsest), 2, …,
+`scales` (the finest) its directional subbands `(scale = j, direction = k)`,
+`k = 1, …, 2^direction_levels[j]`.
 The transform runs serially; `threaded` is accepted and ignored.
 
 # Examples
@@ -145,9 +145,9 @@ are one array of size `(size(x)..., n)`, subband `i` being `c[:, :, i]`.
 $(_TRANSFORM_KEYWORDS)
 
 Subbands ([`subband_layout`](@ref)): the lowpass first, as
-`(scale = scales + 1, direction = 0)`, then for `scale = 1` (the finest), 2, …,
-`scales`
-its directional subbands `(scale = j, direction = k)`, `k = 1, …, 2^direction_levels[j]`.
+`(scale = 0, direction = 0)`, then for `scale = 1` (the coarsest), 2, …,
+`scales` (the finest) its directional subbands `(scale = j, direction = k)`,
+`k = 1, …, 2^direction_levels[j]`.
 
 With a workspace and `threaded = true` (the default `threaded = nothing` means
 `true` for complex data, `false` for real data) the independent subband FFTs of
@@ -182,8 +182,8 @@ NSCT
     TICT(; scales, direction_levels, lp_filters = CDF97, dfb_filters = Q2345)
 
 The translation-invariant contourlet transform of Eslami & Radha (2006).  A
-translation-invariant Laplacian pyramid of `scales` levels gives, at every level `i`,
-four full-size highpass channels; each is split by a translation-invariant
+translation-invariant Laplacian pyramid of `scales` levels gives, at every
+level `i`, four full-size highpass channels; each is split by a translation-invariant
 directional filter bank of depth `direction_levels[i]`: the full tree for channels 1
 and 4 (`2^direction_levels[i]` subbands), a half tree for channels 2 and 3
 (`2^(direction_levels[i] - 1) + 1` subbands).  Every subband has the image's size, and
@@ -199,8 +199,8 @@ the directional stage's translation invariance for a redundancy of `4 scales + 1
 $(_TRANSFORM_KEYWORDS)
 
 Subbands ([`subband_layout`](@ref)): the lowpass first, as
-`(level = scales + 1, channel = 0, direction = 0)`, then for `level = 1` (the
-finest), 2, …, `scales`, for `channel = 1, …, 4`, the directional subbands
+`(level = 0, channel = 0, direction = 0)`, then for `level = 1` (the
+coarsest), 2, …, `scales` (the finest), for `channel = 1, …, 4`, the directional subbands
 `(level = i, channel = c, direction = k)`.
 
 Threading as for [`NSCT`](@ref).
@@ -211,11 +211,11 @@ julia> using Contourlets, Random
 
 julia> x = randn(Xoshiro(1), 32, 32);
 
-julia> t = TICT(scales = 2, direction_levels = [2, 1]);
+julia> t = TICT(scales = 2, direction_levels = [1, 2]);
 
 julia> c = analyze(t, x);
 
-julia> size(c, 3) == 1 + (4 + 3 + 3 + 4) + (2 + 2 + 2 + 2)
+julia> size(c, 3) == 1 + (2 + 2 + 2 + 2) + (4 + 3 + 3 + 4)
 true
 
 julia> maximum(abs, synthesize(t, c) .- x) < 1e-12
@@ -254,7 +254,7 @@ julia> using Contourlets, Random
 
 julia> x = randn(Xoshiro(1), 32, 32);
 
-julia> t = STICT(scales = 2, direction_levels = [3, 2]);
+julia> t = STICT(scales = 2, direction_levels = [2, 3]);
 
 julia> c = analyze(t, x);
 
@@ -303,18 +303,17 @@ _check_image(dims::Dims{2}) = dims
 _check_image(dims::Dims) = throw(ArgumentError("the contourlet transforms take images (two axes), got data of size $(dims)"))
 
 """
-    parabolic_levels(scales, l_j0 = 1) -> Vector{Int}
+    parabolic_levels(scales, coarsest = 1) -> Vector{Int}
 
-Compute the per-scale DFB depth array following the parabolic scaling law
+The directional depths of `scales` scales, coarsest first, following the
+parabolic scaling law
 
-    l_j = l_j0 + ⌊(j0 - j) / 2⌋,    j0 = scales,
+    l_j = coarsest + ⌊(j - 1) / 2⌋,    j = 1, …, scales,
 
-so that the number of directions doubles every other scale — the discrete
-counterpart of parabolic scaling, width ∝ length², in Do & Vetterli (2005).  Index `j` matches
-the scale ordering of the transforms' `direction_levels`: `j = 1`
-is the *finest* scale (first pyramid split) and `j = scales` the coarsest, hence
-finer scales receive more directional subbands.  `l_j0` is the DFB depth at the
-coarsest scale.
+so that the number of directions doubles every other scale from the coarsest
+(`l_1 = coarsest`) to the finest (`j = scales`) — the discrete counterpart of
+parabolic scaling, width ∝ length², in Do & Vetterli (2005).  It is the default
+`direction_levels` of the transforms built with `scales` alone.
 
 # Examples
 ```jldoctest
@@ -322,18 +321,18 @@ julia> using Contourlets
 
 julia> parabolic_levels(4)
 4-element Vector{Int64}:
- 2
- 2
  1
  1
+ 2
+ 2
 
 julia> parabolic_levels(5, 2)
 5-element Vector{Int64}:
+ 2
+ 2
+ 3
+ 3
  4
- 3
- 3
- 2
- 2
 ```
 
 # References
@@ -342,7 +341,7 @@ julia> parabolic_levels(5, 2)
    14(12):2091–2106, 2005.
    [doi:10.1109/TIP.2005.859376](https://doi.org/10.1109/TIP.2005.859376)
 """
-function parabolic_levels(scales::Integer, l_j0::Integer = 1)::Vector{Int}
-    scales, l_j0 = Int(scales), Int(l_j0)
-    return [max(0, l_j0 + (scales - j) ÷ 2) for j in 1:scales]
+function parabolic_levels(scales::Integer, coarsest::Integer = 1)::Vector{Int}
+    scales, coarsest = Int(scales), Int(coarsest)
+    return [max(0, coarsest + (j - 1) ÷ 2) for j in 1:scales]
 end

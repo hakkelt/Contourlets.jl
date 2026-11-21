@@ -51,8 +51,8 @@ end
     _TILPMasks
 
 The cumulative TILP masks of an `L`-level pyramid on one DFT grid: `ana[i][c]`
-takes the input spectrum to channel `c` of level `i`, `syn[i][c]` takes that
-channel back (the ¼ factors included), and `coarse_ana` / `coarse_syn` do the same
+takes the input spectrum to channel `c` of level `i` (`i = 1` the coarsest, `L`
+the finest, the first split of the cascade), `syn[i][c]` takes that channel back (the ¼ factors included), and `coarse_ana` / `coarse_syn` do the same
 for the lowpass.  The input is recovered as `Σ syn·ana + coarse_syn·coarse_ana = 1`.
 """
 struct _TILPMasks{M <: AbstractMatrix}
@@ -78,8 +78,9 @@ function _tilp_masks(
     pre_s = ones(T, length(rows), n2)       # Π_{j<i} G(2^(j-1) ω) / 4^(i-1)
     ana = Vector{Vector{Matrix{Complex{Tf}}}}(undef, L)
     syn = Vector{Vector{Matrix{Complex{Tf}}}}(undef, L)
-    for i in 1:L
-        s = 2^(i - 1)
+    for j in 1:L                            # cascade step j is level L + 1 - j
+        i = L + 1 - j
+        s = 2^(j - 1)
         ax_r = [_tilp_axis(fp, 2π * s * (r - 1) / n1) for r in rows]
         ax_c = [_tilp_axis(fp, 2π * s * (c - 1) / n2) for c in 1:n2]
         θr = [2π * s * (r - 1) / n1 for r in rows]

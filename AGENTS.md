@@ -40,7 +40,10 @@ get qualified methods (`MultiscaleTransformsBase.analyze!(...) = ...`) on this
 package's own types only — never a signature more generic than them in a
 position MTB uses.  MTB's exported names are re-exported.  Coefficients: NSCT and
 TICT a stacked `(n1, n2, n)` array, CT and STICT a `SubbandVector`; subband 1
-is the lowpass, then the finest level first (`subband_layout`).  Every test
+is the lowpass (`scale = 0` / `level = 0`), then the scales from the coarsest
+(1) to the finest (`scales`), and `direction_levels` is read in the same order
+(`subband_layout`).  The pyramid itself runs from the finest split: scale `j`
+is split `scales + 1 - j`, the `level`/`tree_level` of `nsp_*`/`nsdfb_*`.  Every test
 suite change keeps `MultiscaleTransformsBase.Testing.test_transform` passing
 (`test/items/test_interface.jl`).
 All are re-exported (`FilterPair`, `CDF97`) or imported (internals) in

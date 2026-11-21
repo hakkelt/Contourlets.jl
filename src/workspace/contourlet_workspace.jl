@@ -22,7 +22,7 @@ struct CTWorkspace{Td <: Number, Tf <: AbstractFloat, M <: AbstractMatrix{Td}, R
     params::CT{Tf}                   # the transform at filter precision Tf
     image_size::Tuple{Int, Int}
     layout::SubbandLayout{2}
-    first::Vector{Int}               # the first subband of each level
+    first::Vector{Int}               # the first subband of each scale
 
     # Grow-once pool for all temporary buffers (LP coarse/bandpass, transients).
     # Separate arenas for forward and inverse passes because they traverse the
@@ -30,7 +30,7 @@ struct CTWorkspace{Td <: Number, Tf <: AbstractFloat, M <: AbstractMatrix{Td}, R
     fwd_scratch::ScratchArena{M}
     inv_scratch::ScratchArena{M}
 
-    # Size of the bandpass image at each pyramid level.
+    # Size of the bandpass image at each scale.
     bp_dims::Vector{Tuple{Int, Int}}
 
     # DFB runners (equivalent filters, FFT buffers and plans) of the levels with a
@@ -70,8 +70,8 @@ struct NSCTWorkspace{Td <: Number, Tf <: AbstractFloat, M <: AbstractMatrix{Td},
     fwd_scratch::ScratchArena{M}
     inv_scratch::ScratchArena{M}
 
-    # Pyramid masks (`_nsp_masks`: level j's bandpass and the lowpass), the NSDFB
-    # bank of every level (the identity bank where L = 0), the outputs (j, k), and
+    # Pyramid masks (`_nsp_masks`: the bandpass of each scale and the lowpass), the
+    # NSDFB bank of every scale (the identity bank where L = 0), the outputs (j, k), and
     # the FFT plans and per-task buffers (`mask_bank.jl`).
     engine::E
 end
@@ -94,11 +94,12 @@ _ws_matrix_type(::NSCTWorkspace{Td, Tf, M}) where {Td, Tf, M} = M
 # The dense matrix type of data like `x` with element type `Td` (host or device).
 _matrix_type(x::AbstractArray, ::Type{Td}) where {Td} = typeof(similar(x, Td, 0, 0))
 
-# Bandpass size at each of the `J` pyramid levels of the CT (halving, rounded up).
+# Bandpass size at each of the `J` scales of the CT, coarsest first: the finest
+# has the image's size, and each coarser one half of it (rounded up).
 function _bandpass_dims(image_size::Tuple{Int, Int}, J::Int)
     dims = Vector{Tuple{Int, Int}}(undef, J)
     d = image_size
-    for j in 1:J
+    for j in J:-1:1
         dims[j] = d
         d = cld.(d, 2)
     end
@@ -264,12 +265,13 @@ function _nsct_workspace(
     Tf = filter_eltype(Td)          # real filter precision
     p2 = _convert_transform(Tf, t)
     J = p2.scales
-    # Precompute the NSDFB equivalent filters (the bank depends on the pyramid level
-    # only through its depth and its filter upsampling; levels with equal keys share
+    # Precompute the NSDFB equivalent filters (the bank depends on the scale only
+    # through its depth and its filter upsampling; scales with equal keys share
     # one bank, and depth 0 is the identity bank) and the pyramid masks; the `!`
     # paths then never rebuild them per call.
     ref = _allocate_zeros(M, Td, (1, 1))
-    keys_j = [(p2.direction_levels[j], p2.direction_levels[j] == 0 ? 0 : _nsdfb_upsampling(j)) for j in 1:J]
+    # Scale j is the bandpass of the pyramid's split J + 1 - j (1 = the finest).
+    keys_j = [(l, l == 0 ? 0 : _nsdfb_upsampling(J + 1 - j)) for (j, l) in enumerate(p2.direction_levels)]
     built = Dict{NTuple{2, Int}, _bank_type(ref, Tf)}()
     banks = map(keys_j) do (l, m)
         get!(built, (l, m)) do
@@ -284,8 +286,9 @@ function _nsct_workspace(
     x = similar(ref, Td, image_size)
     X, pfwd, pbwd = _ns_unnormalized_plans(x; measured = true, unaligned = _unaligned_slices(x))
     ana, syn = _nsp_masks(Tf, p2.lp_filters, image_size, J; rows = axes(X, 1))
-    ana = [_like(X, a) for a in ana]
-    syn = [_like(X, a) for a in syn]
+    # By scale, coarsest first; the lowpass stays last.
+    ana = [_like(X, a) for a in ana[[J:-1:1; J + 1]]]
+    syn = [_like(X, a) for a in syn[[J:-1:1; J + 1]]]
     items = [MaskItem((j, k), j, j, k) for j in 1:J for k in eachindex(banks[j].ana)]
     offsets = _nsct_offsets(p2)
     n = nsubbands(p2, image_size)

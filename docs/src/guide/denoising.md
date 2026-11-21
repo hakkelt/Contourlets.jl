@@ -130,13 +130,13 @@ function nsct_bivariate_denoise(noisy, t, gains, σ; window_size=7)
         σ_n = σ * gains[i]
         var_n = σ_n^2
         
-        parent_sb = if j == t.scales
-            subband(t, c, 1)    # the low-pass residual
+        parent_sb = if j == 1       # the coarsest scale: its parent is the low-pass residual
+            subband(t, c, 1)
         else
             L_curr = 2^t.direction_levels[j]
-            L_parent = 2^t.direction_levels[j+1]
+            L_parent = 2^t.direction_levels[j - 1]
             parent_kk = L_curr >= L_parent ? (kk - 1) ÷ (L_curr ÷ L_parent) + 1 : (kk - 1) * (L_parent ÷ L_curr) + 1
-            subband(t, c, findfirst(==((scale = j + 1, direction = parent_kk)), layout))
+            subband(t, c, findfirst(==((scale = j - 1, direction = parent_kk)), layout))
         end
         
         out = similar(sb)
@@ -193,7 +193,7 @@ savefig("nla_texture.png"); nothing # hide
 Keeping the same number of coefficients `M` for both transforms:
 
 ```@example nla
-t = CT(scales = 3, direction_levels = [3, 3, 2])
+t = CT(scales = 3, direction_levels = [2, 3, 3])
 γ = ct_subband_gains(t, (N, N))
 
 for M in (512, 1024, 2048)
@@ -258,7 +258,7 @@ Random.seed!(11)
 σ = 0.08
 noisy = ref .+ σ .* randn(size(ref)...)
 
-tn = NSCT(scales = 3, direction_levels = [3, 3, 2])
+tn = NSCT(scales = 3, direction_levels = [2, 3, 3])
 gains = nsct_noise_gains(tn, size(ref))
 ct_hard  = nsct_denoise(noisy, tn, gains, σ, 3.0)
 ct_local = nsct_local_variance_denoise(noisy, tn, gains, σ)

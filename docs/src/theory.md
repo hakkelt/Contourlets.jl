@@ -231,11 +231,13 @@ toolbox behaves the same way.
 
 ## Pyramid Directional Filter Bank (PDFB) — Contourlet Transform
 
-The CT couples `J` LP levels with one DFB per bandpass:
+The CT couples `J = scales` LP levels with one DFB per bandpass.  Scales are
+numbered from the coarsest (`j = 1`) to the finest (`j = J`), as the
+coefficients are stored; the pyramid computes them from the finest:
 
 ```
 coarse ← image
-for j = 1 … J:
+for j = J … 1:
     coarse_j, bandpass_j = LP(coarse, h, g)
     subbands[j]          = DFB(bandpass_j, direction_levels[j], Q2345)
     coarse               = coarse_j
@@ -246,10 +248,11 @@ of directional subbands satisfies the parabolic scaling law
 ``\text{width} \sim \text{length}^2``:
 
 ```math
-L_j = L_{j_0} + \left\lfloor \frac{j_0 - j}{2} \right\rfloor, \quad j = 1, \ldots, J
+L_j = L_1 + \left\lfloor \frac{j - 1}{2} \right\rfloor, \quad j = 1, \ldots, J
 ```
 
-Use [`parabolic_levels`](@ref) to generate ``L_\text{array}`` automatically.
+[`parabolic_levels`](@ref) generates these `direction_levels`, coarsest first; it
+is also the default when a transform is built from `scales` alone.
 
 In the frequency domain, the Contourlet Transform partitions the 2-D plane into
 concentric rings (from the Laplacian Pyramid) which are then subdivided into 
@@ -257,7 +260,7 @@ angular wedges (from the DFB):
 
 ```@example theory
 N = 128
-tc = CT(scales = 2, direction_levels = [2, 1])
+tc = CT(scales = 2, direction_levels = [1, 2])
 composite_freq = zeros(N, N)
 
 # Frequency responses of the coarse low-pass level (subband 1) and of all
@@ -279,12 +282,13 @@ savefig(p_ct, "ct_tiling.png"); nothing # hide
 In space the same partition gives the **contourlet basis images**: one
 coefficient reconstructed alone.  Each is an oriented, elongated element whose
 size doubles from one scale to the next, while its orientation is set by the
-directional subband.  Below, rows are scales 1 (finest) to 3 and columns four
-of the directional subbands at each scale; the crop doubles with the scale:
+directional subband.  Below, rows are scales 3 (the finest) to 1 and columns
+four of the directional subbands at each scale; the crop doubles with each
+coarser scale:
 
 ```@example theory
 Na = 256
-ta = CT(scales = 3, direction_levels = [3, 3, 2])
+ta = CT(scales = 3, direction_levels = [2, 3, 3])
 layout_a = subband_layout(ta, (Na, Na))
 function ct_atom(j, k)
     c = analyze(ta, zeros(Na, Na))
@@ -293,17 +297,17 @@ function ct_atom(j, k)
     return synthesize(ta, c)
 end
 pat = plot(layout = (3, 4), size = (860, 660))
-for j in 1:3
+for (row, j) in enumerate(3:-1:1)
     n = 2^ta.direction_levels[j]
     for (col, k) in enumerate(round.(Int, range(1, n; length = 4)))
         a = ct_atom(j, k)
         i0, j0 = Tuple(argmax(abs.(a)))
-        w = 8 * 2^(j - 1)                       # half-width of the crop
+        w = 8 * 2^(row - 1)                     # half-width of the crop
         r0 = clamp(i0 - w, 1, Na - 2w + 1)
         c0 = clamp(j0 - w, 1, Na - 2w + 1)
         ac = a[r0:(r0 + 2w - 1), c0:(c0 + 2w - 1)]
         cl = maximum(abs, ac)
-        heatmap!(pat[(j - 1) * 4 + col], ac; color = :RdBu, clims = (-cl, cl),
+        heatmap!(pat[(row - 1) * 4 + col], ac; color = :RdBu, clims = (-cl, cl),
             title = "scale $j, dir $k", aspect_ratio = :equal, axis = false,
             colorbar = false, yflip = true)
     end
@@ -318,7 +322,8 @@ savefig(pat, "ct_atoms.png"); nothing # hide
 The NSCT replaces every decimated filter bank with its non-subsampled (à trous)
 counterpart:
 
-- **NSP**: at LP level ``j``, the filters ``h, g`` are replaced by
+- **NSP**: at LP level ``j`` (counted from the first, finest split, so scale
+  ``J + 1 - j`` of the coefficients), the filters ``h, g`` are replaced by
   ``h_j = h`` upsampled by ``2^{j-1}`` (inserting ``2^{j-1}-1`` zeros between
   taps).  No downsampling is applied, so all outputs have the same size as the
   input.
@@ -354,10 +359,10 @@ of a 2-level NSCT:
 
 ```@example theory
 N_nsct = 64
-t_nsct = NSCT(scales = 2, direction_levels = [2, 1])
+t_nsct = NSCT(scales = 2, direction_levels = [1, 2])
 layout_nsct = subband_layout(t_nsct, (N_nsct, N_nsct))
-n_l1 = count(s -> s.scale == 1, layout_nsct)   # 4  (2^direction_levels[1])
-n_l2 = count(s -> s.scale == 2, layout_nsct)   # 2  (2^direction_levels[2])
+n_fine = count(s -> s.scale == 2, layout_nsct)     # 4  (2^direction_levels[2])
+n_coarse = count(s -> s.scale == 1, layout_nsct)   # 2  (2^direction_levels[1])
 mid = N_nsct ÷ 2 + 1
 
 function nsct_spec(t, j, k)        # j=0 → coarse
@@ -370,15 +375,15 @@ end
 # Layout: row 1 = 4 finest-scale subbands, row 2 = 2 coarser subbands + coarse LP + composite
 p_nsct = plot(layout = (2, 4), size = (860, 440))
 
-for k in 1:n_l1
-    heatmap!(p_nsct[k], nsct_spec(t_nsct, 1, k), color = :viridis,
-        title = "scale 1, dir $k", aspect_ratio = :equal, axis = false, colorbar = false)
-end
-for k in 1:n_l2
-    heatmap!(p_nsct[n_l1 + k], nsct_spec(t_nsct, 2, k), color = :viridis,
+for k in 1:n_fine
+    heatmap!(p_nsct[k], nsct_spec(t_nsct, 2, k), color = :viridis,
         title = "scale 2, dir $k", aspect_ratio = :equal, axis = false, colorbar = false)
 end
-heatmap!(p_nsct[n_l1 + n_l2 + 1], nsct_spec(t_nsct, 0, 0), color = :viridis,
+for k in 1:n_coarse
+    heatmap!(p_nsct[n_fine + k], nsct_spec(t_nsct, 1, k), color = :viridis,
+        title = "scale 1, dir $k", aspect_ratio = :equal, axis = false, colorbar = false)
+end
+heatmap!(p_nsct[n_fine + n_coarse + 1], nsct_spec(t_nsct, 0, 0), color = :viridis,
     title = "coarse LP", aspect_ratio = :equal, axis = false, colorbar = false)
 
 # Composite: per-pixel max across all channels
@@ -387,7 +392,7 @@ composite_nsct .= max.(composite_nsct, exp.(nsct_spec(t_nsct, 0, 0)) .- 1)
 for s in layout_nsct[2:end]
     composite_nsct .= max.(composite_nsct, exp.(nsct_spec(t_nsct, s.scale, s.direction)) .- 1)
 end
-heatmap!(p_nsct[n_l1 + n_l2 + 2], log1p.(composite_nsct), color = :viridis,
+heatmap!(p_nsct[n_fine + n_coarse + 2], log1p.(composite_nsct), color = :viridis,
     title = "composite", aspect_ratio = :equal, axis = false, colorbar = false)
 
 savefig(p_nsct, "nsct_tiling.png"); nothing # hide
@@ -419,7 +424,7 @@ with ``G_c(z) = {\downarrow_M}\{z^{k_c}G(z)\}`` and
 ``\tfrac14\,(GH + \sum_c F_c K_c) = 1`` whenever ``h`` and ``g`` are
 biorthogonal (their Proposition 2), so every level reconstructs exactly with a
 factor ``\tfrac14``.  The translation-invariant Laplacian pyramid (TILP) has
-redundancy ``4J + 1``.  Downsampling its level-``i`` channels by ``2^i`` gives
+redundancy ``4J + 1``.  Downsampling the channels of its ``i``-th split by ``2^i`` gives
 the decimated pyramid's channels for every position of the sampling lattice;
 the test suite checks this against an independent pyramid.
 

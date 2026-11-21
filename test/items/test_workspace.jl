@@ -1,14 +1,14 @@
 @testitem "make_workspace allocates correct sizes" tags = [:ct] begin
-    t = CT(scales = 2, direction_levels = [2, 3])
+    t = CT(scales = 2, direction_levels = [3, 2])
     ws = make_workspace(t, Float64, (32, 32))
     @test ws isa CTWorkspace
     @test size(ws) == (32, 32)
-    @test ws.bp_dims == [(32, 32), (16, 16)]
-    @test [r.bank.levels for r in ws.dfb_runners] == [2, 3]
+    @test ws.bp_dims == [(16, 16), (32, 32)]   # coarsest scale first
+    @test [r.bank.levels for r in ws.dfb_runners] == [3, 2]
 end
 
 @testitem "NSCT workspace: all masks on the rfft grid" tags = [:nsct] begin
-    t = NSCT(scales = 2, direction_levels = [2, 3])
+    t = NSCT(scales = 2, direction_levels = [3, 2])
     ws = make_workspace(t, Float64, (32, 32))
     @test ws isa NSCTWorkspace
     e = ws.engine
@@ -20,7 +20,7 @@ end
 end
 
 @testitem "workspaces run at the data's precision" tags = [:ct, :nsct, :tict] begin
-    for t in (CT(scales = 2, direction_levels = [1, 2]), NSCT(scales = 2, direction_levels = [1, 2]), TICT(scales = 2, direction_levels = [1, 2]), STICT(scales = 2, direction_levels = [1, 2]))
+    for t in (CT(scales = 2, direction_levels = [2, 1]), NSCT(scales = 2, direction_levels = [2, 1]), TICT(scales = 2, direction_levels = [2, 1]), STICT(scales = 2, direction_levels = [2, 1]))
         # Float64 filters, Float32 data: a Float32 workspace with converted filters.
         ws = make_workspace(t, Float32, (32, 32))
         @test eltype(ws) == Float32
@@ -36,7 +36,7 @@ end
     using Random
     Random.seed!(43)
     x = randn(64, 64)
-    t = NSCT(scales = 2, direction_levels = [2, 3])
+    t = NSCT(scales = 2, direction_levels = [3, 2])
     # Prewarm (default) runs one transform pair, so the workspace paths allocate
     # nothing per call.
     ws = make_workspace(t, Float64, (64, 64))
@@ -60,7 +60,7 @@ end
     using Random
     Random.seed!(41)
     x = randn(32, 32)
-    t = CT(scales = 2, direction_levels = [2, 3])
+    t = CT(scales = 2, direction_levels = [3, 2])
     ws = make_workspace(t, x)
     coeffs = similar_coefficients(t, x)
     img_out = similar(x)
@@ -75,7 +75,7 @@ end
 
 @testitem "make_workspace from an image" tags = [:ct, :nsct] begin
     img = randn(32, 32)
-    for t in (CT(scales = 2, direction_levels = [1, 2]), NSCT(scales = 2, direction_levels = [1, 2]))
+    for t in (CT(scales = 2, direction_levels = [2, 1]), NSCT(scales = 2, direction_levels = [2, 1]))
         ws = make_workspace(t, img)
         @test size(ws) == (32, 32)
         @test eltype(ws) == Float64
@@ -91,7 +91,7 @@ end
     using Random
     Random.seed!(50)
     img = complex.(randn(32, 32), randn(32, 32))
-    ws = make_workspace(NSCT(scales = 2, direction_levels = [1, 2]), img)
+    ws = make_workspace(NSCT(scales = 2, direction_levels = [2, 1]), img)
     @test ws isa NSCTWorkspace{ComplexF64, Float64}
 end
 
@@ -107,7 +107,7 @@ end
     using Random
     Random.seed!(99)
     x = randn(32, 32)
-    for t in (NSCT(scales = 3, direction_levels = [0, 2, 3]), TICT(scales = 3, direction_levels = [0, 2, 3]))
+    for t in (NSCT(scales = 3, direction_levels = [3, 2, 0]), TICT(scales = 3, direction_levels = [3, 2, 0]))
         ws = make_workspace(t, Float64, (32, 32))
         @test length(ws.engine.buffers) == min(Threads.nthreads(), length(ws.engine.items))
         c_ser = analyze!(similar_coefficients(t, x), t, x; workspace = ws, threaded = false)
@@ -126,7 +126,7 @@ end
     # `typeof(make_workspace(...))` cannot resolve a `Union`.  Checked for host
     # arrays; a device NSCT/TICT workspace's engine type depends on the runtime
     # `tune` keyword.
-    for t in (CT(scales = 2, direction_levels = [1, 2]), STICT(scales = 2, direction_levels = [1, 2]), NSCT(scales = 2, direction_levels = [1, 2]), TICT(scales = 2, direction_levels = [1, 2]))
+    for t in (CT(scales = 2, direction_levels = [2, 1]), STICT(scales = 2, direction_levels = [2, 1]), NSCT(scales = 2, direction_levels = [2, 1]), TICT(scales = 2, direction_levels = [2, 1]))
         for args in ((typeof(t), Type{Float64}, Tuple{Int, Int}), (typeof(t), Matrix{Float32}), (typeof(t), Matrix{ComplexF32}))
             rt = Base.return_types(make_workspace, args)
             @test length(rt) == 1
@@ -160,10 +160,10 @@ end
     using Random
     Random.seed!(90)
     x = randn(32, 32)
-    t = NSCT(scales = 2, direction_levels = [2, 0])
+    t = NSCT(scales = 2, direction_levels = [0, 2])
     ws = make_workspace(t, x)
-    # Depth 0 is the identity bank: one channel with all-ones masks.
-    b = ws.engine.banks[2]
+    # Depth 0 (the coarsest scale) is the identity bank: one channel with all-ones masks.
+    b = ws.engine.banks[1]
     @test length(b) == 1
     @test all(isone, b.ana[1]) && all(isone, b.syn[1])
     c = similar_coefficients(t, x)
@@ -224,7 +224,7 @@ end
     using Random
     Random.seed!(93)
     x = randn(32, 32)
-    for t in (CT(scales = 2, direction_levels = [2, 3]), NSCT(scales = 2, direction_levels = [2, 3]), TICT(scales = 2, direction_levels = [2, 3]), STICT(scales = 2, direction_levels = [2, 3]))
+    for t in (CT(scales = 2, direction_levels = [3, 2]), NSCT(scales = 2, direction_levels = [3, 2]), TICT(scales = 2, direction_levels = [3, 2]), STICT(scales = 2, direction_levels = [3, 2]))
         ws0, ws1 = make_workspace(t, Float64, (32, 32)), make_workspace(t, Float64, (32, 32); tune = true)
         t isa Union{NSCT, TICT} && @test ws1.engine.tuning === nothing
         @test typeof(ws1) === typeof(ws0)
@@ -239,7 +239,7 @@ end
     using Random
     Random.seed!(94)
     x = randn(32, 32)
-    for t in (CT(scales = 2, direction_levels = [2, 3]), NSCT(scales = 2, direction_levels = [2, 3]), TICT(scales = 2, direction_levels = [2, 3]), STICT(scales = 2, direction_levels = [2, 3]))
+    for t in (CT(scales = 2, direction_levels = [3, 2]), NSCT(scales = 2, direction_levels = [3, 2]), TICT(scales = 2, direction_levels = [3, 2]), STICT(scales = 2, direction_levels = [3, 2]))
         ws = make_workspace(t, x; prewarm = false)
         @test analyze(t, x; workspace = ws) == analyze(t, x; workspace = make_workspace(t, x))
     end

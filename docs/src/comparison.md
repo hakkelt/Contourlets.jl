@@ -44,6 +44,9 @@ against SurfBox there.
 
 ## Algorithm correspondence
 
+`direction_levels` lists the directional depths coarsest scale first, in the
+order of the toolboxes' `nlevs`.
+
 | Contourlets.jl | MATLAB CT Toolbox | MATLAB NSCT Toolbox |
 |---------------|------------------|-------------------|
 | `analyze(t, img)`, `t = CT(scales = n, direction_levels = [L1,…,Ln])` | `pdfbdec(img, '9-7', 'pkva', [L1,L2,…])` | — |
@@ -66,7 +69,7 @@ Both the MATLAB toolboxes and Contourlets.jl reach perfect reconstruction (PR) i
 exact arithmetic; in `Float64` the residuals sit at the round-off floor. The
 values below are from the cross-validation run described under
 [Benchmarks](@ref comparison-benchmarks), on random `n × n` inputs with `scales = 2`,
-`direction_levels = [2, 3]`:
+`direction_levels = [3, 2]`:
 
 | Check | Contourlets.jl | MATLAB reference |
 |---|---|---|
@@ -170,7 +173,7 @@ described in [`matlab/README.md`](https://github.com/hakkelt/Contourlets.jl/blob
 then from MATLAB:
 
 ```matlab
-verify_vs_julia(2, [2 3], [64 128 256])   % J, direction_levels, sizes
+verify_vs_julia(2, [3 2], [64 128 256])   % scales, direction_levels, sizes
 ```
 
 The script writes shared inputs, runs the Julia side as a subprocess
@@ -210,7 +213,8 @@ errors and timings for both. For Julia-only benchmarks use `benchmark/benchmarks
 1. **À trous implementation**: Both use zero-insertion filter upsampling
    (`upsample_filter`) for the à trous scheme.
 
-2. **Coarse-scale directional filters**: at pyramid level `j ≥ 3` the NSDFB
+2. **Coarse-scale directional filters**: at pyramid level `j ≥ 3` (counted
+   from the first, finest split) the NSDFB
    filters are upsampled by ``2^{j-2} I`` (the `tree_level` argument of
    `nsdfb_decompose`), following §II-A.3 of the NSCT paper, which leaves the
    choice of factor open; this one was chosen by measuring directional leakage

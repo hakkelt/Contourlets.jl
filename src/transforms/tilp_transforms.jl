@@ -24,6 +24,9 @@
 # channels carry the decimated pyramid's aliasing at high frequencies, and
 # measured the same way the unmodified filters leak least at every level.)
 #
+# Levels are numbered as the coefficients are stored: level 1 is the coarsest,
+# level L the finest (the cascade's first split).
+#
 # Everything is a pointwise product on the DFT grid, so both transforms are exact
 # on the torus and the TICT commutes with every circular shift of the input.
 #

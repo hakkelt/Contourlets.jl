@@ -21,7 +21,7 @@ end
     Random.seed!(41)
     x = randn(64, 64)
     y = randn(64, 64)
-    for t in (CT(scales = 2, direction_levels = [2, 3]), NSCT(scales = 2, direction_levels = [2, 3]), TICT(scales = 2, direction_levels = [2, 3]), STICT(scales = 2, direction_levels = [2, 3]))
+    for t in (CT(scales = 2, direction_levels = [3, 2]), NSCT(scales = 2, direction_levels = [3, 2]), TICT(scales = 2, direction_levels = [3, 2]), STICT(scales = 2, direction_levels = [3, 2]))
         cz = analyze(t, complex.(x, y))
         @test cz ≈ complex.(analyze(t, x), analyze(t, y))
     end
@@ -30,7 +30,7 @@ end
 @testitem "NSCT complex round-trip and shift-invariance" tags = [:nsct] begin
     using Random
     Random.seed!(42)
-    t = NSCT(scales = 2, direction_levels = [2, 3])
+    t = NSCT(scales = 2, direction_levels = [3, 2])
     z = complex.(randn(48, 48), randn(48, 48))
     c = analyze(t, z)
     @test eltype(c) == ComplexF64
@@ -48,7 +48,7 @@ end
     using Random
     Random.seed!(43)
     z = ComplexF32.(complex.(randn(Float32, 64, 64), randn(Float32, 64, 64)))
-    for t in (CT(scales = 2, direction_levels = [2, 3]), NSCT(scales = 2, direction_levels = [2, 3]))
+    for t in (CT(scales = 2, direction_levels = [3, 2]), NSCT(scales = 2, direction_levels = [3, 2]))
         c = analyze(t, z)
         @test eltype(c) == ComplexF32
         @test maximum(abs, synthesize(t, c) .- z) < 1.0f-4
@@ -59,14 +59,14 @@ end
     using Random
     Random.seed!(44)
     z = complex.(randn(64, 64), randn(64, 64))
-    t = CT(scales = 2, direction_levels = [1, 2])
+    t = CT(scales = 2, direction_levels = [2, 1])
     ws = make_workspace(t, ComplexF64, (64, 64))
     @test ws isa CTWorkspace{ComplexF64, Float64}
     cw = analyze(t, z; workspace = ws)
     @test subband(t, cw, 1) ≈ subband(t, analyze(t, z), 1)
     @test maximum(abs, synthesize(t, cw) .- z) < 1.0e-12
 
-    tn = NSCT(scales = 2, direction_levels = [1, 2])
+    tn = NSCT(scales = 2, direction_levels = [2, 1])
     wsn = make_workspace(tn, ComplexF64, (64, 64))
     nw = analyze(tn, z; workspace = wsn)
     @test subband(tn, nw, 1) ≈ subband(tn, analyze(tn, z), 1)

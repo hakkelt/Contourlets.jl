@@ -8,22 +8,22 @@
 #   julia --project=<pkg> verify_julia_side.jl <io_dir>
 
 using Contourlets, DelimitedFiles, Printf
+using Contourlets: nsdfb_decompose, nsdfb_reconstruct
 
 iodir = abspath(ARGS[1])
 
 # ── Parameters ────────────────────────────────────────────────────────────────
 
-sizes_raw = readdlm(joinpath(iodir, "sizes.csv"), ',', Float64)
-sizes = Int.(vec(sizes_raw))
-
-J = Int(readdlm(joinpath(iodir, "J.csv"), ',', Float64)[1])
-L_raw = vec(readdlm(joinpath(iodir, "L_array.csv"), ',', Float64))
-L_array = Int.(L_raw)
+sizes = Int.(vec(readdlm(joinpath(iodir, "sizes.csv"), ',', Float64)))
+scales = Int(readdlm(joinpath(iodir, "scales.csv"), ',', Float64)[1])
+# Coarsest scale first, as the toolboxes' nlevs.
+direction_levels = Int.(vec(readdlm(joinpath(iodir, "direction_levels.csv"), ',', Float64)))
 L_nsdfb = Int(readdlm(joinpath(iodir, "L_nsdfb.csv"), ',', Float64)[1])
 
-params = ContourletParams(J = J, L_array = L_array)
+ct = CT(; scales, direction_levels)
+nsct = NSCT(; scales, direction_levels)
 
-# ── Timing helper ─────────────────────────────────────────────────────────────
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
 const NRUN = 7
 
@@ -34,6 +34,17 @@ function timeit(f)
         push!(ts, @elapsed f())
     end
     return sort(ts)[(NRUN + 1) ÷ 2]   # median
+end
+
+# One CSV per subband: `<prefix>_<n>_coarse.csv` for the lowpass and
+# `<prefix>_<n>_j<scale>_sb<direction>.csv` for the directional subbands.
+function write_subbands(prefix, t, c, n)
+    for (i, s) in enumerate(subband_layout(t, (n, n)))
+        name = s.scale == 0 ? @sprintf("jl_%s_%d_coarse.csv", prefix, n) :
+            @sprintf("jl_%s_%d_j%d_sb%02d.csv", prefix, n, s.scale, s.direction)
+        writedlm(joinpath(iodir, name), subband(t, c, i), ',')
+    end
+    return
 end
 
 # ── Per-size loop ─────────────────────────────────────────────────────────────
@@ -57,42 +68,37 @@ for n in sizes
     @printf("[julia] NSDFB  n=%-4d  L=%d  dec %.4f s  rec %.4f s\n", n, L_nsdfb, td_nsdfb, tr_nsdfb)
 
     # ── CT ────────────────────────────────────────────────────────────────────
-    coeffs_ct = ct_forward(x, params)
-    for j in 1:J, k in eachindex(coeffs_ct.subbands[j])
-        writedlm(joinpath(iodir, @sprintf("jl_ct_%d_j%d_sb%02d.csv", n, j, k)), coeffs_ct.subbands[j][k], ',')
-    end
-    writedlm(joinpath(iodir, @sprintf("jl_ct_%d_coarse.csv", n)), coeffs_ct.coarse, ',')
-    rec_ct = ct_inverse(coeffs_ct, params)
+    coeffs_ct = analyze(ct, x)
+    write_subbands("ct", ct, coeffs_ct, n)
+    rec_ct = synthesize(ct, coeffs_ct)
     writedlm(joinpath(iodir, @sprintf("jl_ct_%d_rec.csv", n)), rec_ct, ',')
 
-    td_ct = timeit(() -> ct_forward(x, params))
-    tr_ct = timeit(() -> ct_inverse(coeffs_ct, params))
+    td_ct = timeit(() -> analyze(ct, x))
+    tr_ct = timeit(() -> synthesize(ct, coeffs_ct))
     push!(timing_rows, ("ct", n, td_ct, tr_ct))
-    @printf("[julia] CT     n=%-4d  J=%d  L=%s  dec %.4f s  rec %.4f s\n", n, J, L_array, td_ct, tr_ct)
+    @printf("[julia] CT     n=%-4d  scales=%d  L=%s  dec %.4f s  rec %.4f s\n", n, scales, direction_levels, td_ct, tr_ct)
 
-    # ── NSCT (allocating, spatial kernels) ────────────────────────────────────
-    coeffs_nsct = nsct_forward(x, params)
-    for j in 1:J, k in eachindex(coeffs_nsct.subbands[j])
-        writedlm(joinpath(iodir, @sprintf("jl_nsct_%d_j%d_sb%02d.csv", n, j, k)), coeffs_nsct.subbands[j][k], ',')
-    end
-    writedlm(joinpath(iodir, @sprintf("jl_nsct_%d_coarse.csv", n)), coeffs_nsct.coarse, ',')
-    rec_nsct = nsct_inverse(coeffs_nsct, params)
+    # ── NSCT (no workspace: spatial convolutions) ─────────────────────────────
+    coeffs_nsct = analyze(nsct, x)
+    write_subbands("nsct", nsct, coeffs_nsct, n)
+    rec_nsct = synthesize(nsct, coeffs_nsct)
     writedlm(joinpath(iodir, @sprintf("jl_nsct_%d_rec.csv", n)), rec_nsct, ',')
 
-    td_nsct = timeit(() -> nsct_forward(x, params))
-    tr_nsct = timeit(() -> nsct_inverse(coeffs_nsct, params))
+    td_nsct = timeit(() -> analyze(nsct, x))
+    tr_nsct = timeit(() -> synthesize(nsct, coeffs_nsct))
     push!(timing_rows, ("nsct", n, td_nsct, tr_nsct))
-    @printf("[julia] NSCT   n=%-4d  J=%d  L=%s  dec %.4f s  rec %.4f s\n", n, J, L_array, td_nsct, tr_nsct)
+    @printf("[julia] NSCT   n=%-4d  scales=%d  L=%s  dec %.4f s  rec %.4f s\n", n, scales, direction_levels, td_nsct, tr_nsct)
 
     # ── NSCT workspace (FFT path) ─────────────────────────────────────────────
-    ws = make_nsct_workspace(params, (n, n))
-    coeffs_ws = similar_nsct_coefficients(params, (n, n))
-    nsct_forward!(coeffs_ws, x, params; workspace = ws)
+    ws = make_workspace(nsct, x)
+    coeffs_ws = similar_coefficients(nsct, x)
+    out = similar(x)
+    analyze!(coeffs_ws, nsct, x; workspace = ws)
 
-    td_nsct_ws = timeit(() -> nsct_forward!(coeffs_ws, x, params; workspace = ws))
-    tr_nsct_ws = timeit(() -> nsct_inverse!(similar(x), coeffs_ws, params; workspace = ws))
+    td_nsct_ws = timeit(() -> analyze!(coeffs_ws, nsct, x; workspace = ws))
+    tr_nsct_ws = timeit(() -> synthesize!(out, nsct, coeffs_ws; workspace = ws))
     push!(timing_rows, ("nsct_ws", n, td_nsct_ws, tr_nsct_ws))
-    @printf("[julia] NSCT_WS n=%-4d J=%d  dec %.4f s  rec %.4f s\n", n, J, td_nsct_ws, tr_nsct_ws)
+    @printf("[julia] NSCT_WS n=%-4d scales=%d  dec %.4f s  rec %.4f s\n", n, scales, td_nsct_ws, tr_nsct_ws)
 end
 
 # ── Write timing table ────────────────────────────────────────────────────────

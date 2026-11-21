@@ -1,10 +1,13 @@
-function verify_vs_julia(J, L_array, sizes)
+function verify_vs_julia(scales, direction_levels, sizes)
 % VERIFY_VS_JULIA  Cross-validate and benchmark Julia's CT, NSCT, and NSDFB
 % against the da Cunha–Zhou–Do MATLAB reference implementations.
 %
-%   verify_vs_julia              % defaults: J=2, L_array=[2,3], sizes=[64,128,256,512]
-%   verify_vs_julia(J, L_array)
-%   verify_vs_julia(J, L_array, sizes)
+%   verify_vs_julia              % defaults: scales=2, direction_levels=[2,3], sizes=[64,128,256,512]
+%   verify_vs_julia(scales, direction_levels)
+%   verify_vs_julia(scales, direction_levels, sizes)
+%
+% direction_levels lists the directional depths coarsest scale first, the order
+% of both Contourlets.jl and the toolboxes' nlevs.
 %
 % Checks three transforms for each size:
 %   1. NSDFB  — nsdfbdec/nsdfbrec  vs Julia nsdfb_decompose/reconstruct
@@ -12,10 +15,10 @@ function verify_vs_julia(J, L_array, sizes)
 %              filters without decimation (da Cunha et al. 2006) and drops the
 %              per-channel delays, so subbands differ from the toolbox's by a
 %              shift and sign at L <= 2, and in the wedges themselves from L = 3.
-%   2. CT     — pdfbdec/pdfbrec    vs Julia ct_forward/ct_inverse
+%   2. CT     — pdfbdec/pdfbrec    vs Julia analyze/synthesize of a CT
 %              PR-only check: Julia uses JPEG2000-normalized CDF97; MATLAB pdfbdec
 %              uses a different '9-7' scaling, so subbands differ but both give PR≈0.
-%   3. NSCT   — nsctdec/nsctrec    vs Julia nsct_forward/nsct_inverse
+%   3. NSCT   — nsctdec/nsctrec    vs Julia analyze/synthesize of an NSCT
 %              PR-only check: NSCT toolbox uses a 2-D non-separable '9-7' diamond
 %              pyramid filter, whereas Julia uses separable à-trous CDF97, so subbands
 %              differ by design.  Both guarantee PR to machine precision.
@@ -28,9 +31,9 @@ function verify_vs_julia(J, L_array, sizes)
 %   • Toolboxes cloned under matlab/Contourlet-transform/ and
 %     matlab/Nonsubsampled-Contourlet-Toolbox/nsct_toolbox/
 
-if nargin < 1 || isempty(J);       J       = 2;            end
-if nargin < 2 || isempty(L_array); L_array = [2, 3];       end
-if nargin < 3 || isempty(sizes);   sizes   = [64, 128, 256, 512]; end
+if nargin < 1 || isempty(scales);           scales           = 2;      end
+if nargin < 2 || isempty(direction_levels); direction_levels = [2, 3]; end
+if nargin < 3 || isempty(sizes);            sizes            = [64, 128, 256, 512]; end
 
 here    = fileparts(mfilename('fullpath'));
 ctdir   = fullfile(here, 'Contourlet-transform');
@@ -55,16 +58,15 @@ cd(old);
 
 % ── Write shared parameters ───────────────────────────────────────────────────
 writematrix(sizes(:)',     fullfile(iodir, 'sizes.csv'));
-writematrix(J,             fullfile(iodir, 'J.csv'));
-writematrix(L_array(:)',   fullfile(iodir, 'L_array.csv'));
+writematrix(scales,                 fullfile(iodir, 'scales.csv'));
+writematrix(direction_levels(:)',  fullfile(iodir, 'direction_levels.csv'));
 
-% NSDFB standalone level: use the finest (last, since L_array is fine-to-coarse
-% in the Julia convention).  Keep at most 3 levels to avoid huge filter stacks.
-L_nsdfb = min(L_array(end), 3);
+% NSDFB standalone level: the depth of the finest scale (the last entry).  Keep
+% at most 3 levels to avoid huge filter stacks.
+L_nsdfb = min(direction_levels(end), 3);
 writematrix(L_nsdfb, fullfile(iodir, 'L_nsdfb.csv'));
 
-% MATLAB PDFB/NSCT use coarse-to-fine ordering; Julia L_array is fine-to-coarse.
-nlevs = fliplr(L_array(:)');     % coarse-to-fine for MATLAB
+nlevs = direction_levels(:)';    % the same order as Julia's direction_levels
 
 dfilt_ct   = 'pkva';     pfilt_ct   = '9-7';   % pdfbdec(x, pfilt, dfilt, ...)
 dfilt_nsct = 'pkva';     pfilt_nsct = '9-7';   % nsctdec(x, levels, dfilt, pfilt)
@@ -95,8 +97,8 @@ jl_t = readtable(fullfile(iodir, 'jl_timing.csv'));
 
 % ── Results table ─────────────────────────────────────────────────────────────
 fprintf('\n');
-fprintf('========= MATLAB vs Julia cross-validation (J=%d, L=[%s]) =========\n', ...
-        J, num2str(L_array));
+fprintf('========= MATLAB vs Julia cross-validation (scales=%d, L=[%s]) =========\n', ...
+        scales, num2str(direction_levels));
 fprintf('\n');
 
 all_pass = true;
@@ -155,8 +157,8 @@ for n = sizes
     pass_ct = pr_ct_m < 1e-9 && pr_ct_jl < 1e-9;
     all_pass = all_pass && pass_ct;
 
-    fprintf('  CT     (J=%d, nlevs=[%s]):  MATLAB PR=%.1e | Julia PR=%.1e  (PR-only; LP filters differ)  [%s]\n', ...
-            J, num2str(nlevs), pr_ct_m, pr_ct_jl, yesno(pass_ct));
+    fprintf('  CT     (scales=%d, nlevs=[%s]):  MATLAB PR=%.1e | Julia PR=%.1e  (PR-only; LP filters differ)  [%s]\n', ...
+            scales, num2str(nlevs), pr_ct_m, pr_ct_jl, yesno(pass_ct));
     fprintf('    timing dec:  MATLAB %.4f s | Julia %.4f s | %.2fx\n', ...
             median(td_ct_m), td_ct_jl, median(td_ct_m)/td_ct_jl);
     fprintf('    timing rec:  MATLAB %.4f s | Julia %.4f s | %.2fx\n', ...
@@ -185,8 +187,8 @@ for n = sizes
     pass_nsct = pr_nsct_m < 1e-9 && pr_nsct_jl < 1e-9;
     all_pass  = all_pass && pass_nsct;
 
-    fprintf('  NSCT   (J=%d, nlevs=[%s]):  MATLAB PR=%.1e | Julia PR=%.1e  (PR-only; LP filters differ)  [%s]\n', ...
-            J, num2str(nlevs), pr_nsct_m, pr_nsct_jl, yesno(pass_nsct));
+    fprintf('  NSCT   (scales=%d, nlevs=[%s]):  MATLAB PR=%.1e | Julia PR=%.1e  (PR-only; LP filters differ)  [%s]\n', ...
+            scales, num2str(nlevs), pr_nsct_m, pr_nsct_jl, yesno(pass_nsct));
     fprintf('    timing dec:  MATLAB %.4f s | Julia spatial %.4f s | Julia FFT-ws %.4f s | %.2fx (spatial) %.2fx (ws)\n', ...
             median(td_nsct_m), td_nsct_jl, td_nsct_ws, ...
             median(td_nsct_m) / td_nsct_jl, median(td_nsct_m) / td_nsct_ws);

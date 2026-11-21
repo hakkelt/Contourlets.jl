@@ -28,7 +28,7 @@ end
     s = analyze(st, x)
     layout = subband_layout(t, size(x))
     @test layout == subband_layout(st, size(x))
-    @test layout[1] == (level = 4, channel = 0, direction = 0)
+    @test layout[1] == (level = 0, channel = 0, direction = 0)
     # Channels 1 and 4: full tree; 2 and 3: half trees; L = 0: the bare channel.
     @test [count(b -> b.level == i && b.channel == ch, layout) for i in 1:3, ch in 1:4] ==
         [8 5 5 8; 4 3 3 4; 1 1 1 1]
@@ -42,7 +42,7 @@ end
     Random.seed!(81)
     x = randn(64, 64)
     sh = (5, -3)
-    t = TICT(scales = 3, direction_levels = [3, 2, 2])
+    t = TICT(scales = 3, direction_levels = [2, 2, 3])
     c, cs = analyze(t, x), analyze(t, circshift(x, sh))
     for i in axes(c, 3)
         @test maximum(abs, circshift(subband(t, c, i), sh) .- subband(t, cs, i)) < 1.0e-10
@@ -78,11 +78,12 @@ end
     c2, d2 = lp(c1)
     t = STICT(scales = 2, direction_levels = [0, 0])
     tilp = analyze(t, x)
-    # With L = 0, subband 1 + 4(i - 1) + c is channel c of level i.
+    # With L = 0, subband 1 + 4(i - 1) + c is channel c of level i; level 2 is the
+    # finest (the first split), level 1 the coarser.
     channel(i, c) = subband(t, tilp, 1 + 4 * (i - 1) + c)
     for (c, (kr, kc)) in enumerate(((0, 0), (1, 0), (0, 1), (1, 1)))
-        @test channel(1, c)[1:2:end, 1:2:end] ≈ d1[(1 + kr):2:end, (1 + kc):2:end] atol = 1.0e-12
-        @test channel(2, c)[1:4:end, 1:4:end] ≈ d2[(1 + kr):2:end, (1 + kc):2:end] atol = 1.0e-12
+        @test channel(2, c)[1:2:end, 1:2:end] ≈ d1[(1 + kr):2:end, (1 + kc):2:end] atol = 1.0e-12
+        @test channel(1, c)[1:4:end, 1:4:end] ≈ d2[(1 + kr):2:end, (1 + kc):2:end] atol = 1.0e-12
     end
     @test subband(t, tilp, 1)[1:4:end, 1:4:end] ≈ lp(c1)[1] atol = 1.0e-12
 end
@@ -131,7 +132,7 @@ end
     using Random
     Random.seed!(84)
     for x in (randn(64, 64), complex.(randn(64, 64), randn(64, 64)))
-        t, st = TICT(scales = 2, direction_levels = [3, 2]), STICT(scales = 2, direction_levels = [3, 2])
+        t, st = TICT(scales = 2, direction_levels = [2, 3]), STICT(scales = 2, direction_levels = [2, 3])
         wt, ws = make_workspace(t, x), make_workspace(st, x)
         @test wt isa TICTWorkspace && ws isa STICTWorkspace
         ct = similar_coefficients(t, x)
@@ -161,7 +162,7 @@ end
 @testitem "TICT stages views and transposes through the workspace" tags = [:tict] begin
     using Random
     Random.seed!(42)
-    t = TICT(scales = 2, direction_levels = [2, 1])
+    t = TICT(scales = 2, direction_levels = [1, 2])
     big = randn(40, 40)
     x = view(big, 3:34, 5:36)
     xd = collect(x)

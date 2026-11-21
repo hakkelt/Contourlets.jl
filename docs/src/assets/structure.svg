@@ -14,6 +14,7 @@
       .h   { fill: #111; font-size: 15px; font-weight: bold; }
       .sup { baseline-shift: super; font-size: 8px; }
       .sub { baseline-shift: sub; font-size: 9px; }
+      .ssub { baseline-shift: sub; font-size: 6px; }
     </style>
   </defs>
   <rect x="0" y="0" width="930" height="350" fill="#ffffff"/>
@@ -29,7 +30,7 @@
     <text class="s" x="146" y="93" text-anchor="middle">b₁</text>
     <rect class="dir" x="174" y="82" width="110" height="34" rx="4"/>
     <text class="t" x="229" y="104" text-anchor="middle">DFB, ↓Sₖ</text>
-    <text class="s" x="229" y="132" text-anchor="middle">2<tspan class="sup">L₁</tspan> decimated subbands</text>
+    <text class="s" x="229" y="132" text-anchor="middle">2<tspan class="sup">L<tspan class="ssub">J</tspan></tspan> decimated subbands</text>
     <path class="ln" d="M65,116 L65,166"/>
     <text class="s" x="71" y="146">c₁, ↓2</text>
     <rect class="box" x="10" y="168" width="110" height="34" rx="4"/>
@@ -38,7 +39,7 @@
     <text class="s" x="146" y="179" text-anchor="middle">b₂</text>
     <rect class="dir" x="174" y="168" width="110" height="34" rx="4"/>
     <text class="t" x="229" y="190" text-anchor="middle">DFB, ↓Sₖ</text>
-    <text class="s" x="229" y="218" text-anchor="middle">2<tspan class="sup">L₂</tspan> decimated subbands</text>
+    <text class="s" x="229" y="218" text-anchor="middle">2<tspan class="sup">L<tspan class="ssub">J−1</tspan></tspan> decimated subbands</text>
     <path class="ln" d="M65,202 L65,238"/>
     <text class="t" x="65" y="254" text-anchor="middle">… c<tspan class="sub">J</tspan> (lowpass)</text>
     <text class="s" x="10" y="292">critically sampled DFB, LP redundancy ≈ 4/3</text>
@@ -56,7 +57,7 @@
     <text class="s" x="146" y="93" text-anchor="middle">b₁</text>
     <rect class="dir" x="174" y="82" width="110" height="34" rx="4"/>
     <text class="t" x="229" y="104" text-anchor="middle">NSDFB</text>
-    <text class="s" x="229" y="132" text-anchor="middle">2<tspan class="sup">L₁</tspan> full-size subbands</text>
+    <text class="s" x="229" y="132" text-anchor="middle">2<tspan class="sup">L<tspan class="ssub">J</tspan></tspan> full-size subbands</text>
     <path class="ln" d="M65,116 L65,166"/>
     <text class="s" x="71" y="146">c₁, full size</text>
     <rect class="box" x="10" y="168" width="110" height="34" rx="4"/>
@@ -67,7 +68,7 @@
     <rect class="dir" x="174" y="168" width="110" height="34" rx="4"/>
     <text class="t" x="229" y="184" text-anchor="middle">NSDFB</text>
     <text class="s" x="229" y="197" text-anchor="middle">filters ↑2<tspan class="sup">m</tspan> (à trous)</text>
-    <text class="s" x="229" y="218" text-anchor="middle">2<tspan class="sup">L₂</tspan> full-size subbands</text>
+    <text class="s" x="229" y="218" text-anchor="middle">2<tspan class="sup">L<tspan class="ssub">J−1</tspan></tspan> full-size subbands</text>
     <path class="ln" d="M65,202 L65,238"/>
     <text class="t" x="65" y="254" text-anchor="middle">… c<tspan class="sub">J</tspan> (lowpass)</text>
     <text class="s" x="10" y="292">no samplers anywhere</text>
@@ -89,7 +90,7 @@
     <rect class="dir" x="174" y="78" width="112" height="42" rx="4"/>
     <text class="t" x="230" y="96" text-anchor="middle">4 DFBs</text>
     <text class="s" x="230" y="111" text-anchor="middle">full, half, half, full</text>
-    <text class="s" x="230" y="134" text-anchor="middle">3·2<tspan class="sup">L₁</tspan> + 2 subbands</text>
+    <text class="s" x="230" y="134" text-anchor="middle">3·2<tspan class="sup">L<tspan class="ssub">J</tspan></tspan> + 2 subbands</text>
     <path class="ln" d="M55,116 L55,166"/>
     <text class="s" x="61" y="146">lowpass, full size</text>
     <rect class="box" x="0" y="168" width="110" height="34" rx="4"/>
@@ -99,7 +100,7 @@
     <text class="s" x="141" y="179" text-anchor="middle">K₀ … K₃</text>
     <rect class="dir" x="174" y="168" width="112" height="34" rx="4"/>
     <text class="t" x="230" y="190" text-anchor="middle">4 DFBs</text>
-    <text class="s" x="230" y="218" text-anchor="middle">3·2<tspan class="sup">L₂</tspan> + 2 subbands</text>
+    <text class="s" x="230" y="218" text-anchor="middle">3·2<tspan class="sup">L<tspan class="ssub">J−1</tspan></tspan> + 2 subbands</text>
     <path class="ln" d="M55,202 L55,238"/>
     <text class="t" x="55" y="254" text-anchor="middle">… lowpass</text>
     <text class="s" x="0" y="292">TICT: DFBs without samplers (NSDFB), shift invariant,</text>

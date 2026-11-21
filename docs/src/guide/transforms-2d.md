@@ -12,7 +12,7 @@ multiscale pyramid followed by a directional filter bank:
 | Typical use | compression, M-term approximation | denoising, feature extraction | denoising | denoising at low redundancy |
 
 Each transform is an immutable value built from keywords, such as
-`CT(scales = 3, direction_levels = [2, 2, 1])`, and is run with [`analyze`](@ref) and
+`CT(scales = 3, direction_levels = [1, 2, 2])`, and is run with [`analyze`](@ref) and
 [`synthesize`](@ref).  The NSCT and TICT, whose subbands all have the image's
 size, return one array of size `(size(img)..., n)` with subband `i` in
 `c[:, :, i]`.  The CT and STICT, whose subbands have different sizes, return a
@@ -21,9 +21,10 @@ that broadcasts and reduces like any vector (`c .* 2`, `abs.(c)`, `norm(c)`).
 For all four, [`subband`](@ref)`(t, c, i)` is subband `i` as a matrix view, and
 [`subband_layout`](@ref)`(t, size(img))` says which subband each `i` is.  For
 the CT and NSCT the low-pass residual comes first, as
-`(scale = scales + 1, direction = 0)`, followed by the `2^direction_levels[j]` directional
-subbands `(scale = j, direction = k)` of every scale `j`, finest first and
-ordered by angle.  The TICT and STICT, described [below](@ref guide2d-tict),
+`(scale = 0, direction = 0)`, followed by the `2^direction_levels[j]` directional
+subbands `(scale = j, direction = k)` of every scale `j`, from the coarsest
+(`j = 1`) to the finest (`j = scales`), each ordered by angle;
+`direction_levels` is read in the same order.  The TICT and STICT, described [below](@ref guide2d-tict),
 have four channels per level.  For
 volumes, see [Surfacelets.jl](https://github.com/hakkelt/Surfacelets.jl); for the underlying filter banks,
 [Theory](@ref theory).
@@ -42,7 +43,7 @@ Plots.default(show = false)
 img = Float64.(Gray.(testimage("barbara")))[1:512, 100:611]
 t   = CT(scales = 3, direction_levels = parabolic_levels(3))
 
-println("direction exponents: ", t.direction_levels)   # 2^L subbands per scale
+println("direction exponents: ", t.direction_levels)   # 2^L subbands per scale, coarsest first
 ```
 
 [`parabolic_levels`](@ref) applies the parabolic scaling rule (width ≈ length²),
@@ -154,15 +155,15 @@ splits every channel:
 - [`TICT`](@ref) uses the nonsubsampled DFB: the whole transform is
   translation invariant.
 - [`STICT`](@ref) uses the critically sampled DFB: only the pyramid is
-  translation invariant, and the redundancy drops to `4J + 1`.
+  translation invariant, and the redundancy drops to `4 scales + 1`.
 
 Channels 1 and 4 get the full directional tree; channels 2 and 3 pass mostly row
 and mostly column frequencies, so they get half trees that split only that fan
 (see [Theory](@ref theory-tict)).
 
 ```@example guide2d
-tt  = TICT(scales = 2, direction_levels = [3, 2])
-tst = STICT(scales = 2, direction_levels = [3, 2])
+tt  = TICT(scales = 2, direction_levels = [2, 3])
+tst = STICT(scales = 2, direction_levels = [2, 3])
 
 ti  = analyze(tt, img)
 sti = analyze(tst, img)
@@ -177,8 +178,8 @@ println("PR errors: ", maximum(abs, synthesize(tt, ti) .- img), ", ",
 ```
 
 [`subband_layout`](@ref) names their subbands `(level = j, channel = ch, direction = d)`,
-after the low-pass residual `(level = scales + 1, channel = 0, direction = 0)`: level by
-level from the finest, channels 1 to 4 within a level, then the directions of
+after the low-pass residual `(level = 0, channel = 0, direction = 0)`: level by
+level from the coarsest, channels 1 to 4 within a level, then the directions of
 each channel.  Like
 the NSCT, the TICT commutes with circular shifts exactly:
 
@@ -192,7 +193,7 @@ println("shift equivariance error: ", err)
 @assert err < 1e-10
 ```
 
-The second level of each, one row per channel, shows the difference.  TICT
+The coarser level of each (`level = 1`), one row per channel, shows the difference.  TICT
 subbands keep the image's size; STICT subbands are those of a critically sampled
 DFB of each full-size channel.  Full-size subbands alias into moiré at this
 panel size, so each panel shows the same central window — a quarter of the
@@ -224,14 +225,14 @@ function plot_tict_level(t, c, j; clip = 0.99)
     return plot(panels...; layout = (4, nd), size = (200 * nd, 800))
 end
 
-plot_tict_level(tt, ti, 2)
+plot_tict_level(tt, ti, 1)
 savefig("tict_coeffs.png"); nothing # hide
 ```
 
 ![](tict_coeffs.png)
 
 ```@example guide2d
-plot_tict_level(tst, sti, 2)
+plot_tict_level(tst, sti, 1)
 savefig("stict_coeffs.png"); nothing # hide
 ```
 

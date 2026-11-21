@@ -2,7 +2,7 @@
     using Random
     Random.seed!(30)
     x = randn(32, 32)
-    t = CT(scales = 2, direction_levels = [2, 3])
+    t = CT(scales = 2, direction_levels = [3, 2])
     c = analyze(t, x)
     @test c isa SubbandVector{Float64}
     rec = synthesize(t, c)
@@ -15,9 +15,10 @@ end
     c = analyze(t, x)
     @test nsubbands(t, size(x)) == 1 + 4 + 8
     layout = subband_layout(t, size(x))
-    @test layout[1] == (scale = 3, direction = 0)
-    @test count(s -> s.scale == 1, layout) == 4    # 2^2 directional subbands at level 1
-    @test count(s -> s.scale == 2, layout) == 8    # 2^3 directional subbands at level 2
+    @test layout[1] == (scale = 0, direction = 0)
+    @test count(s -> s.scale == 1, layout) == 4    # 2^2 directional subbands at the coarsest scale
+    @test count(s -> s.scale == 2, layout) == 8    # 2^3 directional subbands at the finest scale
+    @test [size(subband(t, c, i)) for i in (2, 6)] == [(8, 8), (8, 16)]   # first of each scale
     @test size(subband(t, c, 1)) == (8, 8)
     @test sum(i -> length(subband(t, c, i)), 1:13) == length(c)
 end
@@ -38,7 +39,7 @@ end
     using Random
     Random.seed!(32)
     x = randn(32, 32)
-    t = NSCT(scales = 2, direction_levels = [2, 3])
+    t = NSCT(scales = 2, direction_levels = [3, 2])
     nc = analyze(t, x)
     @test nc isa Array{Float64, 3}
     @test size(nc) == (32, 32, 13)
@@ -50,7 +51,7 @@ end
     using Random
     Random.seed!(38)
     x = randn(32, 32)
-    t = NSCT(scales = 2, direction_levels = [2, 3])
+    t = NSCT(scales = 2, direction_levels = [3, 2])
     c0 = analyze(t, x)
     for s in ((1, 0), (0, 1), (3, 5), (7, 11))
         cs = analyze(t, circshift(x, s))
@@ -66,7 +67,7 @@ end
     using Random
     Random.seed!(39)
     x = randn(32, 32)
-    t = NSCT(scales = 2, direction_levels = [2, 3])
+    t = NSCT(scales = 2, direction_levels = [3, 2])
     c0, cs = analyze(t, x), analyze(t, circshift(x, (4, 9)))
     e0 = [sum(abs2, subband(t, c0, i)) for i in 2:size(c0, 3)]
     es = [sum(abs2, subband(t, cs, i)) for i in 2:size(cs, 3)]
@@ -75,7 +76,7 @@ end
 
 @testitem "NSCT all subbands same size as input" tags = [:nsct] begin
     x = zeros(32, 32)
-    t = NSCT(scales = 2, direction_levels = [2, 3])
+    t = NSCT(scales = 2, direction_levels = [3, 2])
     nc = analyze(t, x)
     @test all(size(subband(t, nc, i)) == size(x) for i in 1:nsubbands(t, size(x)))
 end
@@ -95,7 +96,7 @@ end
 @testitem "transform constructors complete scales and direction_levels" tags = [:ct] begin
     for T in (CT, NSCT, TICT, STICT)
         @test T(scales = 3) == T(scales = 3, direction_levels = parabolic_levels(3))
-        @test T(direction_levels = [2, 1, 1]) == T(scales = 3, direction_levels = [2, 1, 1])
+        @test T(direction_levels = [1, 1, 2]) == T(scales = 3, direction_levels = [1, 1, 2])
         @test T(scales = Int32(2), direction_levels = UInt8[1, 2]) == T(scales = 2, direction_levels = [1, 2])
         @test T(scales = 2).scales === 2
     end
@@ -103,19 +104,19 @@ end
 
 @testitem "transforms compare and hash by value" tags = [:ct] begin
     for T in (CT, NSCT, TICT, STICT)
-        a = T(scales = 2, direction_levels = [1, 2])
+        a = T(scales = 2, direction_levels = [2, 1])
         b = T(
-            scales = 2, direction_levels = [1, 2], lp_filters = FilterPair(collect(CDF97.h), collect(CDF97.g)),
+            scales = 2, direction_levels = [2, 1], lp_filters = FilterPair(collect(CDF97.h), collect(CDF97.g)),
             dfb_filters = QuincunxFilterPair(copy(Q2345.f_ladder))
         )
         @test a == b
         @test hash(a) == hash(b)
         @test a != T(scales = 2, direction_levels = [2, 2])
-        @test a != T(scales = 2, direction_levels = [1, 2], dfb_filters = QuincunxFilterPair(2 .* Q2345.f_ladder))
+        @test a != T(scales = 2, direction_levels = [2, 1], dfb_filters = QuincunxFilterPair(2 .* Q2345.f_ladder))
         @test isequal(a, b)
         @test length(Set([a, b])) == 1
     end
-    @test CT(scales = 2, direction_levels = [1, 2]) != NSCT(scales = 2, direction_levels = [1, 2])
+    @test CT(scales = 2, direction_levels = [2, 1]) != NSCT(scales = 2, direction_levels = [2, 1])
     @test QuincunxFilterPair(copy(Q2345.f_ladder)) == Q2345
     @test hash(QuincunxFilterPair(copy(Q2345.f_ladder))) == hash(Q2345)
     # The keyword constructor copies direction_levels.
@@ -136,14 +137,15 @@ end
     ls = parabolic_levels(4)
     @test length(ls) == 4
     @test all(x -> x >= 1, ls)
-    @test issorted(ls; rev = true)  # coarser levels have more directions
+    @test issorted(ls)  # finer scales have more directions
+    @test ls == [1, 1, 2, 2]
 end
 
 @testitem "CT analyze!/synthesize! with workspace" tags = [:ct] begin
     using Random
     Random.seed!(34)
     x = randn(32, 32)
-    t = CT(scales = 2, direction_levels = [2, 3])
+    t = CT(scales = 2, direction_levels = [3, 2])
     ws = make_workspace(t, Float64, (32, 32))
     coeffs = similar_coefficients(t, x)
     @test analyze!(coeffs, t, x; workspace = ws) === coeffs
@@ -156,7 +158,7 @@ end
     using Random
     Random.seed!(35)
     x = randn(32, 32)
-    t = CT(scales = 2, direction_levels = [2, 3])
+    t = CT(scales = 2, direction_levels = [3, 2])
     ws = make_workspace(t, Float64, (32, 32))
     coeffs = similar_coefficients(t, x)
     analyze!(coeffs, t, x; workspace = ws)
@@ -168,7 +170,7 @@ end
     using Random
     Random.seed!(36)
     x = randn(32, 32)
-    t = NSCT(scales = 2, direction_levels = [2, 3])
+    t = NSCT(scales = 2, direction_levels = [3, 2])
     ws = make_workspace(t, Float64, (32, 32))
     coeffs = similar_coefficients(t, x)
     analyze!(coeffs, t, x; workspace = ws)
@@ -181,7 +183,7 @@ end
     using Random
     Random.seed!(37)
     x = randn(32, 32)
-    t = NSCT(scales = 2, direction_levels = [2, 3])
+    t = NSCT(scales = 2, direction_levels = [3, 2])
     ws = make_workspace(t, Float64, (32, 32))
     coeffs = similar_coefficients(t, x)
     analyze!(coeffs, t, x; workspace = ws)
@@ -192,13 +194,13 @@ end
 
 @testitem "similar_coefficients sizes" tags = [:ct, :nsct] begin
     x = zeros(64, 64)
-    t = NSCT(scales = 2, direction_levels = [2, 3])
+    t = NSCT(scales = 2, direction_levels = [3, 2])
     nc = similar_coefficients(t, x)
     @test size(nc) == (64, 64, 1 + 4 + 8)
     @test iszero(nc)
     @test similar_coefficients(t, zeros(Float32, 64, 64)) isa Array{Float32, 3}
     @test similar_coefficients(t, zeros(Int, 64, 64)) isa Array{Float64, 3}
-    ct = CT(scales = 2, direction_levels = [2, 3])
+    ct = CT(scales = 2, direction_levels = [3, 2])
     c = similar_coefficients(ct, zeros(32, 32))
     @test c isa SubbandVector{Float64}
     @test nsubbands(c) == 13
@@ -213,10 +215,9 @@ end
     @test ls1 == Int[]
 end
 
-@testitem "parabolic_levels large l_j0" tags = [:ct] begin
+@testitem "parabolic_levels with a deeper coarsest scale" tags = [:ct] begin
     ls = parabolic_levels(5, 2)
-    @test length(ls) == 5
-    @test ls[1] >= ls[end]   # finer scale ≥ coarser scale in direction count
+    @test ls == [2, 2, 3, 3, 4]   # coarsest first
 end
 
 @testitem "threaded keyword resolution" tags = [:ct] begin
@@ -234,7 +235,7 @@ end
     using Random
     Random.seed!(91)
     x = randn(32, 32)
-    for t in (CT(scales = 2, direction_levels = [2, 3]), NSCT(scales = 2, direction_levels = [2, 3]), TICT(scales = 2, direction_levels = [2, 3]), STICT(scales = 2, direction_levels = [2, 3]))
+    for t in (CT(scales = 2, direction_levels = [3, 2]), NSCT(scales = 2, direction_levels = [3, 2]), TICT(scales = 2, direction_levels = [3, 2]), STICT(scales = 2, direction_levels = [3, 2]))
         for threaded in (nothing, true, false)
             c = analyze(t, x; threaded)
             @test maximum(abs, synthesize(t, c; threaded) .- x) < 1.0e-12
@@ -248,7 +249,7 @@ end
     using Random
     Random.seed!(92)
     x_int = rand(1:9, 32, 32)
-    for t in (CT(scales = 2, direction_levels = [2, 3]), NSCT(scales = 2, direction_levels = [2, 3]))
+    for t in (CT(scales = 2, direction_levels = [3, 2]), NSCT(scales = 2, direction_levels = [3, 2]))
         ws = make_workspace(t, Float64, (32, 32))
         @test eltype(ws) == Float64
         @test make_workspace(t, x_int) isa typeof(ws)
@@ -264,7 +265,7 @@ end
     using Random
     Random.seed!(42)
     x = randn(32, 32)
-    for t in (CT(scales = 2, direction_levels = [2, 3]), NSCT(scales = 2, direction_levels = [2, 3]))
+    for t in (CT(scales = 2, direction_levels = [3, 2]), NSCT(scales = 2, direction_levels = [3, 2]))
         ref = analyze(t, x)
         coeffs = similar_coefficients(t, x)
         @test analyze!(coeffs, t, x) === coeffs
@@ -286,7 +287,7 @@ end
     using Random
     Random.seed!(42)
     x = randn(32, 32)
-    for t in (CT(scales = 2, direction_levels = [2, 3]), NSCT(scales = 2, direction_levels = [2, 3]))
+    for t in (CT(scales = 2, direction_levels = [3, 2]), NSCT(scales = 2, direction_levels = [3, 2]))
         ws = make_workspace(t, Float64, (32, 32))
         c = analyze(t, x)
         rec_ws = synthesize(t, c; workspace = ws)
@@ -301,7 +302,7 @@ end
 
 @testitem "wrong arguments fail fast" tags = [:ct, :nsct, :tict] begin
     x = randn(32, 32)
-    for t in (CT(scales = 2, direction_levels = [2, 3]), NSCT(scales = 2, direction_levels = [2, 3]), TICT(scales = 2, direction_levels = [2, 3]), STICT(scales = 2, direction_levels = [2, 3]))
+    for t in (CT(scales = 2, direction_levels = [3, 2]), NSCT(scales = 2, direction_levels = [3, 2]), TICT(scales = 2, direction_levels = [3, 2]), STICT(scales = 2, direction_levels = [3, 2]))
         @test_throws "the contourlet transforms take images (two axes)" analyze(t, randn(8, 8, 8))
         @test_throws "the contourlet transforms take images (two axes)" make_workspace(t, Float64, (8, 8, 8))
         @test_throws "the contourlet transforms take images (two axes)" subband_layout(t, (8,))
@@ -309,7 +310,7 @@ end
         # Another size, element type or transform.
         @test_throws DimensionMismatch analyze(t, randn(64, 64); workspace = ws)
         @test_throws "the workspace was built for element type Float64, not for Float32" analyze(t, randn(Float32, 32, 32); workspace = ws)
-        other = make_workspace(t isa CT ? NSCT(scales = 2, direction_levels = [2, 3]) : CT(scales = 2, direction_levels = [2, 3]), Float64, (32, 32))
+        other = make_workspace(t isa CT ? NSCT(scales = 2, direction_levels = [3, 2]) : CT(scales = 2, direction_levels = [3, 2]), Float64, (32, 32))
         @test_throws "the workspace was built for" analyze(t, x; workspace = other)
         # Coefficients of another size or element type.
         c = similar_coefficients(t, randn(64, 64))
@@ -324,7 +325,7 @@ end
 end
 
 @testitem "workspace accessors" tags = [:ct, :nsct, :tict] begin
-    for t in (CT(scales = 2, direction_levels = [2, 3]), NSCT(scales = 2, direction_levels = [2, 3]), TICT(scales = 2, direction_levels = [2, 3]), STICT(scales = 2, direction_levels = [2, 3]))
+    for t in (CT(scales = 2, direction_levels = [3, 2]), NSCT(scales = 2, direction_levels = [3, 2]), TICT(scales = 2, direction_levels = [3, 2]), STICT(scales = 2, direction_levels = [3, 2]))
         ws = make_workspace(t, ComplexF32, (32, 32))
         @test ws isa AbstractTransformWorkspace
         @test transform(ws) === t
@@ -339,7 +340,7 @@ end
     using Random
     Random.seed!(95)
     x = randn(32, 32)
-    for t in (NSCT(scales = 2, direction_levels = [2, 3]), TICT(scales = 2, direction_levels = [1, 2]))
+    for t in (NSCT(scales = 2, direction_levels = [3, 2]), TICT(scales = 2, direction_levels = [2, 1]))
         ws = make_workspace(t, x)
         ref = analyze(t, x; workspace = ws)
         big = zeros(32, 32, size(ref, 3) + 1)
@@ -353,7 +354,7 @@ end
 @testitem "NSCT and TICT on odd sizes (unaligned subband slices)" tags = [:nsct, :tict] begin
     using Random
     Random.seed!(96)
-    for t in (NSCT(scales = 2, direction_levels = [1, 2]), TICT(scales = 2, direction_levels = [2, 1])), T in (Float64, Float32, ComplexF32)
+    for t in (NSCT(scales = 2, direction_levels = [2, 1]), TICT(scales = 2, direction_levels = [1, 2])), T in (Float64, Float32, ComplexF32)
         x = randn(T, 31, 33)
         ws = make_workspace(t, x)
         c = analyze(t, x; workspace = ws)

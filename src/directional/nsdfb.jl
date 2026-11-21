@@ -95,8 +95,9 @@ Nonsubsampled DFB analysis.  Returns `2^l_levels` directional subbands, each the
 same size as `bandpass`, each occupying an angular wedge of the frequency plane.
 Every subband commutes with circular shifts of `bandpass`.
 
-`tree_level` is the pyramid level `j` the bandpass comes from (1 = finest), as in
-[`NSCT`](@ref).  From `j = 3` on, each directional filter `Uₖ(z)` is
+`tree_level` is the pyramid split `j` the bandpass comes from, counted from the
+first, finest split (`j = 1`); scale `s` of an [`NSCT`](@ref) with `scales`
+scales has `tree_level = scales + 1 - s`.  From `j = 3` on, each directional filter `Uₖ(z)` is
 replaced by `Uₖ(z^(2^m I))` with `m = j − 2`, so that the filters' well-resolved
 region covers the coarser band (da Cunha, Zhou & Do 2006, §II-A.3).  Pass the
 same `tree_level` to [`nsdfb_reconstruct`](@ref).

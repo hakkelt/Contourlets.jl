@@ -120,7 +120,7 @@ end
 end
 
 @testitem "same-precision conversions are identities" tags = [:filters] begin
-    t = NSCT(scales = 2, direction_levels = [1, 2])
+    t = NSCT(scales = 2, direction_levels = [2, 1])
     @test t isa NSCT{Float64}
     @test Contourlets._convert_transform(Float64, t) === t
     @test Contourlets._convert_qfp(Float64, Q2345) === Q2345

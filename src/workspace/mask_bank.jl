@@ -2,10 +2,10 @@
 # runs the NSCT and TICT workspaces) and this package's stacked coefficients: an
 # array of size `(n1, n2, n)` whose slice 1 is the lowpass and whose slices
 # 2, …, n are the engine's outputs in item order.  `MaskItem.index` is
-# (level, direction) for the NSCT and (level, channel, direction) for the TICT.
+# (scale, direction) for the NSCT and (level, channel, direction) for the TICT.
 
 # Stacked coefficients `c` as the engine sees them: output (g, k) of group g
-# (an NSCT level, or channel c of TICT level i as group 4(i - 1) + c) is slice
+# (an NSCT scale, or channel c of TICT level i as group 4(i - 1) + c) is slice
 # `offsets[g] + k`.
 struct _Stacked{A <: AbstractArray}
     c::A

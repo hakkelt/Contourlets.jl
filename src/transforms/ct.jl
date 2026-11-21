@@ -4,7 +4,7 @@
 #   coarse ← image
 #   for j = J … 1:
 #       coarse_j, bandpass_j = lp_decompose(coarse, lp_filters)
-#       subbands of scale j = dfb_decompose(bandpass_j, direction_levels[j], dfb_filters)
+#       subbands of scale j = dfb_decompose(bandpass_j, dfb_filters, direction_levels[j])
 #       coarse = coarse_j
 #
 # Inverse (runs j = 1 … J):
@@ -25,7 +25,7 @@ function _layout(t::CT, dims::NTuple{2, Int})
     n1, n2 = dims
     levels = Vector{Vector{NTuple{2, Int}}}(undef, t.scales)
     for j in t.scales:-1:1          # the bandpass halves from the finest scale on
-        levels[j] = dfb_subband_sizes(n1, n2, t.direction_levels[j])
+        levels[j] = dfb_subband_sizes((n1, n2), t.direction_levels[j])
         n1, n2 = cld(n1, 2), cld(n2, 2)
     end
     return _stack_levels((n1, n2), levels, dims)
@@ -53,7 +53,7 @@ function _analyze_direct!(c::SubbandVector, first::Vector{Int}, t::CT, image::Ab
     for j in p.scales:-1:1
         coarse_j, bp_j = lp_decompose(coarse, fp)
         l = p.direction_levels[j]
-        dfb_decompose!(_Bands(c, first[j], 1 << l), bp_j, l, qfp)
+        dfb_decompose!(_Bands(c, first[j], 1 << l), bp_j, qfp, l)
         coarse = coarse_j
     end
     copyto!(subband(c, 1), coarse)
@@ -114,7 +114,7 @@ function _ct_forward_inner!(c::SubbandVector{T}, image::AbstractMatrix, ws::CTWo
 
             lp_decompose!(coarse_j, bp_j, current, fp; tmp = tmp_j, tmp2 = tmp2_j)
             # The workspace runner holds this level's filters, buffers and plans.
-            dfb_decompose!(_Bands(c, ws.first[j], 1 << L[j]), bp_j, L[j], qfp; workspace = ws)
+            dfb_decompose!(_Bands(c, ws.first[j], 1 << L[j]), bp_j, qfp, L[j]; workspace = ws)
             current = coarse_j
         end
         copyto!(subband(c, 1), current)

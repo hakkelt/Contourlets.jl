@@ -42,7 +42,7 @@ Base.show(io::IO, ws::STICTWorkspace) = print(io, "STICTWorkspace(", ws.transfor
 # subband of each channel.
 function _layout(t::STICT, dims::NTuple{2, Int})
     n1, n2 = dims
-    groups = [dfb_subband_sizes(n1, n2, l; half = h) for l in t.direction_levels for h in _TILP_HALVES]
+    groups = [dfb_subband_sizes((n1, n2), l; half = h) for l in t.direction_levels for h in _TILP_HALVES]
     return _stack_levels(dims, groups, dims)
 end
 

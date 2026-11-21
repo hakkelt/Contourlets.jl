@@ -51,7 +51,7 @@ end
 # ── Public API ────────────────────────────────────────────────────────────────
 
 """
-    dfb_decompose(bandpass, l_levels, qfp::QuincunxFilterPair; half=:both, workspace=nothing)
+    dfb_decompose(bandpass, qfp::QuincunxFilterPair, l_levels; half = :both, workspace = nothing)
         -> Vector{Matrix}
 
 Decompose `bandpass` into `2^l_levels` directional subbands using an
@@ -76,7 +76,7 @@ julia> using Contourlets: dfb_decompose
 
 julia> x = randn(Xoshiro(3), 32, 32);
 
-julia> sbs = dfb_decompose(x, 2, Q2345);
+julia> sbs = dfb_decompose(x, Q2345, 2);
 
 julia> length(sbs), size(sbs[1])
 (4, (16, 16))
@@ -91,8 +91,7 @@ julia> length(sbs), size(sbs[1])
    EPFL, 2001, §3.2–3.3.
 """
 function dfb_decompose(
-        bandpass::AbstractMatrix, l_levels::Integer,
-        qfp::QuincunxFilterPair;
+        bandpass::AbstractMatrix, qfp::QuincunxFilterPair, l_levels::Integer;
         half::Symbol = :both,
         workspace = nothing
     )
@@ -109,8 +108,8 @@ function dfb_decompose(
 end
 
 """
-    dfb_decompose!(subbands::AbstractVector{<:AbstractMatrix}, bandpass, l_levels, qfp::QuincunxFilterPair;
-                   half=:both, workspace=nothing) -> subbands
+    dfb_decompose!(subbands::AbstractVector{<:AbstractMatrix}, bandpass, qfp::QuincunxFilterPair, l_levels;
+                   half = :both, workspace = nothing) -> subbands
 
 In-place DFB analysis into preallocated `subbands` of the sizes
 [`dfb_subband_sizes`](@ref) gives.  A workspace from [`make_workspace`](@ref) whose
@@ -120,8 +119,8 @@ bandpass size and depth, other filters, another precision, or `half ≠ :both`)
 throws an `ArgumentError`.
 """
 function dfb_decompose!(
-        subbands::AbstractVector{<:AbstractMatrix}, bandpass::AbstractMatrix, l_levels::Integer,
-        qfp::QuincunxFilterPair;
+        subbands::AbstractVector{<:AbstractMatrix}, bandpass::AbstractMatrix,
+        qfp::QuincunxFilterPair, l_levels::Integer;
         half::Symbol = :both,
         workspace = nothing
     )
@@ -149,7 +148,7 @@ julia> using Contourlets: dfb_decompose, dfb_reconstruct
 
 julia> x = randn(Xoshiro(3), 32, 32);
 
-julia> sbs = dfb_decompose(x, 2, Q2345);
+julia> sbs = dfb_decompose(x, Q2345, 2);
 
 julia> rec = dfb_reconstruct(sbs, Q2345);
 
@@ -220,17 +219,18 @@ function _dfb_image_size(subbands, l::Int, half::Symbol)
 end
 
 """
-    dfb_subband_sizes(n1, n2, l; half=:both) -> Vector{Tuple{Int,Int}}
+    dfb_subband_sizes(dims, l_levels; half = :both) -> Vector{Tuple{Int,Int}}
 
-Per-subband `(rows, cols)` sizes produced by an `l`-level DFB applied to an
-`n1 × n2` bandpass image.  With `l ≥ 2` the first `2^(l-1)` subbands are
+Per-subband `(rows, cols)` sizes produced by an `l`-level DFB (`l = l_levels`)
+applied to a bandpass image of size `dims = (n1, n2)`.  With `l ≥ 2` the first `2^(l-1)` subbands are
 `n1/2^(l-1) × n2/2` and the remaining `2^(l-1)` are `n1/2 × n2/2^(l-1)`; with
 `l = 1` both are `n1/2 × n2` (the quincunx lattice).  A half tree
 (`half = :first`/`:second`) keeps the split fan's sizes and adds one `n1/2 × n2`
 quincunx subband for the unsplit fan.
 """
-function dfb_subband_sizes(n1::Integer, n2::Integer, l::Integer; half::Symbol = :both)
-    n1, n2, l = Int(n1), Int(n2), Int(l)
+function dfb_subband_sizes(dims::Tuple{Integer, Integer}, l_levels::Integer; half::Symbol = :both)
+    n1, n2 = Int.(dims)
+    l = Int(l_levels)
     l <= 0 && return [(n1, n2)]
     _check_half(half)
     q = (n1 >> 1, n2)

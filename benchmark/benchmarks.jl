@@ -220,12 +220,12 @@ for sz in TEST_SIZES
             for level in [1, 4]
                 level_str = "L=$level"
 
-                # DFB Forward: dfb_decompose(image::Matrix, level::Int, qfp::QuincunxFilterPair) → Vector{Matrix}
+                # DFB Forward: dfb_decompose(image::Matrix, qfp::QuincunxFilterPair, level::Int) → Vector{Matrix}
                 SUITE["DFB"][sz_str]["$(level_str) forward"] =
-                    @benchmarkable dfb_decompose($img, $level, Q2345)
+                    @benchmarkable dfb_decompose($img, Q2345, $level)
 
                 # Get subbands for reconstruction benchmark
-                subbands_dfb = dfb_decompose(img, level, Q2345)
+                subbands_dfb = dfb_decompose(img, Q2345, level)
 
                 # DFB Inverse: dfb_reconstruct(subbands::Vector{Matrix}, qfp::QuincunxFilterPair) → Matrix
                 SUITE["DFB"][sz_str]["$(level_str) inverse"] =
@@ -240,10 +240,10 @@ for sz in TEST_SIZES
             for level in [1, 3]
                 level_str = "L=$level"
                 SUITE["NSDFB"][sz_str]["$(level_str) forward"] =
-                    @benchmarkable nsdfb_decompose($img, $level, Q2345, 1)
-                subbands_ns = nsdfb_decompose(img, level, Q2345, 1)
+                    @benchmarkable nsdfb_decompose($img, Q2345, $level; tree_level = 1)
+                subbands_ns = nsdfb_decompose(img, Q2345, level; tree_level = 1)
                 SUITE["NSDFB"][sz_str]["$(level_str) inverse"] =
-                    @benchmarkable nsdfb_reconstruct($subbands_ns, Q2345, 1)
+                    @benchmarkable nsdfb_reconstruct($subbands_ns, Q2345; tree_level = 1)
             end
 
             # ────────────────────────────────────────────────────────────────────────────

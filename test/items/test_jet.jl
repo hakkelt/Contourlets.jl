@@ -52,12 +52,12 @@
     @test_call target_modules = (Contourlets,) Contourlets.qfb_decompose(x, Q2345)
     sb0, sb1 = Contourlets.qfb_decompose(x, Q2345)
     @test_call target_modules = (Contourlets,) Contourlets.qfb_reconstruct(sb0, sb1, Q2345)
-    @test_call target_modules = (Contourlets,) Contourlets.dfb_decompose(x, 2, Q2345)
-    sbs = Contourlets.dfb_decompose(x, 2, Q2345)
+    @test_call target_modules = (Contourlets,) Contourlets.dfb_decompose(x, Q2345, 2)
+    sbs = Contourlets.dfb_decompose(x, Q2345, 2)
     @test_call target_modules = (Contourlets,) Contourlets.dfb_reconstruct(sbs, Q2345)
-    @test_call target_modules = (Contourlets,) Contourlets.nsdfb_decompose(x, 2, Q2345, 1)
-    nsbs = Contourlets.nsdfb_decompose(x, 2, Q2345, 1)
-    @test_call target_modules = (Contourlets,) Contourlets.nsdfb_reconstruct(nsbs, Q2345, 1)
+    @test_call target_modules = (Contourlets,) Contourlets.nsdfb_decompose(x, Q2345, 2; tree_level = 1)
+    nsbs = Contourlets.nsdfb_decompose(x, Q2345, 2; tree_level = 1)
+    @test_call target_modules = (Contourlets,) Contourlets.nsdfb_reconstruct(nsbs, Q2345; tree_level = 1)
 
     # ── Transforms, allocating and with workspaces ───────────────────────────
     ts = (CT(scales = 2, direction_levels = [2, 1]), NSCT(scales = 2, direction_levels = [2, 1]), TICT(scales = 2, direction_levels = [2, 1]), STICT(scales = 2, direction_levels = [2, 1]))
@@ -101,8 +101,8 @@ end
     @test_opt target_modules = (Contourlets,) Contourlets.qfb_decompose(x, Q2345)
     sb0, sb1 = Contourlets.qfb_decompose(x, Q2345)
     @test_opt target_modules = (Contourlets,) Contourlets.qfb_reconstruct(sb0, sb1, Q2345)
-    @test_opt target_modules = (Contourlets,) Contourlets.dfb_decompose(x, 2, Q2345)
-    sbs = Contourlets.dfb_decompose(x, 2, Q2345)
+    @test_opt target_modules = (Contourlets,) Contourlets.dfb_decompose(x, Q2345, 2)
+    sbs = Contourlets.dfb_decompose(x, Q2345, 2)
     @test_opt target_modules = (Contourlets,) Contourlets.dfb_reconstruct(sbs, Q2345)
 
     # ── Transforms ───────────────────────────────────────────────────────────
@@ -149,9 +149,9 @@ end
     sb0, sb1 = Contourlets.qfb_decompose(x, Q2345)
     @test_call target_modules = M Contourlets.qfb_decompose!(similar(sb0), similar(sb1), x, Q2345)
     @test_call target_modules = M Contourlets.qfb_reconstruct!(similar(x), sb0, sb1, Q2345)
-    @test_call target_modules = M Contourlets.dfb_subband_sizes(16, 16, 2)
-    sbs = Contourlets.dfb_decompose(x, 2, Q2345)
-    @test_call target_modules = M Contourlets.dfb_decompose!([similar(s) for s in sbs], x, 2, Q2345)
+    @test_call target_modules = M Contourlets.dfb_subband_sizes((16, 16), 2)
+    sbs = Contourlets.dfb_decompose(x, Q2345, 2)
+    @test_call target_modules = M Contourlets.dfb_decompose!([similar(s) for s in sbs], x, Q2345, 2)
     @test_call target_modules = M Contourlets.dfb_reconstruct!(similar(x), sbs, Q2345)
 
     # ── Workspaces and coefficients, threaded and not ───────────────────────
@@ -220,13 +220,13 @@ end
     sb0, sb1 = Contourlets.qfb_decompose(x, Q2345)
     @test_opt target_modules = M Contourlets.qfb_decompose!(similar(sb0), similar(sb1), x, Q2345)
     @test_opt target_modules = M Contourlets.qfb_reconstruct!(similar(x), sb0, sb1, Q2345)
-    @test_opt target_modules = M Contourlets.dfb_subband_sizes(16, 16, 2)
-    sbs = Contourlets.dfb_decompose(x, 2, Q2345)
-    @test_opt target_modules = M Contourlets.dfb_decompose!([similar(s) for s in sbs], x, 2, Q2345)
+    @test_opt target_modules = M Contourlets.dfb_subband_sizes((16, 16), 2)
+    sbs = Contourlets.dfb_decompose(x, Q2345, 2)
+    @test_opt target_modules = M Contourlets.dfb_decompose!([similar(s) for s in sbs], x, Q2345, 2)
     @test_opt target_modules = M Contourlets.dfb_reconstruct!(similar(x), sbs, Q2345)
-    @test_opt target_modules = M Contourlets.nsdfb_decompose(x, 2, Q2345, 1)
-    nsbs = Contourlets.nsdfb_decompose(x, 2, Q2345, 1)
-    @test_opt target_modules = M Contourlets.nsdfb_reconstruct(nsbs, Q2345, 1)
+    @test_opt target_modules = M Contourlets.nsdfb_decompose(x, Q2345, 2; tree_level = 1)
+    nsbs = Contourlets.nsdfb_decompose(x, Q2345, 2; tree_level = 1)
+    @test_opt target_modules = M Contourlets.nsdfb_reconstruct(nsbs, Q2345; tree_level = 1)
 
     # ── Workspaces and coefficients ──────────────────────────────────────────
     ts = (CT(scales = 2, direction_levels = [2, 1]), NSCT(scales = 2, direction_levels = [2, 1]), TICT(scales = 2, direction_levels = [2, 1]), STICT(scales = 2, direction_levels = [2, 1]))

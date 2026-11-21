@@ -101,10 +101,10 @@ end
     for i in 1:2, (ch, half) in enumerate((:both, :second, :first, :both))
         w = subband(t0, channels, 1 + 4 * (i - 1) + ch)
         idx = findall(b -> b.level == i && b.channel == ch, layout)
-        @test all(zip(idx, Contourlets.nsdfb_decompose(w, L[i], Q2345; half = half))) do (k, b)
+        @test all(zip(idx, Contourlets.nsdfb_decompose(w, Q2345, L[i]; half = half))) do (k, b)
             maximum(abs, subband(t, c, k) .- b) < 1.0e-12
         end
-        @test all(zip(idx, Contourlets.dfb_decompose(w, L[i], Q2345; half = half))) do (k, b)
+        @test all(zip(idx, Contourlets.dfb_decompose(w, Q2345, L[i]; half = half))) do (k, b)
             maximum(abs, subband(st, s, k) .- b) < 1.0e-12
         end
     end

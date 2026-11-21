@@ -35,7 +35,7 @@ end
     Random.seed!(22)
     x = randn(32, 32)
     for l in 1:4
-        sbs = Contourlets.dfb_decompose(x, l, Q2345)
+        sbs = Contourlets.dfb_decompose(x, Q2345, l)
         @test length(sbs) == 2^l
         rec = Contourlets.dfb_reconstruct(sbs, Q2345)
         @test maximum(abs, rec .- x) < 1.0e-12
@@ -45,26 +45,26 @@ end
 @testitem "DFB subband sizes (canonical directional mosaic)" tags = [:directional] begin
     x = zeros(64, 64)
     # l=1: two horizontal subbands, rows halved.
-    sbs1 = Contourlets.dfb_decompose(x, 1, Q2345)
+    sbs1 = Contourlets.dfb_decompose(x, Q2345, 1)
     @test all(==((32, 64)), size.(sbs1))
     # l=2: four square subbands.
-    sbs2 = Contourlets.dfb_decompose(x, 2, Q2345)
+    sbs2 = Contourlets.dfb_decompose(x, Q2345, 2)
     @test all(==((32, 32)), size.(sbs2))
     # l=3: 4 horizontal-mosaic + 4 vertical-mosaic subbands.
-    sbs3 = Contourlets.dfb_decompose(x, 3, Q2345)
+    sbs3 = Contourlets.dfb_decompose(x, Q2345, 3)
     @test count(==((16, 32)), size.(sbs3)) == 4
     @test count(==((32, 16)), size.(sbs3)) == 4
     # l=4: 8 + 8.
-    sbs4 = Contourlets.dfb_decompose(x, 4, Q2345)
+    sbs4 = Contourlets.dfb_decompose(x, Q2345, 4)
     @test count(==((8, 32)), size.(sbs4)) == 8
     @test count(==((32, 8)), size.(sbs4)) == 8
     # The exported size helper matches the actual decomposition.
     for l in 1:4
-        @test Contourlets.dfb_subband_sizes(64, 64, l) == size.(Contourlets.dfb_decompose(x, l, Q2345))
+        @test Contourlets.dfb_subband_sizes((64, 64), l) == size.(Contourlets.dfb_decompose(x, Q2345, l))
     end
     # Sample count is preserved (nearly critical sampling).
     for l in 1:4
-        @test sum(prod, Contourlets.dfb_subband_sizes(64, 64, l)) == 64 * 64
+        @test sum(prod, Contourlets.dfb_subband_sizes((64, 64), l)) == 64 * 64
     end
 end
 
@@ -73,14 +73,14 @@ end
     n = 128
     wave(θ, f) = [cos(2π * f * (cos(θ) * j + sin(θ) * i)) for i in 1:n, j in 1:n]
     for deg in 0:15:179
-        e = [sum(abs2, s) for s in Contourlets.dfb_decompose(wave(deg * π / 180, 0.3), 3, Q2345)]
+        e = [sum(abs2, s) for s in Contourlets.dfb_decompose(wave(deg * π / 180, 0.3), Q2345, 3)]
         @test maximum(e) > 0.4 * sum(e)
     end
 end
 
 @testitem "DFB level 0 returns single subband" tags = [:directional] begin
     x = randn(8, 8)
-    sbs = Contourlets.dfb_decompose(x, 0, Q2345)
+    sbs = Contourlets.dfb_decompose(x, Q2345, 0)
     @test length(sbs) == 1
     @test sbs[1] == x
 end
@@ -90,10 +90,10 @@ end
     Random.seed!(23)
     x = randn(32, 32)
     for l in 1:3, tl in 1:5
-        sbs = Contourlets.nsdfb_decompose(x, l, Q2345, tl)
+        sbs = Contourlets.nsdfb_decompose(x, Q2345, l; tree_level = tl)
         @test length(sbs) == 2^l
         @test all(s -> size(s) == (32, 32), sbs)
-        rec = Contourlets.nsdfb_reconstruct(sbs, Q2345, tl)
+        rec = Contourlets.nsdfb_reconstruct(sbs, Q2345; tree_level = tl)
         @test maximum(abs, rec .- x) < 1.0e-12
     end
 end
@@ -108,8 +108,8 @@ end
     gain(x, s) = sum(s .* x) / sum(abs2, x)
     for (j, m) in ((1, 0), (2, 0), (3, 1), (4, 2), (5, 3)), k in ((1, 2), (3, -1), (2, 2))
         x, xm = wave(k), wave((2^m) .* k)
-        coarse = Contourlets.nsdfb_decompose(x, 3, Q2345, j)
-        fine = Contourlets.nsdfb_decompose(xm, 3, Q2345, 1)
+        coarse = Contourlets.nsdfb_decompose(x, Q2345, 3; tree_level = j)
+        fine = Contourlets.nsdfb_decompose(xm, Q2345, 3; tree_level = 1)
         @test [gain(x, s) for s in coarse] ≈ [gain(xm, s) for s in fine] atol = 1.0e-12
     end
 
@@ -122,7 +122,7 @@ end
     dominant(j) = Set(
         begin
             x = wave((round(Int, 8 * cos(θ)), round(Int, 8 * sin(θ))))
-            argmax([sum(abs2, s) for s in Contourlets.nsdfb_decompose(x, 3, Q2345, j)])
+            argmax([sum(abs2, s) for s in Contourlets.nsdfb_decompose(x, Q2345, 3; tree_level = j)])
         end for θ in range(0, π; length = 73)[1:(end - 1)]
     )
     @test length(dominant(5)) == 8
@@ -137,7 +137,7 @@ end
     n = 64
     wave(θ) = [cos(2π * 0.4 * (cos(θ) * j + sin(θ) * i)) for i in 1:n, j in 1:n]
     for deg in (15, 45, 75, 105, 135, 165)
-        e = [sum(abs2, s) for s in Contourlets.nsdfb_decompose(wave(deg * π / 180), 3, Q2345)]
+        e = [sum(abs2, s) for s in Contourlets.nsdfb_decompose(wave(deg * π / 180), Q2345, 3)]
         @test maximum(e) > 0.6 * sum(e)     # one wedge dominates
     end
 end
@@ -150,7 +150,7 @@ end
     n = 128
     wave(θ) = [cos(2π * 0.42 * (cos(θ) * j + sin(θ) * i)) for i in 1:n, j in 1:n]
     doms = [
-        argmax([sum(abs2, s) for s in Contourlets.nsdfb_decompose(wave(deg * π / 180), 3, Q2345)])
+        argmax([sum(abs2, s) for s in Contourlets.nsdfb_decompose(wave(deg * π / 180), Q2345, 3)])
             for deg in 0:10:179
     ]
     @test length(unique(doms)) == 8
@@ -162,7 +162,7 @@ end
     # the multichannel bank of Do's thesis on a periodic image.
     ref = reinterpret(Float64, read(joinpath(@__DIR__, "..", "reference", "toolbox_dfb_l12.bin")))
     x = [mod(73i^2 + 179j^2 + 31i * j, 1031) / 1031 - 0.5 for i in 1:32, j in 1:32]
-    ours = reduce(vcat, [vec(s) for l in 1:2 for s in Contourlets.dfb_decompose(x, l, Q2345)])
+    ours = reduce(vcat, [vec(s) for l in 1:2 for s in Contourlets.dfb_decompose(x, Q2345, l)])
     @test length(ours) == length(ref)
     @test maximum(abs, ours .- ref) < 1.0e-13
 end
@@ -174,12 +174,12 @@ end
     Random.seed!(5)
     x = randn(64, 64)
     for l in 2:5
-        sbs = Contourlets.dfb_decompose(x, l, Q2345)
-        szs = Contourlets.dfb_subband_sizes(64, 64, l)
+        sbs = Contourlets.dfb_decompose(x, Q2345, l)
+        szs = Contourlets.dfb_subband_sizes((64, 64), l)
         for k in eachindex(sbs)
             S = (64 ÷ szs[k][1], 64 ÷ szs[k][2])
             for step in ((1, 0), (0, 1), (1, 1))
-                ys = Contourlets.dfb_decompose(circshift(x, S .* step), l, Q2345)[k]
+                ys = Contourlets.dfb_decompose(circshift(x, S .* step), Q2345, l)[k]
                 @test maximum(abs, ys .- circshift(sbs[k], step)) < 1.0e-12
             end
         end
@@ -194,9 +194,9 @@ end
     Random.seed!(6)
     x = randn(32, 32)
     for l in 2:4
-        d = Contourlets.dfb_decompose(x, l, Q2345)
-        ns = Contourlets.nsdfb_decompose(x, l, Q2345)
-        szs = Contourlets.dfb_subband_sizes(32, 32, l)
+        d = Contourlets.dfb_decompose(x, Q2345, l)
+        ns = Contourlets.nsdfb_decompose(x, Q2345, l)
+        szs = Contourlets.dfb_subband_sizes((32, 32), l)
         for k in eachindex(d)
             S = (32 ÷ szs[k][1], 32 ÷ szs[k][2])
             hits = [
@@ -229,7 +229,7 @@ end
     for l in 2:5
         angles = range(0, π; length = 8 * 2^l + 1)[1:(end - 1)]
         expected = l == 5 ? setdiff(1:32, (1, 16)) : 1:(2^l)
-        for dec in (x -> Contourlets.dfb_decompose(x, l, Q2345), x -> Contourlets.nsdfb_decompose(x, l, Q2345))
+        for dec in (x -> Contourlets.dfb_decompose(x, Q2345, l), x -> Contourlets.nsdfb_decompose(x, Q2345, l))
             doms = [argmax([sum(abs2, s) for s in dec(wave(θ))]) for θ in angles]
             @test setdiff(expected, doms) == Int[]
         end
@@ -243,11 +243,11 @@ end
     x = randn(32, 32)
     for l in 1:4
         m = 2^(l - 1)
-        full, nsfull = Contourlets.dfb_decompose(x, l, Q2345), Contourlets.nsdfb_decompose(x, l, Q2345)
+        full, nsfull = Contourlets.dfb_decompose(x, Q2345, l), Contourlets.nsdfb_decompose(x, Q2345, l)
         for (h, keep, from) in ((:first, 1:m, 1:m), (:second, 2:(m + 1), (m + 1):(2m)))
-            sbs, ns = Contourlets.dfb_decompose(x, l, Q2345; half = h), Contourlets.nsdfb_decompose(x, l, Q2345; half = h)
+            sbs, ns = Contourlets.dfb_decompose(x, Q2345, l; half = h), Contourlets.nsdfb_decompose(x, Q2345, l; half = h)
             @test length(sbs) == length(ns) == m + 1
-            @test size.(sbs) == Contourlets.dfb_subband_sizes(32, 32, l; half = h)
+            @test size.(sbs) == Contourlets.dfb_subband_sizes((32, 32), l; half = h)
             if l > 1
                 @test all(sbs[i] ≈ full[j] for (i, j) in zip(keep, from))
                 @test all(ns[i] ≈ nsfull[j] for (i, j) in zip(keep, from))
@@ -371,8 +371,8 @@ end
     x = randn(32, 32)
     l = 2
     subbands = [zeros(16, 16) for _ in 1:4]
-    Contourlets.dfb_decompose!(subbands, x, l, Q2345)
-    ref = Contourlets.dfb_decompose(x, l, Q2345)
+    Contourlets.dfb_decompose!(subbands, x, Q2345, l)
+    ref = Contourlets.dfb_decompose(x, Q2345, l)
     for k in 1:4
         @test maximum(abs, subbands[k] .- ref[k]) < 1.0e-14
     end
@@ -385,8 +385,8 @@ end
     l = 2
     ws = make_workspace(CT(scales = 1, direction_levels = [l]), Float64, (32, 32))
     subbands = [zeros(16, 16) for _ in 1:4]
-    Contourlets.dfb_decompose!(subbands, x, l, Q2345; workspace = ws)
-    ref = Contourlets.dfb_decompose(x, l, Q2345)
+    Contourlets.dfb_decompose!(subbands, x, Q2345, l; workspace = ws)
+    ref = Contourlets.dfb_decompose(x, Q2345, l)
     for k in 1:4
         @test maximum(abs, subbands[k] .- ref[k]) < 1.0e-14
     end
@@ -398,30 +398,30 @@ end
     x = randn(64, 64)
     ws = make_workspace(CT(scales = 1, direction_levels = [2]), Float64, (64, 64))     # Q2345
     q2 = QuincunxFilterPair([0.25, 0.25])
-    ref = Contourlets.dfb_decompose(x, 2, q2)
+    ref = Contourlets.dfb_decompose(x, q2, 2)
     msg_filters = "built with different DFB filters"
-    @test_throws msg_filters Contourlets.dfb_decompose(x, 2, q2; workspace = ws)
-    @test_throws msg_filters Contourlets.dfb_decompose!([similar(s) for s in ref], x, 2, q2; workspace = ws)
+    @test_throws msg_filters Contourlets.dfb_decompose(x, q2, 2; workspace = ws)
+    @test_throws msg_filters Contourlets.dfb_decompose!([similar(s) for s in ref], x, q2, 2; workspace = ws)
     @test_throws msg_filters Contourlets.dfb_reconstruct!(similar(x), ref, q2; workspace = ws)
     @test_throws msg_filters Contourlets.dfb_reconstruct(ref, q2; workspace = ws)
     # Float32 data on a Float64 workspace
     @test_throws "built for filter precision Float64, but the data needs Float32" Contourlets.dfb_decompose(
-        Float32.(x), 2, Q2345; workspace = ws
+        Float32.(x), Q2345, 2; workspace = ws
     )
     # Bandpass size or depth the workspace has no DFB for
     @test_throws "has no DFB for a (32, 32) bandpass at depth 2" Contourlets.dfb_decompose(
-        randn(32, 32), 2, Q2345; workspace = ws
+        randn(32, 32), Q2345, 2; workspace = ws
     )
     @test_throws "has no DFB for a (64, 64) bandpass at depth 3" Contourlets.dfb_decompose(
-        x, 3, Q2345; workspace = ws
+        x, Q2345, 3; workspace = ws
     )
     # Half trees are never held by a CTWorkspace
-    @test_throws "full-tree DFBs only" Contourlets.dfb_decompose(x, 2, Q2345; half = :first, workspace = ws)
+    @test_throws "full-tree DFBs only" Contourlets.dfb_decompose(x, Q2345, 2; half = :first, workspace = ws)
     # Workspaces of the other transforms
     wn = make_workspace(NSCT(scales = 1, direction_levels = [2]), Float64, (64, 64))
-    @test_throws "workspace must be a CTWorkspace or nothing" Contourlets.dfb_decompose(x, 2, Q2345; workspace = wn)
+    @test_throws "workspace must be a CTWorkspace or nothing" Contourlets.dfb_decompose(x, Q2345, 2; workspace = wn)
     # A matching workspace still serves the call
-    @test all(maximum(abs, a .- b) < 1.0e-12 for (a, b) in zip(Contourlets.dfb_decompose(x, 2, Q2345; workspace = ws), Contourlets.dfb_decompose(x, 2, Q2345)))
+    @test all(maximum(abs, a .- b) < 1.0e-12 for (a, b) in zip(Contourlets.dfb_decompose(x, Q2345, 2; workspace = ws), Contourlets.dfb_decompose(x, Q2345, 2)))
 end
 
 @testitem "qfb rejects an unknown dir" tags = [:directional] begin
@@ -439,7 +439,7 @@ end
     Random.seed!(72)
     x = randn(32, 32)
     l = 2
-    sbs = Contourlets.dfb_decompose(x, l, Q2345)
+    sbs = Contourlets.dfb_decompose(x, Q2345, l)
     bp = zeros(32, 32)
     Contourlets.dfb_reconstruct!(bp, sbs, Q2345)
     @test maximum(abs, bp .- x) < 1.0e-12
@@ -451,7 +451,7 @@ end
     x = randn(32, 32)
     l = 2
     ws = make_workspace(CT(scales = 1, direction_levels = [l]), Float64, (32, 32))
-    sbs = Contourlets.dfb_decompose(x, l, Q2345)
+    sbs = Contourlets.dfb_decompose(x, Q2345, l)
     bp = zeros(32, 32)
     Contourlets.dfb_reconstruct!(bp, sbs, Q2345; workspace = ws)
     @test maximum(abs, bp .- x) < 1.0e-12
@@ -460,7 +460,7 @@ end
 @testitem "dfb_decompose! invalid subbands length" tags = [:directional] begin
     x = randn(32, 32)
     subbands = [zeros(16, 16)]  # wrong: 1 instead of 4 for l=2
-    @test_throws ArgumentError Contourlets.dfb_decompose!(subbands, x, 2, Q2345)
+    @test_throws ArgumentError Contourlets.dfb_decompose!(subbands, x, Q2345, 2)
 end
 
 @testitem "dfb_reconstruct error on empty subbands" tags = [:directional] begin
@@ -473,12 +473,12 @@ end
 end
 
 @testitem "dfb_subband_sizes l=0 is the input size" tags = [:directional] begin
-    @test Contourlets.dfb_subband_sizes(64, 64, 0) == [(64, 64)]
+    @test Contourlets.dfb_subband_sizes((64, 64), 0) == [(64, 64)]
 end
 
 @testitem "nsdfb_decompose l_levels=0 returns copy" tags = [:directional] begin
     x = randn(16, 16)
-    sbs = Contourlets.nsdfb_decompose(x, 0, Q2345, 1)
+    sbs = Contourlets.nsdfb_decompose(x, Q2345, 0; tree_level = 1)
     @test length(sbs) == 1
     @test sbs[1] == x
     @test sbs[1] !== x   # must be a copy
@@ -487,14 +487,14 @@ end
 @testitem "nsdfb_reconstruct n=1 returns copy" tags = [:directional] begin
     x = randn(16, 16)
     sbs = [x]
-    rec = Contourlets.nsdfb_reconstruct(sbs, Q2345, 1)
+    rec = Contourlets.nsdfb_reconstruct(sbs, Q2345; tree_level = 1)
     @test rec == x
     @test rec !== x   # must be a copy
 end
 
 @testitem "nsdfb_reconstruct non-power-of-2 throws" tags = [:directional] begin
     sbs = [randn(16, 16) for _ in 1:3]
-    @test_throws ArgumentError Contourlets.nsdfb_reconstruct(sbs, Q2345, 1)
+    @test_throws ArgumentError Contourlets.nsdfb_reconstruct(sbs, Q2345; tree_level = 1)
 end
 
 @testitem "the ladder filter must be Phoong's symmetric even-length β" tags = [:directional] begin
@@ -502,15 +502,15 @@ end
     odd = QuincunxFilterPair([0.25, 0.5, 0.25])
     asym = QuincunxFilterPair([0.1, 0.4, 0.5, 0.3])
     for qfp in (odd, asym)
-        @test_throws ArgumentError Contourlets.dfb_decompose(x, 2, qfp)
-        @test_throws ArgumentError Contourlets.nsdfb_decompose(x, 2, qfp)
+        @test_throws ArgumentError Contourlets.dfb_decompose(x, qfp, 2)
+        @test_throws ArgumentError Contourlets.nsdfb_decompose(x, qfp, 2)
     end
 end
 
 @testitem "DFB rejects image sizes its sampling lattices do not divide" tags = [:directional] begin
-    @test_throws ArgumentError Contourlets.dfb_decompose(randn(30, 32), 3, Q2345)   # 30 not divisible by 4
-    @test_throws ArgumentError Contourlets.dfb_decompose(randn(31, 32), 1, Q2345)
-    @test_throws ArgumentError Contourlets.dfb_decompose(randn(32, 32), 2, Q2345; half = :neither)
+    @test_throws ArgumentError Contourlets.dfb_decompose(randn(30, 32), Q2345, 3)   # 30 not divisible by 4
+    @test_throws ArgumentError Contourlets.dfb_decompose(randn(31, 32), Q2345, 1)
+    @test_throws ArgumentError Contourlets.dfb_decompose(randn(32, 32), Q2345, 2; half = :neither)
 end
 
 @testitem "dfb_reconstruct single subband returns copy" tags = [:directional] begin
@@ -527,13 +527,24 @@ end
     a, b = randn(32, 32), randn(32, 32)
     z = complex.(a, b)
     for l in 1:3
-        dz, da, db = Contourlets.dfb_decompose(z, l, Q2345), Contourlets.dfb_decompose(a, l, Q2345), Contourlets.dfb_decompose(b, l, Q2345)
+        dz, da, db = Contourlets.dfb_decompose(z, Q2345, l), Contourlets.dfb_decompose(a, Q2345, l), Contourlets.dfb_decompose(b, Q2345, l)
         @test all(maximum(abs, dz[k] .- complex.(da[k], db[k])) < 1.0e-12 for k in eachindex(dz))
         @test maximum(abs, Contourlets.dfb_reconstruct(dz, Q2345) .- z) < 1.0e-12
-        nz, na, nb = Contourlets.nsdfb_decompose(z, l, Q2345), Contourlets.nsdfb_decompose(a, l, Q2345), Contourlets.nsdfb_decompose(b, l, Q2345)
+        nz, na, nb = Contourlets.nsdfb_decompose(z, Q2345, l), Contourlets.nsdfb_decompose(a, Q2345, l), Contourlets.nsdfb_decompose(b, Q2345, l)
         @test all(maximum(abs, nz[k] .- complex.(na[k], nb[k])) < 1.0e-12 for k in eachindex(nz))
         @test maximum(abs, Contourlets.nsdfb_reconstruct(nz, Q2345) .- z) < 1.0e-12
     end
+end
+
+@testitem "directional building blocks: argument forms" tags = [:directional] begin
+    using Contourlets: nsdfb_decompose, nsdfb_reconstruct, dfb_subband_sizes, dfb_decompose
+    using Random
+    x = randn(Xoshiro(12), 32, 32)
+    ns = nsdfb_decompose(x, Q2345, 2; tree_level = 3)
+    @test nsdfb_reconstruct(view(ns, :), Q2345; tree_level = 3) == nsdfb_reconstruct(ns, Q2345; tree_level = 3)
+    @test maximum(abs, nsdfb_reconstruct(ns, Q2345; tree_level = 3) .- x) < 1.0e-12
+    @test nsdfb_decompose(x, Q2345, 2) == nsdfb_decompose(x, Q2345, 2; tree_level = 1)
+    @test dfb_subband_sizes(size(x), 3) == size.(dfb_decompose(x, Q2345, 3))
 end
 
 @testitem "building blocks take any integer" tags = [:directional, :pyramid, :filters] begin
@@ -542,13 +553,13 @@ end
     using Contourlets: upsample_kernel, check_pr_condition
     using Random
     x = randn(Xoshiro(11), 32, 32)
-    @test dfb_decompose(x, Int32(2), Q2345) == dfb_decompose(x, 2, Q2345)
-    @test dfb_subband_sizes(UInt8(32), Int16(32), UInt8(3)) == dfb_subband_sizes(32, 32, 3)
-    sbs = [similar(x, s) for s in dfb_subband_sizes(32, 32, 2)]
-    @test dfb_decompose!(sbs, x, UInt8(2), Q2345) == dfb_decompose(x, 2, Q2345)
-    ns = nsdfb_decompose(x, Int32(2), Q2345, UInt8(3))
-    @test ns == nsdfb_decompose(x, 2, Q2345, 3)
-    @test nsdfb_reconstruct(ns, Q2345, Int32(3)) == nsdfb_reconstruct(ns, Q2345, 3)
+    @test dfb_decompose(x, Q2345, Int32(2)) == dfb_decompose(x, Q2345, 2)
+    @test dfb_subband_sizes((UInt8(32), Int16(32)), UInt8(3)) == dfb_subband_sizes((32, 32), 3)
+    sbs = [similar(x, s) for s in dfb_subband_sizes((32, 32), 2)]
+    @test dfb_decompose!(sbs, x, Q2345, UInt8(2)) == dfb_decompose(x, Q2345, 2)
+    ns = nsdfb_decompose(x, Q2345, Int32(2); tree_level = UInt8(3))
+    @test ns == nsdfb_decompose(x, Q2345, 2; tree_level = 3)
+    @test nsdfb_reconstruct(ns, Q2345; tree_level = Int32(3)) == nsdfb_reconstruct(ns, Q2345; tree_level = 3)
     c, bp = nsp_decompose(x, CDF97, Int32(2))
     @test (c, bp) == nsp_decompose(x, CDF97, 2)
     c2, bp2 = similar(x), similar(x)

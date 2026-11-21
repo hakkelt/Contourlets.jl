@@ -55,15 +55,15 @@ for n in sizes
     x = readdlm(joinpath(iodir, "x_$(n).csv"), ',', Float64)
 
     # ── NSDFB (standalone, no pyramid) ────────────────────────────────────────
-    sbs_nsdfb = nsdfb_decompose(x, L_nsdfb, Q2345, 1)
+    sbs_nsdfb = nsdfb_decompose(x, Q2345, L_nsdfb; tree_level = 1)
     for k in eachindex(sbs_nsdfb)
         writedlm(joinpath(iodir, @sprintf("jl_nsdfb_%d_sb%02d.csv", n, k)), sbs_nsdfb[k], ',')
     end
-    rec_nsdfb = nsdfb_reconstruct(sbs_nsdfb, Q2345, 1)
+    rec_nsdfb = nsdfb_reconstruct(sbs_nsdfb, Q2345; tree_level = 1)
     writedlm(joinpath(iodir, @sprintf("jl_nsdfb_%d_rec.csv", n)), rec_nsdfb, ',')
 
-    td_nsdfb = timeit(() -> nsdfb_decompose(x, L_nsdfb, Q2345, 1))
-    tr_nsdfb = timeit(() -> nsdfb_reconstruct(sbs_nsdfb, Q2345, 1))
+    td_nsdfb = timeit(() -> nsdfb_decompose(x, Q2345, L_nsdfb; tree_level = 1))
+    tr_nsdfb = timeit(() -> nsdfb_reconstruct(sbs_nsdfb, Q2345; tree_level = 1))
     push!(timing_rows, ("nsdfb", n, td_nsdfb, tr_nsdfb))
     @printf("[julia] NSDFB  n=%-4d  L=%d  dec %.4f s  rec %.4f s\n", n, L_nsdfb, td_nsdfb, tr_nsdfb)
 

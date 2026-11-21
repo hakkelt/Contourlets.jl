@@ -190,8 +190,8 @@ end
     @test_throws "no DFB for a (32, 32) bandpass at depth 3" Contourlets._workspace_runner(ws, (32, 32), 3, :both, Q2345, Float64)
     @test_throws "no DFB for a (16, 16) bandpass at depth 2" Contourlets._workspace_runner(ws, (16, 16), 2, :both, Q2345, Float64)
     @test_throws "filter precision Float64" Contourlets._workspace_runner(ws, (32, 32), 2, :both, Q2345, Float32)
-    a = Contourlets.dfb_decompose(bp, 2, Q2345; workspace = ws)
-    @test all(a .== Contourlets.dfb_decompose(bp, 2, Q2345))
+    a = Contourlets.dfb_decompose(bp, Q2345, 2; workspace = ws)
+    @test all(a .== Contourlets.dfb_decompose(bp, Q2345, 2))
     @test maximum(abs, Contourlets.dfb_reconstruct(a, Q2345; workspace = ws) .- bp) < 1.0e-12
 end
 

@@ -218,16 +218,16 @@ end
     for backend in GPUBackends.fft_backends
         xg = to_gpu(backend, x)
         # l_levels == 0 → [copy(bandpass)]
-        sbs0 = Contourlets.nsdfb_decompose(xg, 0, Q2345)
+        sbs0 = Contourlets.nsdfb_decompose(xg, Q2345, 0)
         @test length(sbs0) == 1
         @test maximum(abs, Array(sbs0[1]) .- x) < 1.0f-5
         # nsdfb_reconstruct n == 1 → copy
         rec1 = Contourlets.nsdfb_reconstruct([xg], Q2345)
         @test maximum(abs, Array(rec1) .- x) < 1.0f-5
         # error: l_levels < 0
-        @test_throws ArgumentError Contourlets.nsdfb_decompose(xg, -1, Q2345)
+        @test_throws ArgumentError Contourlets.nsdfb_decompose(xg, Q2345, -1)
         # error: non-power-of-2 subbands
-        sbs2 = Contourlets.nsdfb_decompose(xg, 2, Q2345)
+        sbs2 = Contourlets.nsdfb_decompose(xg, Q2345, 2)
         @test_throws ArgumentError Contourlets.nsdfb_reconstruct(sbs2[1:3], Q2345)
     end
 end

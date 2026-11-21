@@ -323,7 +323,7 @@ savefig(p, "lp_demo.png"); nothing # hide
 ```@example guide2d
 println("LP round-trip error: ", maximum(abs, back .- img))
 
-sbs = dfb_decompose(bandpass, 3, Q2345)           # 2^3 directional subbands
+sbs = dfb_decompose(bandpass, Q2345, 3)           # 2^3 directional subbands
 println("DFB subbands: ", length(sbs), " of size ", size(sbs[1]))
 println("DFB round-trip error: ",
     maximum(abs, dfb_reconstruct(sbs, Q2345) .- bandpass))

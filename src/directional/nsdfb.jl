@@ -88,7 +88,7 @@ function _nsdfb_bank(
 end
 
 """
-    nsdfb_decompose(bandpass, l_levels, qfp, tree_level=1; half=:both)
+    nsdfb_decompose(bandpass, qfp, l_levels; tree_level = 1, half = :both)
         -> Vector{Matrix}
 
 Nonsubsampled DFB analysis.  Returns `2^l_levels` directional subbands, each the
@@ -117,16 +117,15 @@ julia> using Contourlets: nsdfb_decompose
 
 julia> x = randn(Xoshiro(5), 16, 16);
 
-julia> sbs = nsdfb_decompose(x, 2, Q2345, 1);
+julia> sbs = nsdfb_decompose(x, Q2345, 2);
 
 julia> length(sbs), size(sbs[1]) == size(x)
 (4, true)
 ```
 """
 function nsdfb_decompose(
-        bandpass::AbstractMatrix, l_levels::Integer,
-        qfp::QuincunxFilterPair, tree_level::Integer = 1;
-        half::Symbol = :both
+        bandpass::AbstractMatrix, qfp::QuincunxFilterPair, l_levels::Integer;
+        tree_level::Integer = 1, half::Symbol = :both
     )
     l_levels, tree_level = Int(l_levels), Int(tree_level)
     l_levels >= 0 || throw(ArgumentError("l_levels must be ≥ 0"))
@@ -147,7 +146,7 @@ function nsdfb_decompose(
 end
 
 """
-    nsdfb_reconstruct(subbands, qfp, tree_level=1; half=:both) -> bandpass
+    nsdfb_reconstruct(subbands, qfp; tree_level = 1, half = :both) -> bandpass
 
 Nonsubsampled DFB synthesis (inverse of [`nsdfb_decompose`](@ref)).  Pass the
 same `tree_level` and `half` as the analysis; the tree depth is inferred from
@@ -161,21 +160,21 @@ julia> using Contourlets: nsdfb_decompose, nsdfb_reconstruct
 
 julia> x = randn(Xoshiro(5), 16, 16);
 
-julia> sbs = nsdfb_decompose(x, 2, Q2345, 1);
+julia> sbs = nsdfb_decompose(x, Q2345, 2; tree_level = 3);
 
-julia> rec = nsdfb_reconstruct(sbs, Q2345, 1);
+julia> rec = nsdfb_reconstruct(sbs, Q2345; tree_level = 3);
 
 julia> maximum(abs, rec .- x) < 1e-12
 true
 ```
 """
 function nsdfb_reconstruct(
-        subbands::Vector{<:AbstractMatrix},
-        qfp::QuincunxFilterPair, tree_level::Integer = 1;
-        half::Symbol = :both
+        subbands::AbstractVector{<:AbstractMatrix}, qfp::QuincunxFilterPair;
+        tree_level::Integer = 1, half::Symbol = :both
     )
     tree_level = Int(tree_level)
     tree_level >= 1 || throw(ArgumentError("tree_level must be ≥ 1"))
+    Base.require_one_based_indexing(subbands)
     _check_half(half)
     n = length(subbands)
     n >= 1 || throw(ArgumentError("subbands must be non-empty"))

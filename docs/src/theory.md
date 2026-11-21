@@ -119,7 +119,7 @@ contourlets trace smooth contours):
 using Contourlets: dfb_decompose, dfb_reconstruct, nsdfb_decompose
 
 N = 128
-sbs = dfb_decompose(zeros(N, N), 3, Q2345)     # 8 directional subbands
+sbs = dfb_decompose(zeros(N, N), Q2345, 3)     # 8 directional subbands
 function basis_element(k)
     s = [zeros(size(sb)) for sb in sbs]
     s[k][size(s[k], 1) ÷ 2 + 1, size(s[k], 2) ÷ 2 + 1] = 1.0
@@ -157,7 +157,7 @@ spectrum shrinks to a blob inside the support):
 
 ```@example theory
 Nf = 64
-sbs2 = dfb_decompose(zeros(Nf, Nf), 2, Q2345)   # 4 channels: legible per-subband spectra
+sbs2 = dfb_decompose(zeros(Nf, Nf), Q2345, 2)   # 4 channels: legible per-subband spectra
 pf = plot(layout = (1, 4), size = (860, 220))
 for k in 1:4
     s = [zeros(size(sb)) for sb in sbs2]
@@ -185,7 +185,7 @@ Nw = 128
 midw = Nw ÷ 2 + 1
 # Channel owning each frequency: the argmax of |H_k| over the centered DFT grid.
 function wedge_owner(l, half)
-    resp = [fftshift(abs.(fft(s))) for s in nsdfb_decompose(δ, l, Q2345; half = half)]
+    resp = [fftshift(abs.(fft(s))) for s in nsdfb_decompose(δ, Q2345, l; half = half)]
     return [argmax([r[i, j] for r in resp]) for i in 1:Nw, j in 1:Nw]
 end
 # One label per wedge: the mean orientation of its pixels (averaged on the

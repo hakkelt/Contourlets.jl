@@ -36,7 +36,7 @@ function _analyze_direct!(c::AbstractArray, t::NSCT, image::AbstractMatrix, thre
     for split in 1:J
         j = J + 1 - split
         coarse_j, bp_j = nsp_decompose(coarse, fp, split)
-        for (k, sb) in enumerate(nsdfb_decompose(bp_j, p.direction_levels[j], qfp, split))
+        for (k, sb) in enumerate(nsdfb_decompose(bp_j, qfp, p.direction_levels[j]; tree_level = split))
             copyto!(view(c, :, :, offsets[j] + k), sb)
         end
         coarse = coarse_j
@@ -55,7 +55,7 @@ function _synthesize_direct!(x::AbstractMatrix, t::NSCT, c::AbstractArray, threa
     for j in 1:J
         split = J + 1 - j
         bands = [copy(view(c, :, :, offsets[j] + k)) for k in 1:(1 << p.direction_levels[j])]
-        bp = nsdfb_reconstruct(bands, qfp, split)
+        bp = nsdfb_reconstruct(bands, qfp; tree_level = split)
         coarse = nsp_reconstruct(coarse, bp, fp, split)
     end
     return copyto!(x, coarse)

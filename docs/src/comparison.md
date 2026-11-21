@@ -55,10 +55,10 @@ order of the toolboxes' `nlevs`.
 | `synthesize(t, coeffs)` | — | `nsctrec(coeffs)` |
 | `lp_decompose(img, CDF97)` | `lpdec(img, '9-7')` | — |
 | `lp_reconstruct(c, bp, CDF97)` | `lprec(c, bp, '9-7')` | — |
-| `dfb_decompose(bp, L, Q2345)` | `dfbdec(bp, 'pkva', L)` | — |
+| `dfb_decompose(bp, Q2345, L)` | `dfbdec(bp, 'pkva', L)` | — |
 | `dfb_reconstruct(sbs, Q2345)` | `dfbrec(sbs, 'pkva')` | — |
-| `nsdfb_decompose(bp, L, Q2345, tl)` | — | `nsdfbdec(bp, …)` |
-| `nsdfb_reconstruct(sbs, Q2345, tl)` | — | `nsdfbrec(sbs, …)` |
+| `nsdfb_decompose(bp, Q2345, L; tree_level = tl)` | — | `nsdfbdec(bp, …)` |
+| `nsdfb_reconstruct(sbs, Q2345; tree_level = tl)` | — | `nsdfbrec(sbs, …)` |
 | `parabolic_levels(scales)` | manual `[1 2 3 4]` | manual |
 
 ---

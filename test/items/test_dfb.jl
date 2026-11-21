@@ -535,3 +535,29 @@ end
         @test maximum(abs, Contourlets.nsdfb_reconstruct(nz, Q2345) .- z) < 1.0e-12
     end
 end
+
+@testitem "building blocks take any integer" tags = [:directional, :pyramid, :filters] begin
+    using Contourlets: dfb_decompose, dfb_decompose!, dfb_subband_sizes, nsdfb_decompose, nsdfb_reconstruct
+    using Contourlets: nsp_decompose, nsp_decompose!, nsp_reconstruct, nsp_reconstruct!
+    using Contourlets: upsample_kernel, check_pr_condition
+    using Random
+    x = randn(Xoshiro(11), 32, 32)
+    @test dfb_decompose(x, Int32(2), Q2345) == dfb_decompose(x, 2, Q2345)
+    @test dfb_subband_sizes(UInt8(32), Int16(32), UInt8(3)) == dfb_subband_sizes(32, 32, 3)
+    sbs = [similar(x, s) for s in dfb_subband_sizes(32, 32, 2)]
+    @test dfb_decompose!(sbs, x, UInt8(2), Q2345) == dfb_decompose(x, 2, Q2345)
+    ns = nsdfb_decompose(x, Int32(2), Q2345, UInt8(3))
+    @test ns == nsdfb_decompose(x, 2, Q2345, 3)
+    @test nsdfb_reconstruct(ns, Q2345, Int32(3)) == nsdfb_reconstruct(ns, Q2345, 3)
+    c, bp = nsp_decompose(x, CDF97, Int32(2))
+    @test (c, bp) == nsp_decompose(x, CDF97, 2)
+    c2, bp2 = similar(x), similar(x)
+    nsp_decompose!(c2, bp2, x, CDF97, UInt8(2))
+    @test (c2, bp2) == (c, bp)
+    @test nsp_reconstruct(c, bp, CDF97, Int32(2)) == nsp_reconstruct(c, bp, CDF97, 2)
+    @test nsp_reconstruct!(similar(x), c, bp, CDF97, UInt8(2)) == nsp_reconstruct(c, bp, CDF97, 2)
+    K = [1.0 2.0; 3.0 4.0]
+    @test upsample_kernel(K, Int32(2)) == upsample_kernel(K, 2)
+    @test check_pr_condition(CDF97; N = Int32(32))
+    @test parabolic_levels(Int32(4), UInt8(2)) == parabolic_levels(4, 2)
+end

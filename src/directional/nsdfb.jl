@@ -123,10 +123,11 @@ julia> length(sbs), size(sbs[1]) == size(x)
 ```
 """
 function nsdfb_decompose(
-        bandpass::AbstractMatrix, l_levels::Int,
-        qfp::QuincunxFilterPair, tree_level::Int = 1;
+        bandpass::AbstractMatrix, l_levels::Integer,
+        qfp::QuincunxFilterPair, tree_level::Integer = 1;
         half::Symbol = :both
     )
+    l_levels, tree_level = Int(l_levels), Int(tree_level)
     l_levels >= 0 || throw(ArgumentError("l_levels must be ≥ 0"))
     tree_level >= 1 || throw(ArgumentError("tree_level must be ≥ 1"))
     _check_half(half)
@@ -169,9 +170,10 @@ true
 """
 function nsdfb_reconstruct(
         subbands::Vector{<:AbstractMatrix},
-        qfp::QuincunxFilterPair, tree_level::Int = 1;
+        qfp::QuincunxFilterPair, tree_level::Integer = 1;
         half::Symbol = :both
     )
+    tree_level = Int(tree_level)
     tree_level >= 1 || throw(ArgumentError("tree_level must be ≥ 1"))
     _check_half(half)
     n = length(subbands)

@@ -91,11 +91,12 @@ julia> length(sbs), size(sbs[1])
    EPFL, 2001, §3.2–3.3.
 """
 function dfb_decompose(
-        bandpass::AbstractMatrix, l_levels::Int,
+        bandpass::AbstractMatrix, l_levels::Integer,
         qfp::QuincunxFilterPair;
         half::Symbol = :both,
         workspace = nothing
     )
+    l_levels = Int(l_levels)
     l_levels >= 0 || throw(ArgumentError("l_levels must be ≥ 0"))
     _check_half(half)
     l_levels == 0 && return [copy(bandpass)]
@@ -119,11 +120,12 @@ bandpass size and depth, other filters, another precision, or `half ≠ :both`)
 throws an `ArgumentError`.
 """
 function dfb_decompose!(
-        subbands::AbstractVector{<:AbstractMatrix}, bandpass::AbstractMatrix, l_levels::Int,
+        subbands::AbstractVector{<:AbstractMatrix}, bandpass::AbstractMatrix, l_levels::Integer,
         qfp::QuincunxFilterPair;
         half::Symbol = :both,
         workspace = nothing
     )
+    l_levels = Int(l_levels)
     l_levels >= 0 || throw(ArgumentError("l_levels must be ≥ 0"))
     _check_half(half)
     length(subbands) == _bank_n_subbands(l_levels, half) ||
@@ -227,7 +229,8 @@ Per-subband `(rows, cols)` sizes produced by an `l`-level DFB applied to an
 (`half = :first`/`:second`) keeps the split fan's sizes and adds one `n1/2 × n2`
 quincunx subband for the unsplit fan.
 """
-function dfb_subband_sizes(n1::Int, n2::Int, l::Int; half::Symbol = :both)
+function dfb_subband_sizes(n1::Integer, n2::Integer, l::Integer; half::Symbol = :both)
+    n1, n2, l = Int(n1), Int(n2), Int(l)
     l <= 0 && return [(n1, n2)]
     _check_half(half)
     q = (n1 >> 1, n2)

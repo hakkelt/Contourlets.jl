@@ -1,12 +1,13 @@
 # Utilities operating on FilterPair and QuincunxFilterPair.
 
 """
-    upsample_kernel(K::AbstractMatrix, factor::Int) -> Matrix
+    upsample_kernel(K::AbstractMatrix, factor::Integer) -> Matrix
 
 2-D version of `MultiscaleFilterBanks.upsample_filter`: insert `factor - 1` zero rows and columns
 between every row and column of kernel `K`.
 """
-function upsample_kernel(K::AbstractMatrix{T}, factor::Int)::Matrix{T} where {T}
+function upsample_kernel(K::AbstractMatrix{T}, factor::Integer)::Matrix{T} where {T}
+    factor = Int(factor)
     factor >= 1 || throw(ArgumentError("factor must be ≥ 1"))
     factor == 1 && return copy(K)
     rows, cols = size(K)
@@ -50,7 +51,7 @@ Verify perfect reconstruction of the Laplacian Pyramid built from `fp` on an
 `N×N` test image.  The error is measured relative to the image's largest value,
 against `atol`, whose default scales with `eps(T)` as in the method above.
 """
-function check_pr_condition(fp::FilterPair{T}; N::Int = 64, atol::Real = _pr_atol(T))::Bool where {T}
+function check_pr_condition(fp::FilterPair{T}; N::Integer = 64, atol::Real = _pr_atol(T))::Bool where {T}
     img = T.(reshape(1:(N * N), N, N))   # deterministic test signal
     coarse, bp = lp_decompose(img, fp)
     rec = lp_reconstruct(coarse, bp, fp)

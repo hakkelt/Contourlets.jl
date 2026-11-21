@@ -46,7 +46,7 @@ function _nsp_masks(
 end
 
 """
-    nsp_decompose(image, fp::FilterPair, level::Int) -> (coarse, bandpass)
+    nsp_decompose(image, fp::FilterPair, level::Integer) -> (coarse, bandpass)
 
 One level of the Nonsubsampled Pyramid at pyramid level `level` (1 = finest).
 Both outputs have the same spatial size as `image`.
@@ -71,7 +71,8 @@ true
    15(10):3089–3101, 2006.
    [doi:10.1109/TIP.2006.877507](https://doi.org/10.1109/TIP.2006.877507)
 """
-function nsp_decompose(image::AbstractMatrix, fp::FilterPair, level::Int)
+function nsp_decompose(image::AbstractMatrix, fp::FilterPair, level::Integer)
+    level = Int(level)
     level >= 1 || throw(ArgumentError("level must be ≥ 1"))
     Td = data_eltype(image)   # data type (preserves complex)
     Tf = filter_eltype(Td)    # real filter precision
@@ -93,7 +94,7 @@ same size as `image`; when both are supplied the call is allocation-free
 """
 function nsp_decompose!(
         coarse::AbstractMatrix, bandpass::AbstractMatrix,
-        image::AbstractMatrix, fp::FilterPair, level::Int;
+        image::AbstractMatrix, fp::FilterPair, level::Integer;
         tmp::AbstractMatrix = similar(image),
         tmp2::AbstractMatrix = similar(image),
         h_j::Union{AbstractVector, Nothing} = nothing,
@@ -135,7 +136,7 @@ true
 """
 function nsp_reconstruct(
         coarse::AbstractMatrix, bandpass::AbstractMatrix,
-        fp::FilterPair, level::Int
+        fp::FilterPair, level::Integer
     )
     Td = promote_type(eltype(coarse), eltype(bandpass))  # data type
     Tf = filter_eltype(Td)                              # real filter precision
@@ -155,7 +156,7 @@ requirements.
 """
 function nsp_reconstruct!(
         image::AbstractMatrix, coarse::AbstractMatrix,
-        bandpass::AbstractMatrix, fp::FilterPair, level::Int;
+        bandpass::AbstractMatrix, fp::FilterPair, level::Integer;
         tmp::AbstractMatrix = similar(image),
         tmp2::AbstractMatrix = similar(image),
         g_j::Union{AbstractVector, Nothing} = nothing

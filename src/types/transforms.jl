@@ -313,7 +313,8 @@ julia> parabolic_levels(5, 2)
    14(12):2091–2106, 2005.
    [doi:10.1109/TIP.2005.859376](https://doi.org/10.1109/TIP.2005.859376)
 """
-function parabolic_levels(J::Int, l_j0::Int = 1)::Vector{Int}
+function parabolic_levels(J::Integer, l_j0::Integer = 1)::Vector{Int}
+    J, l_j0 = Int(J), Int(l_j0)
     j0 = J
     return [max(0, l_j0 + (j0 - j) ÷ 2) for j in 1:J]
 end

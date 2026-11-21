@@ -76,7 +76,7 @@ function nsp_decompose(image::AbstractMatrix, fp::FilterPair, level::Int)
     Td = data_eltype(image)   # data type (preserves complex)
     Tf = filter_eltype(Td)    # real filter precision
     im = Td === eltype(image) ? image : Td.(image)
-    h_j, g_j = nsp_atrous_filters(fp, level, Tf)
+    h_j, g_j = nsp_atrous_filters(Tf, fp, level)
     coarse = conv2d_sep(im, h_j, h_j; boundary = :periodic)
     pred = conv2d_sep(coarse, g_j, g_j; boundary = :periodic)
     bp = im .- pred
@@ -102,7 +102,7 @@ function nsp_decompose!(
     # Use caller-supplied (workspace-cached) à trous filters when given; otherwise
     # build them here.  The cached `g_j` already carries the synthesis rescale.
     if h_j === nothing || g_j === nothing
-        h_built, g_built = nsp_atrous_filters(fp, level, filter_eltype(eltype(coarse)))
+        h_built, g_built = nsp_atrous_filters(filter_eltype(eltype(coarse)), fp, level)
         h_j = h_j === nothing ? h_built : h_j
         g_j = g_j === nothing ? g_built : g_j
     end
@@ -141,7 +141,7 @@ function nsp_reconstruct(
     Tf = filter_eltype(Td)                              # real filter precision
     coarse_T = Td === eltype(coarse) ? coarse : Td.(coarse)
     bandpass_T = Td === eltype(bandpass) ? bandpass : Td.(bandpass)
-    _, g_j = nsp_atrous_filters(fp, level, Tf)
+    _, g_j = nsp_atrous_filters(Tf, fp, level)
     pred = conv2d_sep(coarse_T, g_j, g_j; boundary = :periodic)
     return bandpass_T .+ pred
 end
@@ -162,7 +162,7 @@ function nsp_reconstruct!(
     )
     # Use the caller-supplied (workspace-cached) synthesis filter when given.
     if g_j === nothing
-        _, g_j = nsp_atrous_filters(fp, level, filter_eltype(eltype(image)))
+        _, g_j = nsp_atrous_filters(filter_eltype(eltype(image)), fp, level)
     end
     conv2d_sep!(tmp, coarse, g_j, g_j; boundary = :periodic, tmp = tmp2)
     @. image = bandpass + tmp

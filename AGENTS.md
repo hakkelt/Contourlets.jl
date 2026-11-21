@@ -66,7 +66,7 @@ once; it `Pkg.develop`s the checkout into every environment of the workspace.
 1. **Read this file** for project-specific invariants.
 2. **Load the matching skill** for GPU or threading work (`my-gpu-ext`,
    `my-threading`).
-3. **Honour the invariants** below — every change must keep them.
+3. **Honor the invariants** below — every change must keep them.
 
 ## Commit Rules
 
@@ -211,7 +211,7 @@ output.
   `_bank_analyze!` / `_bank_synthesize!` (CUDA graph capture relies on it).
 - **NSDFB coarse-scale upsampling is measured, not guessed.** da Cunha et al.
   (§II-A.3) filter pyramid level `j` with `Uₖ(z^(2^m I))` but leave `m` open;
-  `m = max(0, j − 2)` minimises the energy each NSP level leaks outside the
+  `m = max(0, j − 2)` minimizes the energy each NSP level leaks outside the
   ideal wedge for every depth 1–5. The TILP is different (it keeps the
   decimated LP's aliasing), and there `m = 0` leaks least, so the TICT does not
   upsample. Re-measure before changing either rule.
@@ -237,5 +237,5 @@ output.
   restores the count and yields to a caller's NestedThreading budget.
 - **Same-size products use FastBroadcast's `@..`.** Base's broadcast checks every
   axis for a singleton at run time, which keeps the mask products of the
-  workspace paths from vectorising (~2× slower).  `@..` fails on singleton axes
+  workspace paths from vectorizing (~2× slower).  `@..` fails on singleton axes
   and falls back to Base's broadcast for device arrays.

@@ -12,7 +12,7 @@ required to use it.
 Both are used as black boxes only: the scripts here run them and compare their
 outputs and timings, and nothing in the package is derived from their source.
 The Contourlet Toolbox is distributed under the GNU General Public License (its
-`COPYING`); the Nonsubsampled Contourlet Toolbox states no licence.  The package
+`COPYING`); the Nonsubsampled Contourlet Toolbox states no license.  The package
 implements the papers instead — see the references in
 [`docs/src/theory.md`](../docs/src/theory.md).
 

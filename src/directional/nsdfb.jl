@@ -26,7 +26,7 @@
 #     m = max(0, j − 2),
 #
 # measured, not guessed: for the separable CDF 9/7 pyramid of this package and
-# every depth l = 1 … 5, it minimises the share of each level's bandpass energy
+# every depth l = 1 … 5, it minimizes the share of each level's bandpass energy
 # that falls outside the subband's ideal angular wedge (0.04–0.28 at every level
 # and depth, against 0.40–0.83 at j = 5 without upsampling; 256² grid).  m = j − 1 would map the band
 # onto the filters' full good region but folds the pyramid's leakage back across
@@ -41,11 +41,11 @@ _nsdfb_upsampling(tree_level::Int) = max(0, tree_level - 2)
 # plans, so they keep the input's array type even for an array type whose FFT runs
 # on host memory.
 function _ns_plans(x::AbstractMatrix)
-    X, pfwd, pbwd = _ns_unnormalised_plans(x)
+    X, pfwd, pbwd = _ns_unnormalized_plans(x)
     return X, pfwd, _ns_scale(x, X) * pbwd
 end
 
-# The same with the unnormalised inverse (`brfft` / `bfft`), whose 1/N
+# The same with the unnormalized inverse (`brfft` / `bfft`), whose 1/N
 # (`_ns_scale`) the caller applies.
 #
 # A workspace passes `measured = true`: host plans are then measured and
@@ -54,7 +54,7 @@ end
 # threads splitting one FFT.  `unaligned = true` plans host FFTs that also run
 # on arrays that are not 16-byte aligned, such as the slices of a stacked
 # coefficient array (`_unaligned_slices`).
-function _ns_unnormalised_plans(x::AbstractMatrix; measured::Bool = false, unaligned::Bool = false)
+function _ns_unnormalized_plans(x::AbstractMatrix; measured::Bool = false, unaligned::Bool = false)
     X = _ns_spectrum(x)
     (x isa Array && (measured || unaligned)) || return (X, _ns_plan_pair(x, X)...)
     flags = (measured ? FFTW.MEASURE : FFTW.ESTIMATE) | (unaligned ? FFTW.UNALIGNED : zero(FFTW.UNALIGNED))
@@ -71,7 +71,7 @@ _ns_scale(x::AbstractMatrix, X::AbstractMatrix) = one(real(eltype(X))) / length(
 _ns_plan_pair(x::AbstractMatrix{<:Real}, X; kwargs...) = (plan_rfft(x; kwargs...), _ns_inverse_plan(X, x; kwargs...))
 _ns_plan_pair(x::AbstractMatrix, X; kwargs...) = (plan_fft(x; kwargs...), _ns_inverse_plan(X, x; kwargs...))
 
-# The unnormalised inverse FFT over the first two axes of spectra `X` to data like
+# The unnormalized inverse FFT over the first two axes of spectra `X` to data like
 # `y`: `brfft` to real data, `bfft` otherwise.
 _ns_inverse_plan(X::AbstractArray, y::AbstractArray{<:Real}; kwargs...) = plan_brfft(X, size(y, 1), 1:2; kwargs...)
 _ns_inverse_plan(X::AbstractArray, y::AbstractArray; kwargs...) = plan_bfft(X, 1:2; kwargs...)

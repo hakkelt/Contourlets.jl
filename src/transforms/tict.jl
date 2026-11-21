@@ -81,7 +81,7 @@ function _tict_workspace(
         MaskItem((i, c, k), g(i, c), g(i, c), k)
             for (i, l) in enumerate(p.L_array) for c in 1:4 for k in 1:_tict_n_subbands(l, c)
     ]
-    X, pfwd, pbwd = _ns_unnormalised_plans(ref; measured = true, unaligned = _unaligned_slices(ref))
+    X, pfwd, pbwd = _ns_unnormalized_plans(ref; measured = true, unaligned = _unaligned_slices(ref))
     engine = _mask_bank_engine(
         ref, X, pfwd, pbwd, reduce(vcat, masks.ana), reduce(vcat, masks.syn), masks.coarse_ana, masks.coarse_syn,
         banks, items; tunable = tune

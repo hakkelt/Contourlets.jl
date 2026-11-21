@@ -12,7 +12,7 @@ The equivalent filters of one directional bank for one image size, ready to appl
 real amplitude masks in filter precision, stored as host or device arrays.
 
 * Decimated (DFB): channel `k` computes `yₖ[n] = (hₖ ⊛ x)[Sₖn]` with
-  `Hₖ(ω) = anaₖ(ω) e^{jω·dₖ}`.  The fold over the `|det Sₖ|` aliases is normalised
+  `Hₖ(ω) = anaₖ(ω) e^{jω·dₖ}`.  The fold over the `|det Sₖ|` aliases is normalized
   inside `ana`, so synthesis is `x = Σₖ gₖ ⊛ (↑Sₖ yₖ)` with `Gₖ = synₖ e^{−jω·dₖ}`.
   Depth-1 channels (`l = 1`, or the unsplit fan of a half tree) are sampled on the
   quincunx lattice and stored column by column (see `_quincunx_pack!`).
@@ -171,12 +171,12 @@ function _quincunx_unpack!(V::AbstractMatrix, y::AbstractMatrix)
 end
 
 # Write a complex intermediate, scaled by `s`, into a subband of the data type.
-# The inverse FFTs are unnormalised (`plan_bfft!`) and `s` is their `1/N`: a scalar
-# argument of the broadcast, where a normalised plan would scale in a separate
+# The inverse FFTs are unnormalized (`plan_bfft!`) and `s` is their `1/N`: a scalar
+# argument of the broadcast, where a normalized plan would scale in a separate
 # pass through a device scalar — which CUDA graph capture turns into graph
 # memory that the pool then fails to free.
 _store!(y::AbstractArray{<:Real}, Y::AbstractArray, s::Real) = (y .= real.(Y) .* s; y)
 _store!(y::AbstractArray, Y::AbstractArray, s::Real) = (y .= Y .* s; y)
 
-# `1/N` of an unnormalised inverse FFT over the whole of `Y`.
+# `1/N` of an unnormalized inverse FFT over the whole of `Y`.
 _bwd_scale(Y::AbstractArray) = inv(real(eltype(Y))(length(Y)))

@@ -38,7 +38,7 @@ function ct_subband_gains(t, sz)
     return γ
 end
 
-# Energy-normalised M-term contourlet approximation.
+# Energy-normalized M-term contourlet approximation.
 function ct_nla(img, t, γ, M)
     c = analyze(t, img)
     scaled = reduce(vcat, [abs.(vec(subband(t, c, i))) .* γ[i] for i in 2:length(γ)])

@@ -76,8 +76,8 @@ run their stages one after another; they accept it and ignore it): `true`, `fals
 
 | Data | Default | Why |
 |---|---|---|
-| Real (`Float32`/`Float64`) | single-threaded `@simd` loops | the inner loops vectorise cleanly; SIMD beats thread-spawn overhead |
-| Complex | multi-threaded `Polyester.@batch` | the loops do not vectorise; `@batch` spawns at near-zero cost |
+| Real (`Float32`/`Float64`) | single-threaded `@simd` loops | the inner loops vectorize cleanly; SIMD beats thread-spawn overhead |
+| Complex | multi-threaded `Polyester.@batch` | the loops do not vectorize; `@batch` spawns at near-zero cost |
 
 `threaded = true` and `threaded = false` override that choice.  The NSCT and TICT workspace
 paths are FFT-bound instead: there, threading runs the independent subband FFTs

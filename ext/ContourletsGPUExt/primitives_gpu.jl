@@ -1,7 +1,7 @@
 # GPU KernelAbstractions kernels for the Contourlet primitive operations.
 #
 # Each CPU primitive (conv2d_sep!, shear!, rect_downsample!, …) is overloaded
-# for _AbstractGPUMatrix via a specialised @kernel that runs on any KA backend
+# for _AbstractGPUMatrix via a specialized @kernel that runs on any KA backend
 # (CUDA, AMDGPU, oneAPI, Metal, CPU).  The quincunx filter bank overloads (which
 # only reject device arrays for now) are in `qfb_gpu.jl`.
 
@@ -55,7 +55,7 @@ end
 """
     conv2d_sep!(dst, src, h_row, h_col; boundary=:symmetric)
 
-GPU-specialised separable convolution.  Dispatches via `_AbstractGPUMatrix`.
+GPU-specialized separable convolution.  Dispatches via `_AbstractGPUMatrix`.
 The filters `h_row` / `h_col` may be CPU or GPU vectors; they are moved to the
 device automatically.  Supports `:symmetric` and `:periodic` boundaries.
 """

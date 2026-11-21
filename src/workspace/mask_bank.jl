@@ -30,7 +30,7 @@ _unaligned_slices(x::Array) = (length(x) * sizeof(eltype(x))) % 16 != 0
 _unaligned_slices(::AbstractArray) = false
 
 # The engine of a workspace for data like `x`, with the spectrum buffer `X` and
-# the plans of `_ns_unnormalised_plans`.  The analysis folds the inverse FFT's
+# the plans of `_ns_unnormalized_plans`.  The analysis folds the inverse FFT's
 # 1/N into its masked products, which on a device saves a kernel per subband.
 # A device engine also runs its analysis in chunks of subbands, each one batched
 # FFT (`_ns_batch_plan`); a host engine threads over the subbands instead.  With
@@ -53,7 +53,7 @@ function _mask_bank_engine(x::AbstractMatrix, X, pfwd, pbwd, pyramid_ana, pyrami
     )
 end
 
-# The unnormalised inverse FFT of a stack of spectra `B` to a stack of outputs `R`.
+# The unnormalized inverse FFT of a stack of spectra `B` to a stack of outputs `R`.
 _ns_batch_plan(B::AbstractArray, R::AbstractArray) = _ns_inverse_plan(B, R)
 
 # The forward FFT of a stack of outputs `R` to a stack of spectra like `B`.

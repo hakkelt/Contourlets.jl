@@ -6,7 +6,7 @@
     conv2d_sep!(dst, src, h_row, h_col; boundary=:symmetric, tmp=similar(src)) -> dst
 
 Separable 2-D convolution: first apply 1-D filter `h_col` to each column, then
-`h_row` to each row.  Both filters are symmetric (centre = mid-point).
+`h_row` to each row.  Both filters are symmetric (center = mid-point).
 `boundary` ∈ {:symmetric, :periodic, :zero}; any other value throws an `ArgumentError`.
 Pass a preallocated `tmp` buffer (same size as `src`, distinct from `dst` and
 `src`) to make the call allocation-free.
@@ -44,8 +44,8 @@ end
     n1, n2 = size(src)
     lr = length(h_row)
     lc = length(h_col)
-    cr = (lr + 1) ÷ 2   # centre of row filter
-    cc = (lc + 1) ÷ 2   # centre of col filter
+    cr = (lr + 1) ÷ 2   # center of row filter
+    cc = (lc + 1) ÷ 2   # center of col filter
 
     # Filter along columns (axis-1) first — accesses memory column-major.
     # `acc` carries the data type Td (real filter × Td data → Td).

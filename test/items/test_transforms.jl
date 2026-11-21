@@ -256,7 +256,7 @@ end
         coeffs = similar_coefficients(t, x)
         @test analyze!(coeffs, t, x) === coeffs
         @test coeffs == ref
-        # An integer image is analysed as Float64.
+        # An integer image is analyzed as Float64.
         xi = rand(Xoshiro(42), 0:9, 32, 32)
         analyze!(coeffs, t, xi)
         @test coeffs == analyze(t, Float64.(xi))

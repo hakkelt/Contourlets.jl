@@ -1,7 +1,7 @@
 # Quincunx filter pair for the Directional Filter Bank: the "23-45" biorthogonal
 # filters of Phoong, Kim, Vaidyanathan & Ansari (1995).
 #
-# Phoong et al. parameterise a two-channel biorthogonal filter bank by a single
+# Phoong et al. parameterize a two-channel biorthogonal filter bank by a single
 # 1-D filter β (their ladder structure, Fig. 2) and map it to the quincunx lattice
 # by replacing β(z) with β(z₀z₁⁻¹)β(z₀z₁) (§V, eq. 32).  With the 12-tap β of their
 # Example 3.2 the 2-D analysis filters have 23 × 23 and 45 × 45 support, hence the
@@ -54,7 +54,7 @@ end
     Q2345 :: QuincunxFilterPair{Float64}
 
 The "23-45" biorthogonal quincunx filter pair of Phoong et al. (1995) for the DFB
-stage, parameterised by the 12-tap ladder filter β of their Example 3.2 (stored in
+stage, parameterized by the 12-tap ladder filter β of their Example 3.2 (stored in
 `f_ladder`).  The directional filter banks use
 its 2-D quincunx mapping, whose analysis filters have 23 × 23 and 45 × 45 support.
 Perfect reconstruction is structural — exact to machine precision at every tree

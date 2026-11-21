@@ -13,7 +13,7 @@ function verify_vs_julia(J, L_array, sizes)
 %              per-channel delays, so subbands differ from the toolbox's by a
 %              shift and sign at L <= 2, and in the wedges themselves from L = 3.
 %   2. CT     — pdfbdec/pdfbrec    vs Julia ct_forward/ct_inverse
-%              PR-only check: Julia uses JPEG2000-normalised CDF97; MATLAB pdfbdec
+%              PR-only check: Julia uses JPEG2000-normalized CDF97; MATLAB pdfbdec
 %              uses a different '9-7' scaling, so subbands differ but both give PR≈0.
 %   3. NSCT   — nsctdec/nsctrec    vs Julia nsct_forward/nsct_inverse
 %              PR-only check: NSCT toolbox uses a 2-D non-separable '9-7' diamond
@@ -144,7 +144,7 @@ for n = sizes
     end
     pr_ct_m = max(abs(rec_ct_m(:) - x(:)));
 
-    % Julia PR only (no cross-subband comparison: Julia uses JPEG2000-normalised CDF97,
+    % Julia PR only (no cross-subband comparison: Julia uses JPEG2000-normalized CDF97,
     % MATLAB pdfbdec('9-7') uses a different 9/7 scaling → subbands differ by ~√2/level)
     jl_rec_ct = readmatrix(fullfile(iodir, sprintf('jl_ct_%d_rec.csv', n)));
     pr_ct_jl  = max(abs(jl_rec_ct(:) - x(:)));

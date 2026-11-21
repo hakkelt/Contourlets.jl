@@ -19,7 +19,7 @@ end
 ```
 
 Rules:
-- Keep the innermost loop a stride-1 axpy ("zero, then accumulate over k") so it vectorises.
+- Keep the innermost loop a stride-1 axpy ("zero, then accumulate over k") so it vectorizes.
 - Column-major traversal: outer loop over `j`, inner over `i`.
 - Split the interior (no boundary extension) from the border band, which takes the slower boundary-aware path.
 
@@ -45,7 +45,7 @@ end
 ```
 
 Rules:
-- `@batch` parallelises the *outermost* loop only — put the largest-trip-count dimension there.
+- `@batch` parallelizes the *outermost* loop only — put the largest-trip-count dimension there.
 - For 2-D arrays use `j` (columns) as the outer loop.
 - Polyester uses a persistent thread pool — no task allocation overhead; safe to call from inside another `@batch` region (it will not spawn more threads than `Threads.nthreads()`).
 

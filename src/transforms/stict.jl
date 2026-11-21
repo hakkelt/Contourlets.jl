@@ -27,7 +27,7 @@ struct STICTWorkspace{Td <: Number, Tf <: AbstractFloat, C <: AbstractMatrix{Com
     X::C                                        # full spectrum / synthesis accumulator
     Z::C                                        # scratch
     pfwd::P                                     # in-place FFT plans on X and Z
-    pbwd::Q                                     # (inverse unnormalised)
+    pbwd::Q                                     # (inverse unnormalized)
     # Captured device graphs of the forward / inverse (`ContourletsCUDAExt`).
     graph_cache::_GraphCache
     inv_graph_cache::_GraphCache

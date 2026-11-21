@@ -282,7 +282,7 @@ function _nsct_workspace(
         end
     end
     x = similar(ref, Td, image_size)
-    X, pfwd, pbwd = _ns_unnormalised_plans(x; measured = true, unaligned = _unaligned_slices(x))
+    X, pfwd, pbwd = _ns_unnormalized_plans(x; measured = true, unaligned = _unaligned_slices(x))
     ana, syn = _nsp_masks(Tf, p2.lp_filters, image_size, J; rows = axes(X, 1))
     ana = [_like(X, a) for a in ana]
     syn = [_like(X, a) for a in syn]

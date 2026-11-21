@@ -16,7 +16,7 @@ struct _BankRunner{B <: _DirectionalBank, C <: AbstractMatrix, P, Q}
     X::C                     # full-size spectrum (or rfft half-plane, nonsubsampled real)
     Z::C                     # full-size per-channel scratch
     pfwd::P                  # in-place forward FFT on full-size buffers (decimated)
-    pbwd::Q                  # in-place unnormalised inverse FFT on full-size buffers
+    pbwd::Q                  # in-place unnormalized inverse FFT on full-size buffers
     sub::Vector{C}           # one buffer per distinct decimated subband size
     psub_fwd::Vector{P}
     psub_bwd::Vector{Q}
@@ -61,14 +61,14 @@ function _bank_runner(
 end
 
 # An empty buffer pool for runners on arrays like `ref` at precision `Tf`:
-# (role, size) ↦ (buffer, forward plan, unnormalised inverse plan).
+# (role, size) ↦ (buffer, forward plan, unnormalized inverse plan).
 function _runner_pool(ref::AbstractArray, ::Type{Tf}) where {Tf}
     C = typeof(similar(ref, Complex{Tf}, 0, 0))
     P, Q = typeof.(_inplace_plans(similar(ref, Complex{Tf}, 2, 2), FFTW.ESTIMATE))
     return Dict{Tuple{Symbol, NTuple{2, Int}}, Tuple{C, P, Q}}()
 end
 
-# In-place forward and unnormalised inverse FFT plans for `A` (FFTW flags only
+# In-place forward and unnormalized inverse FFT plans for `A` (FFTW flags only
 # apply to host arrays).  The `1/N` goes to `_store!`.
 _inplace_plans(A::Array, flags) = (plan_fft!(A; flags = flags), plan_bfft!(A; flags = flags))
 _inplace_plans(A::AbstractArray, flags) = (plan_fft!(A), plan_bfft!(A))

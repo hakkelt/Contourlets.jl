@@ -192,7 +192,7 @@ function _qfb_col_reconstruct!(
     return _qfb_col_reconstruct_ladder!(out, sb0, sb1, qfp)
 end
 
-# ── Ladder (lifting) realisation — structural PR, periodic extension ─────────
+# ── Ladder (lifting) realization — structural PR, periodic extension ─────────
 #
 # Channel 0 lives on the odd image columns (1-based), channel 1 on the even
 # columns.  See src/filters/q2345.jl for the ladder derivation.

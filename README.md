@@ -43,7 +43,7 @@ denoising, compression and compressed-sensing reconstruction.
   `make_workspace` and the `workspace = ws` keyword of `analyze!` and `analyze`
 - Parabolic scaling utility `parabolic_levels` for optimal direction count per scale
 - **Multithreading**: the NSCT and TICT take a `threaded` keyword; by default
-  real data runs SIMD-vectorised and complex data multi-threaded
+  real data runs SIMD-vectorized and complex data multi-threaded
 - **GPU**: the full transform runs on device-resident arrays with CUDA.jl,
   AMDGPU.jl and Metal.jl (`Float32`); CUDA additionally captures the workspace
   paths into CUDA graphs.  OpenCL.jl is supported but much slower than the CPU,
@@ -127,7 +127,7 @@ The authors' MATLAB toolboxes —
 [Contourlet Toolbox](https://www.mathworks.com/matlabcentral/fileexchange/8837-contourlet-toolbox)
 (GPL) and
 [Nonsubsampled Contourlet Toolbox](https://www.mathworks.com/matlabcentral/fileexchange/10049-nonsubsampled-contourlet-toolbox)
-(no licence stated) — served as black-box references for validation and
+(no license stated) — served as black-box references for validation and
 benchmarks only; no code is derived from them.  See [`LICENSE`](LICENSE).
 
 ## Disclaimer

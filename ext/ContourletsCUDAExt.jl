@@ -23,7 +23,7 @@ module ContourletsCUDAExt
 # Nothing in the captured call may allocate: an allocation inside `CUDA.capture`
 # becomes graph memory, which the pool later fails to free
 # (`CUDA_ERROR_INVALID_VALUE` from `cuMemFreeAsync` at GC).  That is why the inverse
-# FFTs are unnormalised `plan_bfft!` plans (a normalised plan scales through a
+# FFTs are unnormalized `plan_bfft!` plans (a normalized plan scales through a
 # device scalar) and why the CT captures with its arena reset (`_scratch_like`
 # returns the warmed buffers) and with prebuilt device LP filters
 # (`_with_filter_cache`; `_ensure_gpu` would allocate them).  The STICT's buffers

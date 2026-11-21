@@ -13,11 +13,11 @@ using FFTW: FFTW, plan_rfft, plan_irfft
 using LinearAlgebra: mul!
 
 # ────────────────────────────────────────────────────────────────────────────────
-# Boundary extension helpers (type-parameterised for zero overhead)
+# Boundary extension helpers (type-parameterized for zero overhead)
 # ────────────────────────────────────────────────────────────────────────────────
 
 # `clamp_idx` comes from MultiscaleFilterBanks: it takes the boundary mode B as a
-# type parameter so the compiler emits fully specialised code with no dispatch
+# type parameter so the compiler emits fully specialized code with no dispatch
 # overhead per call.
 
 @inline function _get(

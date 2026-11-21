@@ -3,7 +3,7 @@
 # Downsampling (↓2): keep every 2nd row AND every 2nd column (odd 1-based indices: 1, 3, 5, …).
 # Upsampling   (↑2): insert a zero row and zero column after every kept sample.
 #
-# These operators are adjoint of each other (up to normalisation), which gives the
+# These operators are adjoint of each other (up to normalization), which gives the
 # LP stage its perfect-reconstruction property.
 
 # Shape contract of both directions: the coarse grid has size cld.(fine size, 2), and

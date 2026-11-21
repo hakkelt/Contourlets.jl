@@ -7,7 +7,7 @@ const GPUSubArray{T, N} = SubArray{T, N, <:AbstractGPUArray}
 const _AbstractGPUMatrix{T} = Union{AbstractGPUMatrix{T}, GPUSubArray{T, 2}}
 using KernelAbstractions: KernelAbstractions, @kernel, @index, @Const
 
-# Only the device primitives are specialised here.  The transforms and the
+# Only the device primitives are specialized here.  The transforms and the
 # Laplacian/nonsubsampled pyramid functions are reused unchanged from the main
 # package: their allocating methods are written with broadcasts and dispatch to
 # these GPU primitives (conv2d_sep!, rect_*sample!, …) when given device arrays,

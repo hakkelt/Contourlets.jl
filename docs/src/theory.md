@@ -127,8 +127,8 @@ function basis_element(k)
     return b .- sum(b) / length(b)   # drop the DC the wedge owning ω=0 carries
 end
 
-# Crop to the central support and use symmetric colour limits so the oriented
-# ridge is visible (the basis functions are well-localised, so most of the
+# Crop to the central support and use symmetric color limits so the oriented
+# ridge is visible (the basis functions are well-localized, so most of the
 # N×N canvas is empty).
 p = plot(layout = (2, 4), size = (860, 440))
 w = 24
@@ -152,7 +152,7 @@ contourlet its name.  This is clearest with a coarser **two-level**
 shows without the spectral folding that makes the deeper (`l = 3`) subbands hard
 to read one at a time.  The four passbands together cover the whole plane (a
 smaller `Nf = 64` window is used so each basis function fills its channel's
-passband — at larger sizes the single reconstructed atom localises and its
+passband — at larger sizes the single reconstructed atom localizes and its
 spectrum shrinks to a blob inside the support):
 
 ```@example theory
@@ -173,7 +173,7 @@ savefig(pf, "dfb_freq.png"); nothing # hide
 
 The partition itself is easiest to read without the decimation.  The NSDFB uses
 the same equivalent filters ``H_k`` at full rate, so its impulse responses show
-each ``|H_k|`` directly.  Colouring every frequency by the channel with the
+each ``|H_k|`` directly.  Coloring every frequency by the channel with the
 largest response, and labelling each wedge with its subband index, gives the
 partition of an ``l = 3`` bank (compare Do's thesis, Fig. 3.6).  The half trees that the TICT and STICT use on two of their pyramid
 channels (`half = :first` / `:second`; Eslami & Radha 2006, Fig. 7) keep one
@@ -183,7 +183,7 @@ level-1 fan whole:
 Nw = 128
 δ = zeros(Nw, Nw); δ[1, 1] = 1.0
 midw = Nw ÷ 2 + 1
-# Channel owning each frequency: the argmax of |H_k| over the centred DFT grid.
+# Channel owning each frequency: the argmax of |H_k| over the centered DFT grid.
 function wedge_owner(l, half)
     resp = [fftshift(abs.(fft(s))) for s in nsdfb_decompose(δ, l, Q2345; half = half)]
     return [argmax([r[i, j] for r in resp]) for i in 1:Nw, j in 1:Nw]
@@ -215,7 +215,7 @@ savefig(pw, "dfb_wedges.png"); nothing # hide
 ![](dfb_wedges.png)
 
 Horizontal frequency runs left to right and vertical frequency bottom to top,
-with ``\omega = 0`` in the centre.
+with ``\omega = 0`` in the center.
 
 The default pair [`Q2345`](@ref) is the "23-45" biorthogonal pair of Phoong et
 al. (1995), whose ladder filter ``\beta`` is the 12-tap design of their
@@ -225,7 +225,7 @@ support, hence the name.  Perfect reconstruction holds for any ``\beta``
 
 The narrowest wedges, the two beside each ``\pm 45°`` fan boundary, are
 ``3.6°`` wide at ``L = 5``.  That is less than the transition band of the 12-tap
-fan filters, so a plane wave at those angles puts more energy in a neighbouring
+fan filters, so a plane wave at those angles puts more energy in a neighboring
 wedge.  This is a property of the filters, not of the construction: the MATLAB
 toolbox behaves the same way.
 
@@ -337,7 +337,7 @@ counterpart:
   ``U_k(2^m\omega)``, which stretches the well-resolved region over the coarser
   band; their example upsamples the last two stages of a five-scale NSCT by
   ``2I``.  The paper leaves ``m`` open.  This package uses ``m = \max(0, j-2)``:
-  for its CDF 9/7 pyramid and every depth ``L = 1, \dots, 5``, that minimises the
+  for its CDF 9/7 pyramid and every depth ``L = 1, \dots, 5``, that minimizes the
   share of each level's bandpass energy falling outside the subband's ideal
   wedge — 0.04 to 0.28 at every level, against 0.40 to 0.83 at ``j = 5`` without
   upsampling.  A larger ``m`` folds the pyramid's leakage back across the

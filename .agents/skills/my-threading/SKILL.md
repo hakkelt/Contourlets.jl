@@ -13,7 +13,7 @@ performance for both `Real` and `Complex` data:
 | `Real` (`Float32`/`Float64`) | plain loops with `@simd` | SIMD on a single thread |
 | `Complex` (`ComplexF32`/`ComplexF64`) | `Polyester.@batch` | multi-core via persistent thread pool |
 
-Complex loops do not vectorise well, so they take the threaded path. `Polyester`'s near-zero spawn overhead makes multi-core
+Complex loops do not vectorize well, so they take the threaded path. `Polyester`'s near-zero spawn overhead makes multi-core
 `ComplexF64` transforms competitive with single-thread SIMD `Float64` transforms.
 
 ## Public API

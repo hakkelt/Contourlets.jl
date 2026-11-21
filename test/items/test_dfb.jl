@@ -218,7 +218,7 @@ end
     #
     # At l = 5 the two 3.6°-wide wedges that border the ±45° fan boundary
     # (subbands 1 and 16) are narrower than the 12-tap fan filters' transition, so
-    # a neighbour always outweighs them.  The Contourlet Toolbox's dfbdec_l, run as
+    # a neighbor always outweighs them.  The Contourlet Toolbox's dfbdec_l, run as
     # a black box on the same sweep, misses exactly the same two subbands.
     n = 256
     R = 0.3n

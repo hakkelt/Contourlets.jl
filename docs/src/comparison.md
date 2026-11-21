@@ -3,7 +3,7 @@
 This page compares Contourlets.jl against the two reference implementations:
 
 - **MATLAB Contourlet Toolbox** (Do & Vetterli, 2005) — [FileExchange 8837](https://www.mathworks.com/matlabcentral/fileexchange/8837-contourlet-toolbox), GNU GPL (per its `COPYING`)
-- **MATLAB Nonsubsampled Contourlet Toolbox** (da Cunha et al., 2006) — [FileExchange 10049](https://www.mathworks.com/matlabcentral/fileexchange/10049-nonsubsampled-contourlet-toolbox), no licence stated
+- **MATLAB Nonsubsampled Contourlet Toolbox** (da Cunha et al., 2006) — [FileExchange 10049](https://www.mathworks.com/matlabcentral/fileexchange/10049-nonsubsampled-contourlet-toolbox), no license stated
 
 Neither toolbox is included in this MIT-licensed repository, and no code here is
 derived from them: the package implements the papers (see [Theory](@ref theory)),
@@ -23,7 +23,7 @@ against SurfBox there.
 | Feature | Contourlets.jl | MATLAB CT Toolbox | MATLAB NSCT Toolbox |
 |---------|---------------|------------------|-------------------|
 | Language | Julia 1.10+ | MATLAB R2006+ | MATLAB R2007+ |
-| Licence | MIT | GPL | none stated |
+| License | MIT | GPL | none stated |
 | Discrete CT (`CT`) | ✅ | ✅ (`pdfbdec/pdfbrec`) | ✅ |
 | Nonsubsampled CT (`NSCT`) | ✅ | ❌ | ✅ (`nsctdec/nsctrec`) |
 | Translation-invariant CT, TICT / STICT (Eslami & Radha 2006) | ✅ | ❌ | ❌ |
@@ -88,7 +88,7 @@ a shift and a sign for `L ≤ 2`, and in the wedges themselves from `L = 3`.
 while here every subband does, except the two at the fan boundary at `L = 5`
 (see [Theory](@ref theory)).  The CT
 and NSCT also use different pyramid filters by design: this package uses the
-JPEG 2000-normalised separable CDF 9/7 à trous pyramid, the toolboxes a
+JPEG 2000-normalized separable CDF 9/7 à trous pyramid, the toolboxes a
 differently scaled `'9-7'` and a non-separable diamond pyramid.  So only PR is
 comparable there.
 

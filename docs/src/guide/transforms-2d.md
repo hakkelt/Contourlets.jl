@@ -66,7 +66,7 @@ Perfect reconstruction is *structural*: the quincunx filters of Phoong et al.
 the residual sits at the round-off floor at every directional depth.
 
 Every subband is critically sampled, so finer scales live on smaller grids. Each
-panel below is drawn on its own symmetric grey scale (mid-grey = 0, clipped at
+panel below is drawn on its own symmetric gray scale (mid-gray = 0, clipped at
 the 99th percentile of `|coefficient|`) — without that, the magnitude spread
 across scales washes the fine subbands out.
 

@@ -69,7 +69,7 @@ end
     x = randn(32, 32)
     # Kernel with more than 25 elements triggers FFTW path
     k = randn(6, 6)   # 36 elements
-    # origin at centre
+    # origin at center
     c = (3, 3)
     out_fftw = Contourlets.conv2d(x, k, c; boundary = :symmetric)
     # Compute reference with direct backend via small kernel comparison:

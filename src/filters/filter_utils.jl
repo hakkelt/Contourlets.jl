@@ -52,6 +52,7 @@ Verify perfect reconstruction of the Laplacian Pyramid built from `fp` on an
 against `atol`, whose default scales with `eps(T)` as in the method above.
 """
 function check_pr_condition(fp::FilterPair{T}; N::Integer = 64, atol::Real = _pr_atol(T))::Bool where {T}
+    N = Int(N)
     img = T.(reshape(1:(N * N), N, N))   # deterministic test signal
     coarse, bp = lp_decompose(img, fp)
     rec = lp_reconstruct(coarse, bp, fp)

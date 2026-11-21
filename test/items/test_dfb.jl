@@ -559,5 +559,6 @@ end
     K = [1.0 2.0; 3.0 4.0]
     @test upsample_kernel(K, Int32(2)) == upsample_kernel(K, 2)
     @test check_pr_condition(CDF97; N = Int32(32))
+    @test check_pr_condition(CDF97; N = UInt8(32))
     @test parabolic_levels(Int32(4), UInt8(2)) == parabolic_levels(4, 2)
 end

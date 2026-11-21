@@ -155,10 +155,10 @@ function _stacked_forward!(c::AbstractArray, x::AbstractArray, ws::_StackedWorks
     img = _dense_input(ws, T === eltype(x) ? x : T.(x))
     th = use_threading(threaded, T)
     if c isa typeof(ws.stack)
-        mask_bank_forward!(_Stacked(c, ws.offsets), img, ws.engine, th)
+        mask_bank_forward!(_Stacked(c, ws.offsets), img, ws.engine; threaded = th)
     else
         tmp = similar(ws.stack, size(c))
-        mask_bank_forward!(_Stacked(tmp, ws.offsets), img, ws.engine, th)
+        mask_bank_forward!(_Stacked(tmp, ws.offsets), img, ws.engine; threaded = th)
         copyto!(c, tmp)
     end
     return c
@@ -167,7 +167,7 @@ end
 function _stacked_inverse!(x::AbstractArray, c::AbstractArray, ws::_StackedWorkspace, threaded::Union{Bool, Nothing})
     th = use_threading(threaded, eltype(ws))
     s = c isa typeof(ws.stack) ? c : copyto!(similar(ws.stack, size(c)), c)
-    _dense_output!(x, ws, y -> mask_bank_inverse!(y, _Stacked(s, ws.offsets), ws.engine, th))
+    _dense_output!(x, ws, y -> mask_bank_inverse!(y, _Stacked(s, ws.offsets), ws.engine; threaded = th))
     return x
 end
 

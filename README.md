@@ -43,7 +43,8 @@ denoising, compression and compressed-sensing reconstruction.
   `make_workspace` and the `workspace = ws` keyword of `analyze!` and `analyze`
 - Parabolic scaling utility `parabolic_levels` for optimal direction count per scale
 - **Multithreading**: the NSCT and TICT take a `threaded` keyword; by default
-  real data runs SIMD-vectorized and complex data multi-threaded
+  real data runs SIMD-vectorized and complex data multi-threaded.  A workspace's
+  `tasks` keyword bounds its threads
 - **GPU**: the full transform runs on device-resident arrays with CUDA.jl,
   AMDGPU.jl and Metal.jl (`Float32`); CUDA additionally captures the workspace
   paths into CUDA graphs.  OpenCL.jl is supported but much slower than the CPU,

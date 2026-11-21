@@ -119,8 +119,8 @@ function _runner_type(ref::AbstractArray, ::Type{Tf}) where {Tf}
 end
 
 # DFB runners of the split levels of a CT workspace.
-function _dfb_level_runners(ref::AbstractMatrix, p::CT, bp_dims, ::Type{Tf}) where {Tf}
-    flags = ref isa Array ? FFTW.MEASURE : FFTW.ESTIMATE
+# `flags` are the FFTW planner flags of host plans.
+function _dfb_level_runners(ref::AbstractMatrix, p::CT, bp_dims, ::Type{Tf}, flags::Integer) where {Tf}
     pool = _runner_pool(ref, Tf)     # the levels run one after another
     return _runner_type(ref, Tf)[
         _bank_runner(
@@ -163,12 +163,27 @@ function _workspace_runner(
     )
 end
 
+# `tasks` of `make_workspace`: `nothing` or at least 1.
+function _check_tasks(tasks::Union{Integer, Nothing})
+    tasks === nothing || tasks >= 1 || throw(ArgumentError("tasks must be ≥ 1, got $(tasks)"))
+    return tasks
+end
+
 const _WORKSPACE_KEYWORDS = """
-Keywords, accepted by the workspaces of all four transforms:
-- `prewarm = true`: run one analysis and synthesis on zeros at construction, so
-  that the first call is compiled and allocates nothing;
-- `threaded = nothing`: threading of that warm-up pass (the calls choose their
-  own threading);
+Keywords, accepted by the workspaces of all four transforms (the shared
+keywords of `make_workspace` in MultiscaleTransformsBase):
+- `flags = FFTW.MEASURE`: the FFTW planner flags of the host FFT plans — those
+  of the directional filter banks of a [`CT`](@ref) or [`STICT`](@ref), and
+  the image-size FFTs of an [`NSCT`](@ref) or [`TICT`](@ref), which are
+  planned single-threaded because the workspace threads over its subbands
+  instead.  `FFTW.ESTIMATE` builds the workspace faster, possibly with slower
+  plans.  Device plans ignore it.
+- `tasks = nothing`: the most tasks an [`NSCT`](@ref) or [`TICT`](@ref) host
+  workspace splits its subband FFTs between, and so the number of its per-task
+  FFT buffers; `nothing` means one per Julia thread, `1` a serial workspace
+  whose calls run on the calling task whatever their `threaded`.  It must be
+  at least 1.  The [`CT`](@ref) and [`STICT`](@ref) run serially and a
+  device workspace runs one task, so there it is checked and otherwise ignored.
 - `tune = false`: for [`NSCT`](@ref) and [`TICT`](@ref) workspaces on a device,
   measure how many subbands each batched FFT should take, and whether the
   synthesis should be batched too (`MultiscaleFilterBanks.mask_bank_tune`); this
@@ -178,10 +193,13 @@ Keywords, accepted by the workspaces of all four transforms:
   more than about 150 (NSCT) to 330 (TICT) analysis–synthesis pairs, as in an
   iterative reconstruction.  Host workspaces thread over their subbands
   instead, and the [`CT`](@ref) and [`STICT`](@ref) have nothing to tune:
-  there it does nothing."""
+  there it is ignored.
+- `prewarm = true`: run one analysis and synthesis on zeros at construction, so
+  that the first call is compiled and allocates nothing.  The warm-up threads
+  as a call with the default `threaded = nothing` does."""
 
 """
-    make_workspace(t::Union{CT, NSCT, TICT, STICT}, T::Type{<:Number}, dims; prewarm = true, threaded = nothing, tune = false)
+    make_workspace(t::Union{CT, NSCT, TICT, STICT}, T::Type{<:Number}, dims; flags = FFTW.MEASURE, tasks = nothing, tune = false, prewarm = true)
     make_workspace(t::Union{CT, NSCT, TICT, STICT}, x::AbstractMatrix; kwargs...)
 
 The workspace of the contourlet transform `t` ([`CTWorkspace`](@ref),
@@ -208,22 +226,24 @@ julia> transform(ws) == t, eltype(ws), size(ws)
 ```
 """
 function MultiscaleTransformsBase.make_workspace(
-        t::CT, ::Type{T}, dims::Dims; prewarm::Bool = true,
-        threaded::Union{Bool, Nothing} = nothing, tune::Bool = false
+        t::CT, ::Type{T}, dims::Dims; flags::Integer = FFTW.MEASURE,
+        tasks::Union{Integer, Nothing} = nothing, tune::Bool = false, prewarm::Bool = true
     ) where {T <: Number}
     Td = data_eltype(T)
-    return _ct_workspace(t, Td, _check_image(dims), Matrix{Td}, prewarm)
+    _check_tasks(tasks)
+    return _ct_workspace(t, Td, _check_image(dims), Matrix{Td}, prewarm, flags)
 end
 
 function MultiscaleTransformsBase.make_workspace(
-        t::CT, x::AbstractArray; prewarm::Bool = true,
-        threaded::Union{Bool, Nothing} = nothing, tune::Bool = false
+        t::CT, x::AbstractArray; flags::Integer = FFTW.MEASURE,
+        tasks::Union{Integer, Nothing} = nothing, tune::Bool = false, prewarm::Bool = true
     )
     Td = data_eltype(x)
-    return _ct_workspace(t, Td, _check_image(size(x)), _matrix_type(x, Td), prewarm)
+    _check_tasks(tasks)
+    return _ct_workspace(t, Td, _check_image(size(x)), _matrix_type(x, Td), prewarm, flags)
 end
 
-function _ct_workspace(t::CT, ::Type{Td}, image_size::NTuple{2, Int}, ::Type{M}, prewarm::Bool) where {Td, M}
+function _ct_workspace(t::CT, ::Type{Td}, image_size::NTuple{2, Int}, ::Type{M}, prewarm::Bool, flags::Integer) where {Td, M}
     Tf = filter_eltype(Td)          # real filter precision
     p2 = _convert_transform(Tf, t)
     bp_dims = _bandpass_dims(image_size, p2.scales)
@@ -231,7 +251,7 @@ function _ct_workspace(t::CT, ::Type{Td}, image_size::NTuple{2, Int}, ::Type{M},
     ref = _allocate_zeros(M, Td, (1, 1))
     # The DFB equivalent filters, FFT buffers and plans of every level are built
     # once here (the allocating API rebuilds them per call).
-    runners = _dfb_level_runners(ref, p2, bp_dims, Tf)
+    runners = _dfb_level_runners(ref, p2, bp_dims, Tf, flags)
     ws = CTWorkspace{Td, Tf, M, eltype(runners), typeof(t)}(
         t, p2, image_size, layout, firsts, ScratchArena{M}(), ScratchArena{M}(), bp_dims, runners,
         _GraphCache(), _GraphCache()
@@ -243,24 +263,24 @@ function _ct_workspace(t::CT, ::Type{Td}, image_size::NTuple{2, Int}, ::Type{M},
 end
 
 function MultiscaleTransformsBase.make_workspace(
-        t::NSCT, ::Type{T}, dims::Dims; prewarm::Bool = true,
-        threaded::Union{Bool, Nothing} = nothing, tune::Bool = false
+        t::NSCT, ::Type{T}, dims::Dims; flags::Integer = FFTW.MEASURE,
+        tasks::Union{Integer, Nothing} = nothing, tune::Bool = false, prewarm::Bool = true
     ) where {T <: Number}
     Td = data_eltype(T)
-    return _nsct_workspace(t, Td, _check_image(dims), Matrix{Td}, prewarm, threaded, tune)
+    return _nsct_workspace(t, Td, _check_image(dims), Matrix{Td}, prewarm, flags, _check_tasks(tasks), tune)
 end
 
 function MultiscaleTransformsBase.make_workspace(
-        t::NSCT, x::AbstractArray; prewarm::Bool = true,
-        threaded::Union{Bool, Nothing} = nothing, tune::Bool = false
+        t::NSCT, x::AbstractArray; flags::Integer = FFTW.MEASURE,
+        tasks::Union{Integer, Nothing} = nothing, tune::Bool = false, prewarm::Bool = true
     )
     Td = data_eltype(x)
-    return _nsct_workspace(t, Td, _check_image(size(x)), _matrix_type(x, Td), prewarm, threaded, tune)
+    return _nsct_workspace(t, Td, _check_image(size(x)), _matrix_type(x, Td), prewarm, flags, _check_tasks(tasks), tune)
 end
 
 function _nsct_workspace(
-        t::NSCT, ::Type{Td}, image_size::NTuple{2, Int}, ::Type{M}, prewarm::Bool,
-        threaded::Union{Bool, Nothing}, tune::Bool
+        t::NSCT, ::Type{Td}, image_size::NTuple{2, Int}, ::Type{M}, prewarm::Bool, flags::Integer,
+        tasks::Union{Integer, Nothing}, tune::Bool
     ) where {Td, M}
     Tf = filter_eltype(Td)          # real filter precision
     p2 = _convert_transform(Tf, t)
@@ -284,7 +304,7 @@ function _nsct_workspace(
         end
     end
     x = similar(ref, Td, image_size)
-    X, pfwd, pbwd = _ns_unnormalized_plans(x; measured = true, unaligned = _unaligned_slices(x))
+    X, pfwd, pbwd = _ns_unnormalized_plans(x; flags, unaligned = _unaligned_slices(x))
     ana, syn = _nsp_masks(Tf, p2.lp_filters, image_size, J; rows = axes(X, 1))
     # By scale, coarsest first; the lowpass stays last.
     ana = [_like(X, a) for a in ana[[J:-1:1; J + 1]]]
@@ -293,11 +313,11 @@ function _nsct_workspace(
     offsets = _nsct_offsets(p2)
     n = nsubbands(p2, image_size)
     stack = similar(ref, Td, (0, 0, 0))
-    engine = _mask_bank_engine(x, X, pfwd, pbwd, ana[1:J], syn[1:J], ana[J + 1], syn[J + 1], banks, items; tunable = tune)
+    engine = _mask_bank_engine(x, X, pfwd, pbwd, ana[1:J], syn[1:J], ana[J + 1], syn[J + 1], banks, items; tasks, tunable = tune)
     engine = _maybe_tune(engine, tune, tune ? _Stacked(_zero_stack(ref, Td, image_size, n), offsets) : nothing, x)
     ws = NSCTWorkspace{Td, Tf, M, typeof(engine), typeof(stack), typeof(t)}(
         t, p2, image_size, offsets, n, stack, ScratchArena{M}(), ScratchArena{M}(), engine
     )
-    prewarm && _prewarm_stacked!(ws, threaded)
+    prewarm && _prewarm_stacked!(ws)
     return ws
 end

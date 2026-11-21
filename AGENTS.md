@@ -107,8 +107,10 @@ Conventions that are non-obvious or specific to this package's API contract:
   call takes `workspace` and `threaded` (the CT and STICT accept and ignore
   `threaded`).  A workspace runs at the data's precision (`data_eltype(T)`) and
   a call checks it with `check_workspace` (transform, element type, size) before
-  anything else.  Every workspace constructor takes `prewarm`, `threaded` and
-  `tune` (`tune` acts on device NSCT/TICT workspaces only).  Do not allocate
+  anything else.  Every workspace constructor takes the shared keywords `flags`,
+  `tasks`, `tune` and `prewarm` (`flags`: host FFTW plans; `tasks`: host
+  NSCT/TICT engines only; `tune`: device NSCT/TICT workspaces only; the others
+  accept and ignore them).  Do not allocate
   inside the workspace paths (`_ct_forward_inner!`, `_ct_inverse_inner!`,
   `_stacked_forward!`, `_stacked_inverse!`, `_stict_forward_inner!`,
   `_stict_inverse_inner!`).
@@ -235,7 +237,8 @@ output.
   contiguous chunk of the independent subband FFTs with its own buffer (and,
   for the inverse, its own partial sum).  FFTW's own threads split one FFT and
   gain ~nothing at 256²; this gains ~3.5× on 4 threads.  Plans stay
-  single-threaded, and the choice is per call.  Never call
+  single-threaded, and the choice is per call (the workspace's `tasks`
+  bounds the task count).  Never call
   `FFTW.set_num_threads` directly: plan inside `with_fftw_threads`, which
   restores the count and yields to a caller's NestedThreading budget.
 - **Same-size products use FastBroadcast's `@..`.** Base's broadcast checks every

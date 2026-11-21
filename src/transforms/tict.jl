@@ -41,24 +41,24 @@ _ws_matrix_type(::TICTWorkspace{Td, Tf, M}) where {Td, Tf, M} = M
 Base.show(io::IO, ws::TICTWorkspace) = print(io, "TICTWorkspace(", ws.transform, ", ", eltype(ws), ", ", ws.image_size, ")")
 
 function MultiscaleTransformsBase.make_workspace(
-        t::TICT, ::Type{T}, dims::Dims; prewarm::Bool = true,
-        threaded::Union{Bool, Nothing} = nothing, tune::Bool = false
+        t::TICT, ::Type{T}, dims::Dims; flags::Integer = FFTW.MEASURE,
+        tasks::Union{Integer, Nothing} = nothing, tune::Bool = false, prewarm::Bool = true
     ) where {T <: Number}
     Td = data_eltype(T)
-    return _tict_workspace(t, Td, _check_image(dims), Matrix{Td}, prewarm, threaded, tune)
+    return _tict_workspace(t, Td, _check_image(dims), Matrix{Td}, prewarm, flags, _check_tasks(tasks), tune)
 end
 
 function MultiscaleTransformsBase.make_workspace(
-        t::TICT, x::AbstractArray; prewarm::Bool = true,
-        threaded::Union{Bool, Nothing} = nothing, tune::Bool = false
+        t::TICT, x::AbstractArray; flags::Integer = FFTW.MEASURE,
+        tasks::Union{Integer, Nothing} = nothing, tune::Bool = false, prewarm::Bool = true
     )
     Td = data_eltype(x)
-    return _tict_workspace(t, Td, _check_image(size(x)), _matrix_type(x, Td), prewarm, threaded, tune)
+    return _tict_workspace(t, Td, _check_image(size(x)), _matrix_type(x, Td), prewarm, flags, _check_tasks(tasks), tune)
 end
 
 function _tict_workspace(
-        t::TICT, ::Type{Td}, image_size::NTuple{2, Int}, ::Type{M}, prewarm::Bool,
-        threaded::Union{Bool, Nothing}, tune::Bool
+        t::TICT, ::Type{Td}, image_size::NTuple{2, Int}, ::Type{M}, prewarm::Bool, flags::Integer,
+        tasks::Union{Integer, Nothing}, tune::Bool
     ) where {Td, M}
     Tf = filter_eltype(Td)
     p = _convert_transform(Tf, t)
@@ -81,10 +81,10 @@ function _tict_workspace(
         MaskItem((i, c, k), g(i, c), g(i, c), k)
             for (i, l) in enumerate(p.direction_levels) for c in 1:4 for k in 1:_tict_n_subbands(l, c)
     ]
-    X, pfwd, pbwd = _ns_unnormalized_plans(ref; measured = true, unaligned = _unaligned_slices(ref))
+    X, pfwd, pbwd = _ns_unnormalized_plans(ref; flags, unaligned = _unaligned_slices(ref))
     engine = _mask_bank_engine(
         ref, X, pfwd, pbwd, reduce(vcat, masks.ana), reduce(vcat, masks.syn), masks.coarse_ana, masks.coarse_syn,
-        banks, items; tunable = tune
+        banks, items; tasks, tunable = tune
     )
     offsets = _tilp_offsets(p)
     n = nsubbands(p, image_size)
@@ -94,19 +94,19 @@ function _tict_workspace(
     ws = TICTWorkspace{Td, Tf, Mw, typeof(engine), typeof(stack), typeof(t)}(
         t, p, (n1, n2), offsets, n, stack, ScratchArena{Mw}(), ScratchArena{Mw}(), engine
     )
-    prewarm && _prewarm_stacked!(ws, threaded)
+    prewarm && _prewarm_stacked!(ws)
     return ws
 end
 
 # Without a workspace: one is built for the call.
 function _analyze_direct!(c::AbstractArray, t::TICT, x::AbstractMatrix, threaded)
     Td = eltype(c)
-    ws = _tict_workspace(t, Td, size(x), _matrix_type(x, Td), false, nothing, false)
+    ws = _tict_workspace(t, Td, size(x), _matrix_type(x, Td), false, FFTW.MEASURE, nothing, false)
     return _stacked_forward!(c, x, ws, threaded)
 end
 
 function _synthesize_direct!(x::AbstractMatrix, t::TICT, c::AbstractArray, threaded)
     Td = eltype(c)
-    ws = _tict_workspace(t, Td, size(x), _matrix_type(c, Td), false, nothing, false)
+    ws = _tict_workspace(t, Td, size(x), _matrix_type(c, Td), false, FFTW.MEASURE, nothing, false)
     return _stacked_inverse!(x, c, ws, threaded)
 end

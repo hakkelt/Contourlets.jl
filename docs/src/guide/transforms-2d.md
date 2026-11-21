@@ -294,10 +294,12 @@ multiply and an inverse FFT. See [Performance](@ref performance) for what that
 buys.
 
 !!! note "Threading"
-    A host NSCT or TICT workspace keeps one FFT buffer per Julia thread, and with
-    threading on (`threaded = true`, or the default for complex data) the
-    workspace forms split their independent subband FFTs between the threads.  The
-    choice is made per call.
+    A host NSCT or TICT workspace keeps one FFT buffer per task, one per Julia
+    thread unless `make_workspace` gets fewer `tasks`, and with threading on
+    (`threaded = true`, or the default for complex data) the workspace forms split
+    their independent subband FFTs between those tasks.  The choice is made per
+    call; `tasks = 1` gives a serial workspace.  `make_workspace` also takes the
+    FFTW planner `flags` of its host plans (`FFTW.MEASURE` by default).
 
 ## Using the stages on their own
 

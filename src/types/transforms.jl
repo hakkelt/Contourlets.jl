@@ -160,7 +160,8 @@ Subbands ([`subband_layout`](@ref)): the lowpass first, as
 
 With a workspace and `threaded = true` (the default `threaded = nothing` means
 `true` for complex data, `false` for real data) the independent subband FFTs of
-a host workspace run in one task per Julia thread.
+a host workspace run in one task per Julia thread, or in at most the `tasks`
+the workspace was built with ([`make_workspace`](@ref)).
 
 # Examples
 ```jldoctest

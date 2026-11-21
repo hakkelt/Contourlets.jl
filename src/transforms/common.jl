@@ -171,13 +171,13 @@ function _stacked_inverse!(x::AbstractArray, c::AbstractArray, ws::_StackedWorks
     return x
 end
 
-# Run one analysis and synthesis on zeros, so the first real call is compiled and
-# allocates nothing.
-function _prewarm_stacked!(ws::_StackedWorkspace, threaded::Union{Bool, Nothing})
+# Run one analysis and synthesis on zeros, threaded as a call with the default
+# `threaded = nothing`, so the first real call is compiled and allocates nothing.
+function _prewarm_stacked!(ws::_StackedWorkspace)
     x = _allocate_zeros(_ws_matrix_type(ws), eltype(ws), ws.image_size)
     c = _zero_stack(x, eltype(ws), ws.image_size, ws.nsubbands)
-    _stacked_forward!(c, x, ws, threaded)
-    _stacked_inverse!(x, c, ws, threaded)
+    _stacked_forward!(c, x, ws, nothing)
+    _stacked_inverse!(x, c, ws, nothing)
     return ws
 end
 
@@ -193,7 +193,8 @@ on); without one, the filters and plans are built for the call.  A workspace
 for another transform, element type or image size throws.
 
 `threaded = true` splits the independent subband FFTs of an [`NSCT`](@ref) or
-[`TICT`](@ref) host workspace between the Julia threads, `false` runs them
+[`TICT`](@ref) host workspace between its tasks (one per Julia thread unless
+the workspace was built with fewer `tasks`), `false` runs them
 serially, and `nothing` (the default) threads complex data only.  The
 [`CT`](@ref) and [`STICT`](@ref) run serially and ignore it.
 """

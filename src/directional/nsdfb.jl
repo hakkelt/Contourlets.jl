@@ -48,18 +48,18 @@ end
 # The same with the unnormalized inverse (`brfft` / `bfft`), whose 1/N
 # (`_ns_scale`) the caller applies.
 #
-# A workspace passes `measured = true`: host plans are then measured and
+# A workspace passes its planner `flags`: host plans then use them and are
 # single-threaded, because the workspace threads over its independent subband FFTs
 # instead (MultiscaleFilterBanks' mask-bank engine), which at these sizes scales far better than FFTW's
 # threads splitting one FFT.  `unaligned = true` plans host FFTs that also run
 # on arrays that are not 16-byte aligned, such as the slices of a stacked
 # coefficient array (`_unaligned_slices`).
-function _ns_unnormalized_plans(x::AbstractMatrix; measured::Bool = false, unaligned::Bool = false)
+function _ns_unnormalized_plans(x::AbstractMatrix; flags::Union{Integer, Nothing} = nothing, unaligned::Bool = false)
     X = _ns_spectrum(x)
-    (x isa Array && (measured || unaligned)) || return (X, _ns_plan_pair(x, X)...)
-    flags = (measured ? FFTW.MEASURE : FFTW.ESTIMATE) | (unaligned ? FFTW.UNALIGNED : zero(FFTW.UNALIGNED))
+    (x isa Array && (flags !== nothing || unaligned)) || return (X, _ns_plan_pair(x, X)...)
+    f = something(flags, FFTW.ESTIMATE) | (unaligned ? FFTW.UNALIGNED : zero(FFTW.UNALIGNED))
     return with_fftw_threads(1) do
-        (X, _ns_plan_pair(x, X; flags = flags)...)
+        (X, _ns_plan_pair(x, X; flags = f)...)
     end
 end
 

@@ -245,6 +245,59 @@ end
     end
 end
 
+@testitem "make_workspace takes the shared keywords flags, tasks, tune and prewarm" tags = [:ct, :nsct, :tict] begin
+    using FFTW, Random
+    x = randn(Xoshiro(95), 32, 32)
+    ts = (
+        CT(scales = 2, direction_levels = [3, 2]), NSCT(scales = 2, direction_levels = [3, 2]),
+        TICT(scales = 2, direction_levels = [3, 2]), STICT(scales = 2, direction_levels = [3, 2]),
+    )
+    # The host FFT plans each workspace builds.
+    plans(ws::CTWorkspace) = [p for r in ws.dfb_runners for p in (r.pfwd, r.pbwd, r.psub_fwd..., r.psub_bwd...)]
+    plans(ws::STICTWorkspace) = [ws.pfwd, ws.pbwd, (p for rs in ws.runners for r in rs for p in (r.pfwd, r.pbwd))...]
+    plans(ws::Union{NSCTWorkspace, TICTWorkspace}) = [ws.engine.pfwd, ws.engine.pbwd]
+    estimated(p) = (p.flags & FFTW.ESTIMATE) != 0
+    for t in ts
+        ws0 = make_workspace(t, x)
+        c0 = analyze(ws0, x)
+        # flags reach every host plan; FFTW.MEASURE is the default.
+        @test !any(estimated, plans(ws0))
+        for ws in (make_workspace(t, x; flags = FFTW.ESTIMATE), make_workspace(t, Float64, size(x); flags = FFTW.ESTIMATE))
+            @test all(estimated, plans(ws))
+            c = analyze(ws, x)
+            @test c ≈ c0
+            @test synthesize(ws, c) ≈ x
+        end
+        # tasks bounds the per-task buffers of the NSCT and TICT engines, and is
+        # checked (and otherwise ignored) by the serial CT and STICT.
+        for ws in (make_workspace(t, x; tasks = 1), make_workspace(t, Float64, size(x); tasks = 1))
+            t isa Union{NSCT, TICT} && @test length(ws.engine.buffers) == 1
+            c = analyze(ws, x; threaded = true)
+            @test c == c0
+            @test synthesize(ws, c; threaded = true) ≈ synthesize(ws0, c0)
+        end
+        if t isa Union{NSCT, TICT}
+            @test length(make_workspace(t, x; tasks = 2).engine.buffers) == min(2, length(ws0.engine.buffers))
+            Threads.nthreads() > 1 && @test length(ws0.engine.buffers) > 1
+        end
+        @test_throws "tasks must be ≥ 1, got 0" make_workspace(t, x; tasks = 0)
+        @test_throws "tasks must be ≥ 1, got 0" make_workspace(t, Float64, size(x); tasks = 0)
+        # All four together, on both forms (tune is ignored on the host).
+        for ws in (
+                make_workspace(t, x; flags = FFTW.ESTIMATE, tasks = 1, tune = true, prewarm = false),
+                make_workspace(t, Float64, size(x); flags = FFTW.ESTIMATE, tasks = 1, tune = true, prewarm = false),
+            )
+            @test typeof(ws) === typeof(ws0)
+            @test analyze(ws, x) ≈ c0
+        end
+        @inferred make_workspace(t, ComplexF64, (16, 16); flags = FFTW.ESTIMATE, tasks = 1, prewarm = false)
+        @inferred make_workspace(t, zeros(Float32, 16, 16); flags = FFTW.ESTIMATE, tasks = 2, prewarm = false)
+        # Unknown keywords throw, `threaded` included: it is a per-call keyword.
+        @test_throws MethodError make_workspace(t, x; threaded = true)
+        @test_throws MethodError make_workspace(t, Float64, size(x); nonsense = 1)
+    end
+end
+
 @testitem "batched forward FFT plan of the device synthesis" tags = [:nsct] begin
     using FFTW
     R = randn(8, 6, 3)

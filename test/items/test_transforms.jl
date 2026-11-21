@@ -269,7 +269,7 @@ end
         for threaded in (nothing, true, false)
             c = analyze(t, x; threaded)
             @test maximum(abs, synthesize(t, c; threaded) .- x) < 1.0e-12
-            ws = make_workspace(t, x; threaded)
+            ws = make_workspace(t, x)
             @test synthesize(ws, analyze(ws, x; threaded); threaded) ≈ x atol = 1.0e-12
         end
     end

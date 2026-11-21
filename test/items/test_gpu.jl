@@ -559,3 +559,19 @@ end
         end
     end
 end
+
+@testitem "GPU workspaces accept and ignore flags and tasks (JLArrays)" tags = [:gpu] setup = [GPUBackends] begin
+    using GPUEnv, Random
+    x = randn(Xoshiro(14), Float32, 32, 32)
+    for backend in GPUBackends.fft_backends
+        backend.name === :JLArray || continue
+        xg = to_gpu(backend, x)
+        for t in (CT(scales = 2, direction_levels = [3, 2]), NSCT(scales = 2, direction_levels = [3, 2]), TICT(scales = 2, direction_levels = [1, 2]), STICT(scales = 2, direction_levels = [2, 3]))
+            ws0 = make_workspace(t, xg)
+            ws = make_workspace(t, xg; flags = 64, tasks = 4, prewarm = false)     # 64: FFTW.ESTIMATE
+            @test typeof(ws) === typeof(ws0)
+            t isa Union{NSCT, TICT} && @test length(ws.engine.buffers) == 1
+            @test Array(analyze(ws, xg)) == Array(analyze(ws0, xg))
+        end
+    end
+end

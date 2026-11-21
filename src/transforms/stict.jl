@@ -47,22 +47,24 @@ function _layout(t::STICT, dims::NTuple{2, Int})
 end
 
 function MultiscaleTransformsBase.make_workspace(
-        t::STICT, ::Type{T}, dims::Dims; prewarm::Bool = true,
-        threaded::Union{Bool, Nothing} = nothing, tune::Bool = false
+        t::STICT, ::Type{T}, dims::Dims; flags::Integer = FFTW.MEASURE,
+        tasks::Union{Integer, Nothing} = nothing, tune::Bool = false, prewarm::Bool = true
     ) where {T <: Number}
     Td = data_eltype(T)
-    return _stict_workspace(t, Td, _check_image(dims), Matrix{Td}, prewarm)
+    _check_tasks(tasks)
+    return _stict_workspace(t, Td, _check_image(dims), Matrix{Td}, prewarm, flags)
 end
 
 function MultiscaleTransformsBase.make_workspace(
-        t::STICT, x::AbstractArray; prewarm::Bool = true,
-        threaded::Union{Bool, Nothing} = nothing, tune::Bool = false
+        t::STICT, x::AbstractArray; flags::Integer = FFTW.MEASURE,
+        tasks::Union{Integer, Nothing} = nothing, tune::Bool = false, prewarm::Bool = true
     )
     Td = data_eltype(x)
-    return _stict_workspace(t, Td, _check_image(size(x)), _matrix_type(x, Td), prewarm)
+    _check_tasks(tasks)
+    return _stict_workspace(t, Td, _check_image(size(x)), _matrix_type(x, Td), prewarm, flags)
 end
 
-function _stict_workspace(t::STICT, ::Type{Td}, image_size::NTuple{2, Int}, ::Type{M}, prewarm::Bool) where {Td, M}
+function _stict_workspace(t::STICT, ::Type{Td}, image_size::NTuple{2, Int}, ::Type{M}, prewarm::Bool, flags::Integer) where {Td, M}
     Tf = filter_eltype(Td)
     p = _convert_transform(Tf, t)
     layout, firsts = _layout(p, image_size)
@@ -72,7 +74,6 @@ function _stict_workspace(t::STICT, ::Type{Td}, image_size::NTuple{2, Int}, ::Ty
     # One full bank per depth, the half trees sharing its masks (`_half_bank`), and
     # one buffer pool for every runner: the channels run one after another.  The
     # runners' scratch `Z` is also the workspace's, which is never live meanwhile.
-    flags = ref isa Array ? FFTW.MEASURE : FFTW.ESTIMATE
     banks = Dict{Int, _bank_type(ref, Tf)}()
     full(l) = get!(banks, l) do
         _adapt_bank(ref, _directional_bank(Tf, image_size, l, p.dfb_filters.f_ladder; decimated = true))
@@ -107,13 +108,13 @@ end
 # Without a workspace: one is built for the call.
 function _analyze_direct!(c::SubbandVector, first::Vector{Int}, t::STICT, x::AbstractMatrix)
     Td = eltype(c)
-    ws = _stict_workspace(t, Td, size(x), _matrix_type(x, Td), false)
+    ws = _stict_workspace(t, Td, size(x), _matrix_type(x, Td), false, FFTW.MEASURE)
     return _stict_forward_inner!(c, Td === eltype(x) ? x : Td.(x), ws)
 end
 
 function _synthesize_direct!(x::AbstractMatrix, first::Vector{Int}, t::STICT, c::SubbandVector)
     Td = eltype(c)
-    ws = _stict_workspace(t, Td, size(x), _matrix_type(c.data, Td), false)
+    ws = _stict_workspace(t, Td, size(x), _matrix_type(c.data, Td), false, FFTW.MEASURE)
     Td === eltype(x) && return _stict_inverse_inner!(x, c, ws)
     return copyto!(x, _stict_inverse_inner!(similar(c.data, Td, size(x)), c, ws))
 end

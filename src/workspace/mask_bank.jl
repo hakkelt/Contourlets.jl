@@ -36,8 +36,12 @@ _unaligned_slices(::AbstractArray) = false
 # FFT (`_ns_batch_plan`); a host engine threads over the subbands instead.  With
 # `tunable`, a device engine can chunk its synthesis too (`_ns_forward_batch_plan`);
 # that is only offered to `mask_bank_tune`, which keeps it where it measures
-# faster (small grids) and the per-subband synthesis loop elsewhere.
-function _mask_bank_engine(x::AbstractMatrix, X, pfwd, pbwd, pyramid_ana, pyramid_syn, coarse_ana, coarse_syn, banks, items; tunable::Bool = false)
+# faster (small grids) and the per-subband synthesis loop elsewhere.  `tasks`
+# bounds the tasks (and per-task buffers) of a host engine.
+function _mask_bank_engine(
+        x::AbstractMatrix, X, pfwd, pbwd, pyramid_ana, pyramid_syn, coarse_ana, coarse_syn, banks, items;
+        tasks::Union{Integer, Nothing} = nothing, tunable::Bool = false
+    )
     s = _ns_scale(x, X)
     batched = if x isa Array
         (;)
@@ -49,7 +53,7 @@ function _mask_bank_engine(x::AbstractMatrix, X, pfwd, pbwd, pyramid_ana, pyrami
     return MaskBankEngine(
         [MaskBank(b.ana, b.syn) for b in banks], items, X;
         pfwd, pinv = s * pbwd, pyramid = MaskBank(pyramid_ana, pyramid_syn), lowpass = (coarse_ana, coarse_syn),
-        pbwd = pbwd, scale = s, batched...
+        pbwd = pbwd, scale = s, tasks, batched...
     )
 end
 

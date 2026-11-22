@@ -53,7 +53,7 @@
     rec = similar(x)
     for t in ts
         @test_call target_modules = (Contourlets,) analyze(t, x)
-        c = analyze(t, x)
+        local c = analyze(t, x)
         @test_call target_modules = (Contourlets,) synthesize(t, c)
         @test_call target_modules = (Contourlets,) make_workspace(t, Float64, (16, 16))
         @test_call target_modules = (Contourlets,) make_workspace(t, x)
@@ -97,7 +97,7 @@ end
     rec = similar(x)
     for t in ts
         @test_opt target_modules = (Contourlets,) analyze(t, x)
-        c = analyze(t, x)
+        local c = analyze(t, x)
         @test_opt target_modules = (Contourlets,) synthesize(t, c)
         ws = make_workspace(t, x)
         @test_opt target_modules = (Contourlets,) analyze!(c, t, x; workspace = ws)
@@ -144,7 +144,7 @@ end
     rec = similar(x)
     for t in (NSCT(scales = 2, direction_levels = [2, 1]), TICT(scales = 2, direction_levels = [2, 1]))
         ws = make_workspace(t, x)
-        c = similar_coefficients(t, x)
+        local c = similar_coefficients(t, x)
         @test c isa Array{Float64, 3}
         for threaded in (false, true)
             @test_call target_modules = M analyze!(c, t, x; workspace = ws, threaded)
@@ -216,7 +216,7 @@ end
         @test_opt target_modules = M make_workspace(t, x)
         @test_opt target_modules = M similar_coefficients(t, x)
         ws = make_workspace(t, x)
-        c = similar_coefficients(t, x)
+        local c = similar_coefficients(t, x)
         @test_opt target_modules = M analyze!(c, ws, x)
         @test_opt target_modules = M synthesize!(dst, ws, c)
         @test_opt target_modules = M synthesize(t, c; workspace = ws)

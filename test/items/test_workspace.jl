@@ -306,3 +306,21 @@ end
     Rc = randn(ComplexF64, 8, 6, 3)
     @test Contourlets._ns_forward_batch_plan(Rc, similar(Rc)) * Rc ≈ fft(Rc, 1:2)
 end
+
+@testitem "workspace matrix type and slice alignment on host arrays" tags = [:ct, :nsct, :tict] begin
+    for t in (CT(scales = 2, direction_levels = [2, 1]), NSCT(scales = 2, direction_levels = [2, 1]), TICT(scales = 2, direction_levels = [2, 1]))
+        ws = make_workspace(t, Float64, (16, 16))
+        @test Contourlets._ws_matrix_type(ws) === Matrix{Float64}
+    end
+    # Slices of a view or wrapper are never assumed to start unaligned; a host
+    # array whose byte length is not a multiple of 16 can.
+    @test !Contourlets._unaligned_slices(view(zeros(3, 3), :, :))
+    @test Contourlets._unaligned_slices(zeros(Float32, 3, 3))
+    @test !Contourlets._unaligned_slices(zeros(Float32, 4, 4))
+end
+
+@testitem "_like on a view uses its parent's array family" tags = [:tict] begin
+    A = randn(3, 3)
+    @test Contourlets._like(zeros(4, 4), A) === A
+    @test Contourlets._like(view(zeros(4, 4), 1:2, 1:2), A) === A
+end

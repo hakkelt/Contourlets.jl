@@ -404,3 +404,24 @@ end
     ws = make_workspace(CT{Float32}(scales = 2), Float32, (32, 32))
     @test_throws "built for CT{Float32}(scales = 2" analyze(CT(scales = 2), randn(Float32, 32, 32); workspace = ws)
 end
+
+@testitem "stacked coefficients of the wrong size are rejected without a workspace" tags = [:nsct, :tict] begin
+    for t in (NSCT(scales = 2, direction_levels = [2, 1]), TICT(scales = 2, direction_levels = [2, 1]))
+        x = randn(32, 32)
+        c = similar_coefficients(t, randn(64, 64))
+        @test_throws "do not fit an image of size (32, 32)" synthesize!(similar(x), t, c)
+        @test_throws "do not fit an image of size (32, 32)" analyze!(c, t, x)
+    end
+end
+
+@testitem "STICT direct synthesis converts to the output's element type" tags = [:tict] begin
+    using Random
+    Random.seed!(77)
+    t = STICT(scales = 2, direction_levels = [2, 1])
+    x = randn(Float32, 32, 32)
+    c = analyze(t, x)
+    @test eltype(c) == Float32
+    out = zeros(Float64, 32, 32)
+    @test synthesize!(out, t, c) === out
+    @test maximum(abs, out .- x) < 1.0e-4
+end

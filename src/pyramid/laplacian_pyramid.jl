@@ -68,6 +68,8 @@ function lp_decompose!(
         tmp::AbstractMatrix = similar(image),
         tmp2::AbstractMatrix = similar(image)
     )
+    _check_size(size(image), "bandpass" => bandpass, "tmp" => tmp, "tmp2" => tmp2)
+    _check_size(cld.(size(image), 2), "coarse" => coarse)
     Tf = filter_eltype(eltype(image))
     h = Tf === eltype(fp) ? fp.h : Tf.(fp.h)
     g = Tf === eltype(fp) ? fp.g : Tf.(fp.g)
@@ -128,6 +130,8 @@ function lp_reconstruct!(
         tmp::AbstractMatrix = similar(image),
         tmp2::AbstractMatrix = similar(image)
     )
+    _check_size(size(image), "bandpass" => bandpass, "tmp" => tmp, "tmp2" => tmp2)
+    _check_size(cld.(size(image), 2), "coarse" => coarse)
     Tf = filter_eltype(eltype(image))
     g = Tf === eltype(fp) ? fp.g : Tf.(fp.g)
     rect_upsample!(tmp, coarse)

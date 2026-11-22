@@ -36,8 +36,8 @@ julia> size(Contourlets.qx_downsample(x))
 ```
 """
 function qx_downsample!(dst::AbstractMatrix{T}, src::AbstractMatrix{T}) where {T}
+    _check_qx_sizes(dst, src)
     n1, n2 = size(src)
-    iseven(n2) || throw(ArgumentError("qx_downsample requires even number of columns, got n2=$(n2)"))
     fill!(dst, zero(T))
     d2 = size(dst, 2)
     @inbounds for k in 1:d2, i in 1:n1
@@ -66,6 +66,7 @@ Scatters `src[i, k]` back to `dst[i, j]` where `j = isodd(i) ? 2k-1 : 2k`;
 all other entries of `dst` are set to zero.
 """
 function qx_upsample!(dst::AbstractMatrix{T}, src::AbstractMatrix{T}) where {T}
+    _check_qx_sizes(src, dst)
     fill!(dst, zero(T))
     d1, d2 = size(src)
     @inbounds for k in 1:d2, i in 1:d1

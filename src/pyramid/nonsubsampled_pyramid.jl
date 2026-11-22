@@ -100,6 +100,7 @@ function nsp_decompose!(
         h_j::Union{AbstractVector, Nothing} = nothing,
         g_j::Union{AbstractVector, Nothing} = nothing
     )
+    _check_size(size(image), "coarse" => coarse, "bandpass" => bandpass, "tmp" => tmp, "tmp2" => tmp2)
     # Use caller-supplied (workspace-cached) à trous filters when given; otherwise
     # build them here.  The cached `g_j` already carries the synthesis rescale.
     if h_j === nothing || g_j === nothing
@@ -161,6 +162,7 @@ function nsp_reconstruct!(
         tmp2::AbstractMatrix = similar(image),
         g_j::Union{AbstractVector, Nothing} = nothing
     )
+    _check_size(size(image), "coarse" => coarse, "bandpass" => bandpass, "tmp" => tmp, "tmp2" => tmp2)
     # Use the caller-supplied (workspace-cached) synthesis filter when given.
     if g_j === nothing
         _, g_j = nsp_atrous_filters(filter_eltype(eltype(image)), fp, level)

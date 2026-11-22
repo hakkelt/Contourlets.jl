@@ -67,6 +67,8 @@ function Contourlets.conv2d_sep!(
         boundary::Symbol = :symmetric,
         tmp = nothing
     ) where {T}
+    Contourlets._check_size(size(src), "dst" => dst)
+    tmp === nothing || Contourlets._check_size(size(src), "tmp" => tmp)
     bmode = if boundary === :symmetric
         1
     elseif boundary === :periodic
@@ -214,6 +216,7 @@ end
 end
 
 function Contourlets.qx_downsample!(dst::_AbstractGPUMatrix{T}, src::_AbstractGPUMatrix{T}) where {T}
+    Contourlets._check_qx_sizes(dst, src)
     d1, d2 = size(dst)
     backend = _gpu_backend(src)
     kernel = _qx_downsample_kernel!(backend, (16, 16))
@@ -222,6 +225,7 @@ function Contourlets.qx_downsample!(dst::_AbstractGPUMatrix{T}, src::_AbstractGP
 end
 
 function Contourlets.qx_upsample!(dst::_AbstractGPUMatrix{T}, src::_AbstractGPUMatrix{T}) where {T}
+    Contourlets._check_qx_sizes(src, dst)
     d1, d2 = size(src)
     backend = _gpu_backend(src)
     fill!(dst, zero(T))   # sparse write — off-quincunx positions stay zero

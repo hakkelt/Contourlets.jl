@@ -98,3 +98,25 @@ end
     @test_throws "at scale 1 of 3 (1 the coarsest) axis 1 has bandpass length 25, which its 1-level directional filter bank needs divisible by 2; the nearest image length that fits is 96" analyze(CT(scales = 3), x)
     @test_throws "does not fit" make_workspace(CT(scales = 3), Float64, (100, 100))
 end
+
+@testitem "in-place stages reject wrong-size buffers" tags = [:pyramid, :primitives, :directional] begin
+    using Contourlets: conv2d_sep!, lp_decompose!, lp_reconstruct!, nsp_decompose!, nsp_reconstruct!,
+        qfb_decompose!, qfb_reconstruct!, qx_downsample!, qx_upsample!, dfb_decompose!, dfb_reconstruct!
+    x = randn(32, 32)
+    h = [0.25, 0.5, 0.25]
+    @test_throws "dst has size (8, 8), expected (32, 32)" conv2d_sep!(zeros(8, 8), x, h, h)
+    @test_throws "tmp has size (8, 8), expected (32, 32)" conv2d_sep!(zeros(32, 32), x, h, h; tmp = zeros(8, 8))
+    @test_throws "coarse has size (8, 8), expected (16, 16)" lp_decompose!(zeros(8, 8), zeros(32, 32), x, CDF97)
+    @test_throws "bandpass has size (32, 16), expected (32, 32)" lp_decompose!(zeros(16, 16), zeros(32, 16), x, CDF97)
+    @test_throws "coarse has size (8, 8), expected (16, 16)" lp_reconstruct!(zeros(32, 32), zeros(8, 8), x, CDF97)
+    @test_throws "coarse has size (8, 8), expected (32, 32)" nsp_decompose!(zeros(8, 8), zeros(32, 32), x, CDF97, 1)
+    @test_throws "bandpass has size (8, 8), expected (32, 32)" nsp_reconstruct!(zeros(32, 32), x, zeros(8, 8), CDF97, 1)
+    @test_throws "sb1 has size (32, 8), expected (32, 16)" qfb_decompose!(zeros(32, 16), zeros(32, 8), x, Q2345)
+    @test_throws "sb0 has size (32, 16), expected (16, 32)" qfb_decompose!(zeros(32, 16), zeros(16, 32), x, Q2345; dir = :row)
+    @test_throws "sb0 has size (16, 16), expected (32, 16)" qfb_reconstruct!(zeros(32, 32), zeros(16, 16), zeros(32, 16), Q2345)
+    @test_throws "quincunx half grid must have size (32, 16)" qx_downsample!(zeros(32, 8), x)
+    @test_throws "quincunx half grid must have size (32, 16)" qx_upsample!(zeros(32, 32), zeros(16, 16))
+    # Depth 0 copies the bandpass, checked like every other depth.
+    @test_throws "subbands[1] has size (16, 64), expected (32, 32)" dfb_decompose!([zeros(16, 64)], x, Q2345, 0)
+    @test_throws "subbands[1] has size (16, 64), expected (32, 32)" dfb_reconstruct!(zeros(32, 32), [zeros(16, 64)], Q2345)
+end

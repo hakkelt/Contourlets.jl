@@ -21,6 +21,7 @@ function conv2d_sep!(
         boundary::Symbol = :symmetric,
         tmp::AbstractMatrix{Td} = similar(src)
     ) where {Td, Tf}
+    _check_size(size(src), "dst" => dst, "tmp" => tmp)
     if boundary === :symmetric
         _conv2d_sep_impl!(dst, src, h_row, h_col, tmp, Val(:symmetric))
     elseif boundary === :periodic

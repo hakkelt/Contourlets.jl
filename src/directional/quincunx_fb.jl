@@ -76,6 +76,7 @@ function qfb_decompose!(
         dir::Symbol = :col
     )
     _check_dir(dir)
+    _check_qfb_sizes(sb0, sb1, image, dir)
     if dir === :col
         return _qfb_col_decompose!(sb0, sb1, image, qfp)
     else
@@ -138,6 +139,7 @@ function qfb_reconstruct!(
         dir::Symbol = :col
     )
     _check_dir(dir)
+    _check_qfb_sizes(sb0, sb1, out, dir)
     if dir === :col
         return _qfb_col_reconstruct!(out, sb0, sb1, qfp)
     else
@@ -149,6 +151,16 @@ function qfb_reconstruct!(
         )
         return out
     end
+end
+
+# The two channels are the quincunx half grid of the image along `dir`.
+function _check_qfb_sizes(sb0::AbstractMatrix, sb1::AbstractMatrix, image::AbstractMatrix, dir::Symbol)
+    n1, n2 = size(image)
+    half = dir === :col ? (iseven(n2) ? (n1, n2 ÷ 2) : nothing) : (iseven(n1) ? (n1 ÷ 2, n2) : nothing)
+    half === nothing &&
+        throw(ArgumentError("the quincunx filter bank along $(dir) needs an even number of $(dir === :col ? "columns" : "rows"), got $(size(image))"))
+    _check_size(half, "sb0" => sb0, "sb1" => sb1)
+    return nothing
 end
 
 # ── Internal column-direction implementation ──────────────────────────────────

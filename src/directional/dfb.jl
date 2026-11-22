@@ -129,7 +129,7 @@ function dfb_decompose!(
     _check_half(half)
     length(subbands) == _bank_n_subbands(l_levels, half) ||
         throw(ArgumentError("subbands must hold $(_bank_n_subbands(l_levels, half)) matrices"))
-    l_levels == 0 && return (copyto!(subbands[1], bandpass); subbands)
+    l_levels == 0 && return (_check_size(size(bandpass), "subbands[1]" => subbands[1]); copyto!(subbands[1], bandpass); subbands)
     Tf = filter_eltype(data_eltype(bandpass))
     return _with_runner(r -> _bank_analyze!(subbands, bandpass, r), workspace, bandpass, l_levels, qfp, half, Tf)
 end
@@ -189,7 +189,7 @@ function dfb_reconstruct!(
     )
     _check_half(half)
     n = length(subbands)
-    n == 1 && return copyto!(bandpass, subbands[1])
+    n == 1 && return (_check_size(size(bandpass), "subbands[1]" => subbands[1]); copyto!(bandpass, subbands[1]))
     l_levels = _dfb_levels_from_count(n, half)
     Tf = filter_eltype(data_eltype(bandpass))
     return _dfb_reconstruct_bank!(bandpass, subbands, l_levels, qfp, half, workspace, Tf)

@@ -128,21 +128,23 @@ end
 
 # ── Images of the ragged transforms (CT, STICT) ──────────────────────────────
 
-# An array like the workspace's own: a CT workspace's matrix type (empty, so it
-# allocates nothing), an STICT workspace's spectrum buffer.
-_ws_proto(::CTWorkspace{Td, Tf, M}) where {Td, Tf, M} = _allocate_zeros(M, Td, (0, 0))
-_ws_proto(ws::STICTWorkspace) = ws.X
+# Whether the workspace lives on a device, and a new image of size `dims` like
+# its own arrays.
+_ws_on_device(::CTWorkspace{Td, Tf, M}) where {Td, Tf, M} = is_device_array(M)
+_ws_on_device(ws::STICTWorkspace) = is_device_array(ws.X)
+_ws_image(::CTWorkspace{Td, Tf, M}, dims) where {Td, Tf, M} = _allocate_zeros(M, Td, dims)
+_ws_image(ws::STICTWorkspace, dims) = similar(ws.X, eltype(ws), dims)
 
 # Whether the data of `x` lives elsewhere than the workspace's: a host image for
-# a device workspace, or the reverse.  Such images are copied through an array
+# a device workspace, or the reverse.  Such images are copied through an image
 # like the workspace's.
-_foreign(ws, x::AbstractMatrix) = is_device_array(x) != is_device_array(_ws_proto(ws))
+_foreign(ws, x::AbstractMatrix) = is_device_array(x) != _ws_on_device(ws)
 
-_stage_in(ws, x::AbstractMatrix) = _foreign(ws, x) ? copyto!(similar(_ws_proto(ws), eltype(ws), size(x)), x) : x
+_stage_in(ws, x::AbstractMatrix) = _foreign(ws, x) ? copyto!(_ws_image(ws, size(x)), x) : x
 
 # Run `f(y)`, which writes the image into `y`, for the output `x`.
 _stage_out!(f::F, ws, x::AbstractMatrix) where {F} =
-    _foreign(ws, x) ? copyto!(x, f(similar(_ws_proto(ws), eltype(ws), size(x)))) : f(x)
+    _foreign(ws, x) ? copyto!(x, f(_ws_image(ws, size(x)))) : f(x)
 
 # ── Stacked coefficients (NSCT, TICT) ─────────────────────────────────────────
 

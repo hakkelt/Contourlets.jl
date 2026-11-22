@@ -28,12 +28,6 @@
     @test_call target_modules = (Contourlets,) Contourlets.qx_downsample(x)
     qy = Contourlets.qx_downsample(x)
     @test_call target_modules = (Contourlets,) Contourlets.qx_upsample(qy, (16, 16))
-    @test_call target_modules = (Contourlets,) Contourlets.shear(x, :h)
-    @test_call target_modules = (Contourlets,) Contourlets.shear(x, :v)
-    @test_call target_modules = (Contourlets,) Contourlets.inv_shear(x, :h)
-    @test_call target_modules = (Contourlets,) Contourlets.inv_shear(x, :v)
-    @test_call target_modules = (Contourlets,) Contourlets.shear!(dst, x, :h)
-    @test_call target_modules = (Contourlets,) Contourlets.inv_shear!(dst, x, :v)
 
     # ── Pyramid ──────────────────────────────────────────────────────────────
     @test_call target_modules = (Contourlets,) Contourlets.lp_decompose(x, CDF97)
@@ -81,9 +75,6 @@ end
 
     # ── Primitives ───────────────────────────────────────────────────────────
     @test_opt target_modules = (Contourlets,) Contourlets.rect_downsample(x)
-    @test_opt target_modules = (Contourlets,) Contourlets.shear(x, :h)
-    @test_opt target_modules = (Contourlets,) Contourlets.shear!(dst, x, :v)
-    @test_opt target_modules = (Contourlets,) Contourlets.inv_shear(x, :h)
     @test_opt target_modules = (Contourlets,) Contourlets.conv2d_sep(x, [1.0, 2.0, 1.0], [1.0, 2.0, 1.0])
 
     # ── Pyramid ──────────────────────────────────────────────────────────────
@@ -196,7 +187,6 @@ end
     @test_opt target_modules = M Contourlets.qx_downsample!(similar(qy), x)
     @test_opt target_modules = M Contourlets.qx_upsample(qy, (16, 16))
     @test_opt target_modules = M Contourlets.qx_upsample!(similar(x), qy)
-    @test_opt target_modules = M Contourlets.inv_shear!(dst, x, :h)
 
     # ── Pyramids ─────────────────────────────────────────────────────────────
     c, bp = Contourlets.lp_decompose(x, CDF97)

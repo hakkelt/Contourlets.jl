@@ -10,36 +10,6 @@
     @test maximum(abs, d2 .- y) < 1.0e-14
 end
 
-@testitem "shear / inv_shear" tags = [:primitives] begin
-    using Random
-    Random.seed!(3)
-    x = randn(8, 8)
-    for dir in [:h, :v]
-        sh = Contourlets.shear(x, dir)
-        @test size(sh) == size(x)
-        rec = Contourlets.inv_shear(sh, dir)
-        @test maximum(abs, rec .- x) < 1.0e-14
-    end
-end
-
-@testitem "shear does not alias src/dst" tags = [:primitives] begin
-    x = randn(8, 8)
-    y = copy(x)
-    n1, n2 = size(x)
-    # The shears are index remaps: :h shifts row i by i columns, :v column j by j rows.
-    ref = Dict(
-        :h => [x[i, mod1(j + i, n2)] for i in 1:n1, j in 1:n2],
-        :v => [x[mod1(i + j, n1), j] for i in 1:n1, j in 1:n2],
-    )
-    for dir in (:h, :v)
-        @test Contourlets.shear(x, dir) == ref[dir]
-        dst = similar(x)
-        Contourlets.shear!(dst, x, dir)
-        @test dst == ref[dir]
-        @test x == y           # the source is left alone
-    end
-end
-
 @testitem "qx_downsample / upsample round-trip" tags = [:primitives] begin
     using Random
     Random.seed!(6)
@@ -96,18 +66,6 @@ end
     x_inplace = zeros(size(x)...)
     Contourlets.qx_upsample!(x_inplace, y)
     @test x_inplace == x_alloc
-end
-
-@testitem "shear! invalid direction throws" tags = [:primitives] begin
-    x = randn(8, 8)
-    dst = similar(x)
-    @test_throws ArgumentError Contourlets.shear!(dst, x, :bad)
-end
-
-@testitem "inv_shear! invalid direction throws" tags = [:primitives] begin
-    x = randn(8, 8)
-    dst = similar(x)
-    @test_throws ArgumentError Contourlets.inv_shear!(dst, x, :bad)
 end
 
 @testitem "rect_upsample! in-place" tags = [:primitives] begin

@@ -60,12 +60,6 @@ end
             Contourlets.conv2d_sep!(dg, xg, h, h; boundary = bnd)
             @test maximum(abs, Array(dg) .- Contourlets.conv2d_sep(x, h, h; boundary = bnd)) < 1.0f-5
         end
-        # shear / inv_shear round-trip and CPU match
-        for dir in (:h, :v)
-            sg = Contourlets.shear(xg, dir)
-            @test maximum(abs, Array(sg) .- Contourlets.shear(x, dir)) < 1.0f-5
-            @test maximum(abs, Array(Contourlets.inv_shear(sg, dir)) .- x) < 1.0f-5
-        end
         # rectangular down/up-sampling
         dn = Contourlets.rect_downsample(xg)
         @test maximum(abs, Array(dn) .- Contourlets.rect_downsample(x)) < 1.0f-5
@@ -194,8 +188,6 @@ end
         dg = similar(xg)
         h = Float32[0.25, 0.5, 0.25]
         @test_throws ArgumentError Contourlets.conv2d_sep!(dg, xg, h, h; boundary = :bad)
-        @test_throws ArgumentError Contourlets.shear!(dg, xg, :bad)
-        @test_throws ArgumentError Contourlets.inv_shear!(dg, xg, :bad)
     end
 end
 

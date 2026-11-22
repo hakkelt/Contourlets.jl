@@ -1,9 +1,9 @@
 # GPU KernelAbstractions kernels for the Contourlet primitive operations.
 #
-# Each CPU primitive (conv2d_sep!, shear!, rect_downsample!, …) is overloaded
+# Each CPU primitive (conv2d_sep!, rect_downsample!, qx_downsample!, …) is overloaded
 # for _AbstractGPUMatrix via a specialized @kernel that runs on any KA backend
-# (CUDA, AMDGPU, oneAPI, Metal, CPU).  The quincunx filter bank overloads (which
-# only reject device arrays for now) are in `qfb_gpu.jl`.
+# (CUDA, AMDGPU, oneAPI, Metal, CPU).  The quincunx filter bank overloads, which
+# reject device arrays, are in `qfb_gpu.jl`.
 
 # ── Separable 2-D convolution ─────────────────────────────────────────────────
 
@@ -105,68 +105,6 @@ function Contourlets.conv2d_sep!(
     kernel2 = _conv_rows_kernel!(backend, (16, 16))
     kernel2(dst, _tmp, h_row_d, n1, n2, lr, cr, bmode; ndrange = (n1, n2))
 
-    return dst
-end
-
-# ── Shearing ─────────────────────────────────────────────────────────────────
-
-@kernel function _shear_h_kernel!(dst, @Const(src), n2::Int)
-    i, j = @index(Global, NTuple)
-    @inbounds dst[i, j] = src[i, mod1(j + i, n2)]
-end
-
-@kernel function _shear_v_kernel!(dst, @Const(src), n1::Int)
-    i, j = @index(Global, NTuple)
-    @inbounds dst[i, j] = src[mod1(i + j, n1), j]
-end
-
-@kernel function _inv_shear_h_kernel!(dst, @Const(src), n2::Int)
-    i, j = @index(Global, NTuple)
-    @inbounds dst[i, j] = src[i, mod1(j - i, n2)]
-end
-
-@kernel function _inv_shear_v_kernel!(dst, @Const(src), n1::Int)
-    i, j = @index(Global, NTuple)
-    @inbounds dst[i, j] = src[mod1(i - j, n1), j]
-end
-
-function Contourlets.shear!(
-        dst::_AbstractGPUMatrix{T},
-        src::_AbstractGPUMatrix{T},
-        dir::Symbol
-    ) where {T}
-    n1, n2 = size(src)
-    size(dst) == size(src) || throw(DimensionMismatch("dst and src must have the same size"))
-    backend = _gpu_backend(src)
-    if dir === :h
-        kernel = _shear_h_kernel!(backend, (16, 16))
-        kernel(dst, src, n2; ndrange = (n1, n2))
-    elseif dir === :v
-        kernel = _shear_v_kernel!(backend, (16, 16))
-        kernel(dst, src, n1; ndrange = (n1, n2))
-    else
-        throw(ArgumentError("dir must be :h or :v, got :$(dir)"))
-    end
-    return dst
-end
-
-function Contourlets.inv_shear!(
-        dst::_AbstractGPUMatrix{T},
-        src::_AbstractGPUMatrix{T},
-        dir::Symbol
-    ) where {T}
-    n1, n2 = size(src)
-    size(dst) == size(src) || throw(DimensionMismatch("dst and src must have the same size"))
-    backend = _gpu_backend(src)
-    if dir === :h
-        kernel = _inv_shear_h_kernel!(backend, (16, 16))
-        kernel(dst, src, n2; ndrange = (n1, n2))
-    elseif dir === :v
-        kernel = _inv_shear_v_kernel!(backend, (16, 16))
-        kernel(dst, src, n1; ndrange = (n1, n2))
-    else
-        throw(ArgumentError("dir must be :h or :v, got :$(dir)"))
-    end
     return dst
 end
 

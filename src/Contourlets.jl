@@ -77,7 +77,6 @@ include("primitives/threading.jl")
 include("primitives/conv2d_sep.jl")
 include("primitives/sampling.jl")
 include("primitives/quincunx.jl")
-include("primitives/shearing.jl")
 
 # ── Pyramid stages ────────────────────────────────────────────────────────────
 include("pyramid/laplacian_pyramid.jl")
@@ -111,7 +110,7 @@ include("precompile.jl")
 # ── Exports ───────────────────────────────────────────────────────────────────
 # The transform API is exported.  The pyramid and directional stages and the
 # filter utilities are public but not exported; the raw primitives (conv2d_sep*,
-# rect_*sample*, qx_*sample*, shear*, inv_shear*) are internal.
+# rect_*sample*, qx_*sample*) are internal.
 export
     # Transforms and their workspaces
     CT, NSCT, TICT, STICT,

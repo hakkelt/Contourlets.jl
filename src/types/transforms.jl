@@ -14,7 +14,7 @@ function _contourlet_fields(::Type{T}, scales, direction_levels, lp_filters, dfb
     )
     all(>=(0), direction_levels) || throw(ArgumentError("direction_levels entries must be ≥ 0, got $(direction_levels)"))
     lp = FilterPair{T}(T.(lp_filters.h), T.(lp_filters.g))
-    return Int(scales), collect(Int, direction_levels), lp, _convert_qfp(T, dfb_filters)
+    return Int(scales), ReadOnlyTaps{Int}(collect(Int, direction_levels)), lp, _convert_qfp(T, dfb_filters)
 end
 
 # The number of scales and the direction levels from the constructor keywords,
@@ -41,7 +41,7 @@ for (name, what) in (
     @eval begin
         struct $name{T} <: _ContourletTransform{T}
             scales::Int
-            direction_levels::Vector{Int}
+            direction_levels::ReadOnlyTaps{Int}   # read-only: a workspace may share the transform
             lp_filters::FilterPair{T}
             dfb_filters::QuincunxFilterPair{T}
             function $name{T}(scales, direction_levels, lp_filters, dfb_filters) where {T <: AbstractFloat}

@@ -18,7 +18,8 @@ Phoong et al. (1995), built from the symmetric, even-length 1-D ladder filter
 `f_ladder`.  The DFB, NSDFB and the shear-based [`qfb_decompose`](@ref) all derive
 their filters from `f_ladder` (see [`Q2345`](@ref)).  The pair holds a copy of
 `f_ladder` at precision `T`, by default `float(eltype(f_ladder))`, so integer
-taps give a `Float64` pair.
+taps give a `Float64` pair; the copy is read-only (a `ReadOnlyTaps`), so a pair
+(and the shared [`Q2345`](@ref)) cannot change after it is built.
 
 # Examples
 ```jldoctest
@@ -31,13 +32,13 @@ Float32
 ```
 """
 struct QuincunxFilterPair{T <: AbstractFloat}
-    f_ladder::Vector{T}  # 1-D ladder (lifting) filter β, unmodulated
-    QuincunxFilterPair{T}(f_ladder) where {T <: AbstractFloat} = new{T}(collect(T, f_ladder))
+    f_ladder::ReadOnlyTaps{T}  # 1-D ladder (lifting) filter β, unmodulated
+    QuincunxFilterPair{T}(f_ladder) where {T <: AbstractFloat} = new{T}(ReadOnlyTaps{T}(f_ladder))
 end
 
 QuincunxFilterPair(f_ladder::AbstractVector) = QuincunxFilterPair{float(eltype(f_ladder))}(f_ladder)
 
-Base.eltype(::QuincunxFilterPair{T}) where {T} = T
+Base.eltype(::Type{QuincunxFilterPair{T}}) where {T} = T
 
 # Pairs with equal ladder filters are equal and hash alike.
 Base.:(==)(a::QuincunxFilterPair, b::QuincunxFilterPair) = a.f_ladder == b.f_ladder

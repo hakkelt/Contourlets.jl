@@ -51,6 +51,12 @@ end
 @testitem "FilterPair eltype" tags = [:filters] begin
     @test eltype(CDF97) == Float64
     @test eltype(Q2345) == Float64
+    @test eltype(QuincunxFilterPair{Float32}) == Float32
+    # The ladder filter and a transform's levels are read-only: the shared Q2345,
+    # and a transform a workspace holds, cannot change after they are built.
+    @test_throws "read-only" Q2345.f_ladder[1] = 0.0
+    @test_throws "read-only" CT(scales = 2).direction_levels[1] = 3
+    @test CT(scales = 1).dfb_filters.f_ladder == Q2345.f_ladder
 end
 
 @testitem "upsample_kernel 2D" tags = [:filters] begin

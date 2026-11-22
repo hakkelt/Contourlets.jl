@@ -183,13 +183,15 @@ function nsdfb_reconstruct(
     Td = data_eltype(subbands[1])
     Tf = filter_eltype(Td)
     bank = _nsdfb_bank(subbands[1], l_levels, qfp, tree_level, half, Tf)
-    ref = Td === eltype(subbands[1]) ? subbands[1] : Td.(subbands[1])
-    X, pfwd, pinv = _ns_plans(ref)
+    # One dense buffer the plans are made for: the subbands may be slices of a
+    # stacked array, whose memory alignment the plans cannot assume.
+    buf = similar(subbands[1], Td)
+    X, pfwd, pinv = _ns_plans(buf)
     acc = fill!(similar(X), zero(eltype(X)))
     for k in 1:n
-        s = Td === eltype(subbands[k]) ? subbands[k] : Td.(subbands[k])
-        mul!(X, pfwd, s)
+        copyto!(buf, subbands[k])
+        mul!(X, pfwd, buf)
         acc .+= bank.syn[k] .* X
     end
-    return mul!(similar(ref), pinv, acc)
+    return mul!(buf, pinv, acc)
 end

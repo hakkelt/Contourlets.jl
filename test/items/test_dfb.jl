@@ -573,3 +573,12 @@ end
     @test check_pr_condition(CDF97; N = UInt8(32))
     @test parabolic_levels(Int32(4), UInt8(2)) == parabolic_levels(4, 2)
 end
+
+@testitem "nsdfb_reconstruct takes slices of a stacked array" tags = [:directional] begin
+    using Contourlets: nsdfb_decompose, nsdfb_reconstruct
+    using Random
+    x = randn(Xoshiro(4), 33, 33)
+    s = nsdfb_decompose(x, Q2345, 2)
+    c = cat(randn(33, 33), s...; dims = 3)    # slices 2:5 start off a 16-byte boundary
+    @test nsdfb_reconstruct([view(c, :, :, k) for k in 2:5], Q2345) ≈ x
+end

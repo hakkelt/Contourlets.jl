@@ -91,7 +91,8 @@ end
     nsdfb_decompose(bandpass, qfp, l_levels; tree_level = 1, half = :both)
         -> Vector{Matrix}
 
-Nonsubsampled DFB analysis.  Returns `2^l_levels` directional subbands, each the
+Nonsubsampled DFB analysis of `bandpass` with the ladder pair `qfp` and `l_levels`
+levels.  Returns `2^l_levels` directional subbands, each the
 same size as `bandpass`, each occupying an angular wedge of the frequency plane.
 Every subband commutes with circular shifts of `bandpass`, which must be indexed from 1.
 

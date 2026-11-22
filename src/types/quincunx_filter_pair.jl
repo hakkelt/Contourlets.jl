@@ -19,8 +19,8 @@ Phoong et al. (1995), built from the symmetric, even-length 1-D ladder filter
 their filters from `f_ladder` (see [`Q2345`](@ref)).  The pair holds a copy of
 `f_ladder` at precision `T`, by default `float(eltype(f_ladder))`, so integer
 taps give a `Float64` pair.  The constructor throws an `ArgumentError` for an
-empty, odd-length or asymmetric `f_ladder` and makes one symmetric to rounding
-exactly symmetric.  The copy is read-only (a `ReadOnlyTaps`), so a pair
+empty, odd-length or asymmetric `f_ladder`; a filter that is symmetric only up to
+rounding is made exactly symmetric.  The copy is read-only (a `ReadOnlyTaps`), so a pair
 (and the shared [`Q2345`](@ref)) cannot change after it is built.
 
 # Examples

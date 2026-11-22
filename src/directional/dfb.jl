@@ -63,10 +63,10 @@ end
         -> Vector{Matrix}
 
 Decompose `bandpass` into `2^l_levels` directional subbands using an
-`l_levels`-deep DFB.
+`l_levels`-deep DFB (`l_levels ≥ 0`; depth 0 returns a copy of `bandpass`).
 
 This is the directional filter bank of Do & Vetterli (2005) built from the ladder
-pair `qfp` (default [`Q2345`](@ref)): the subbands tile the frequency plane into
+pair `qfp` (normally [`Q2345`](@ref)): the subbands tile the frequency plane into
 `2^l_levels` directional wedges.  Both image dimensions must be divisible by
 `2^max(l_levels - 1, 1)`.  `bandpass` must be indexed from 1.
 

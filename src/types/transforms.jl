@@ -304,7 +304,9 @@ function Base.hash(t::_ContourletTransform, h::UInt)
 end
 
 function Base.show(io::IO, t::_ContourletTransform{T}) where {T}
-    print(io, nameof(_family(t)), "(scales = ", t.scales, ", direction_levels = ", t.direction_levels)
+    print(io, nameof(_family(t)))
+    T === Float64 || print(io, "{", T, "}")
+    print(io, "(scales = ", t.scales, ", direction_levels = ", t.direction_levels)
     t.lp_filters == _convert_pair(T, CDF97) || print(io, ", lp_filters = ", t.lp_filters)
     t.dfb_filters == _convert_qfp(T, Q2345) || print(io, ", dfb_filters = ", t.dfb_filters)
     return print(io, ")")

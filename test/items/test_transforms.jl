@@ -392,3 +392,15 @@ end
         @test synthesize(t, c; workspace = ws) ≈ x rtol = sqrt(eps(real(T)))
     end
 end
+
+@testitem "transforms print their element type and round-trip" tags = [:ct] begin
+    for F in (CT, NSCT, TICT, STICT), T in (Float32, Float64)
+        t = F{T}(scales = 2, direction_levels = [1, 2])
+        s = repr(t)
+        @test occursin("{Float32}", s) == (T === Float32)
+        @test eval(Meta.parse(s)) == t
+    end
+    # A precision mismatch now reads differently on both sides.
+    ws = make_workspace(CT{Float32}(scales = 2), Float32, (32, 32))
+    @test_throws "built for CT{Float32}(scales = 2" analyze(CT(scales = 2), randn(Float32, 32, 32); workspace = ws)
+end

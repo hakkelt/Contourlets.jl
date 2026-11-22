@@ -47,7 +47,9 @@ function lp_decompose(image::AbstractMatrix, fp::FilterPair)
     h = Tf === eltype(fp) ? fp.h : Tf.(fp.h)
     g = Tf === eltype(fp) ? fp.g : Tf.(fp.g)
     coarse = rect_downsample(conv2d_sep(im, h, h))
-    pred = conv2d_sep(rect_upsample(coarse), g, g)
+    # Upsampled to the image's size: one less than twice the coarse size along
+    # an odd axis.
+    pred = conv2d_sep(rect_upsample!(similar(coarse, size(im)), coarse), g, g)
     bandpass = im .- pred
     return coarse, bandpass
 end
@@ -57,8 +59,8 @@ end
                   tmp=similar(image), tmp2=similar(image)) -> (coarse, bandpass)
 
 In-place Laplacian Pyramid analysis.  `tmp` and `tmp2` must be distinct buffers
-of the same size as `image` (which must have even dimensions); when both are
-supplied the call is allocation-free.
+of the same size as `image`, and `coarse` of size `cld.(size(image), 2)`; when
+both are supplied the call is allocation-free.
 """
 function lp_decompose!(
         coarse::AbstractMatrix, bandpass::AbstractMatrix,
@@ -66,8 +68,6 @@ function lp_decompose!(
         tmp::AbstractMatrix = similar(image),
         tmp2::AbstractMatrix = similar(image)
     )
-    all(iseven, size(image)) ||
-        throw(ArgumentError("lp_decompose! requires even image dimensions; use lp_decompose"))
     Tf = filter_eltype(eltype(image))
     h = Tf === eltype(fp) ? fp.h : Tf.(fp.h)
     g = Tf === eltype(fp) ? fp.g : Tf.(fp.g)
@@ -111,7 +111,7 @@ function lp_reconstruct(
     g = Tf === eltype(fp) ? fp.g : Tf.(fp.g)
     coarse_T = Td === eltype(coarse) ? coarse : Td.(coarse)
     bandpass_T = Td === eltype(bandpass) ? bandpass : Td.(bandpass)
-    pred = conv2d_sep(rect_upsample(coarse_T), g, g)
+    pred = conv2d_sep(rect_upsample!(similar(coarse_T, size(bandpass_T)), coarse_T), g, g)
     return bandpass_T .+ pred
 end
 

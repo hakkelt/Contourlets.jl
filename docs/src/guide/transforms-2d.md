@@ -62,6 +62,12 @@ println("PR error:           ", maximum(abs, rec .- img))
 @assert maximum(abs, rec .- img) < 1e-12
 ```
 
+The image size has to suit the directional filter bank at every scale: the
+bandpass at scale `j` (the image halved, rounded up, once per finer scale) must
+be divisible by `2^max(l - 1, 1)` for a depth `l ≥ 1`. Odd sizes work with
+depth 0 where the bandpass is odd; the [`CT`](@ref) docstring states the rule,
+and a size that does not fit throws an error naming the nearest one that does.
+
 Perfect reconstruction is *structural*: the quincunx filters of Phoong et al.
 (1995) satisfy the perfect-reconstruction conditions for any ladder filter, so
 the residual sits at the round-off floor at every directional depth.

@@ -100,6 +100,14 @@ decimated directional filter bank of depth `direction_levels[j]`.  It is nearly
 critically sampled (about 4/3 coefficients per pixel); its subbands have different sizes, so the
 coefficients are a [`SubbandVector`](@ref).
 
+Image sizes: any size whose bandpass at every scale suits that scale's
+directional filter bank.  The bandpass at the finest scale has the image's size
+and each coarser one half of it, rounded up; a depth `l ≥ 1` needs both of its
+sides divisible by `2^max(l - 1, 1)` (depth 0 takes any size).  For example
+`CT(scales = 3, direction_levels = [0, 2, 3])` takes 100 × 100, and
+`direction_levels = [0, 0]` takes odd sizes.  A size that does not fit throws an
+`ArgumentError` naming the scale, the axis and the nearest length that fits.
+
 $(_TRANSFORM_KEYWORDS)
 
 Subbands ([`subband_layout`](@ref)): the lowpass first, as

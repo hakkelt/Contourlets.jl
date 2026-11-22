@@ -49,7 +49,7 @@ function _check_bank_dims(dims::NTuple{2, Int}, l::Int, decimated::Bool)
     m = 2^max(l - 1, 1)
     all(n -> n % m == 0, dims) || throw(
         ArgumentError(
-            "an $(l)-level DFB needs both image dimensions divisible by $(m) (got $(dims[1]) × $(dims[2]))"
+            "a $(l)-level DFB needs both image dimensions divisible by $(m) (got $(dims[1]) × $(dims[2]))"
         )
     )
     return dims

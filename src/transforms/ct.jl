@@ -21,7 +21,40 @@
 
 # The subband layout of a CT on a `dims` image, and the index of the first
 # subband of each scale.
+# Whether an image axis of length n fits scale j of t: the bandpass there (n
+# halved, rounded up, once per finer scale) must split into its decimated
+# directional bank (`_check_bank_dims`).
+function _ct_axis_fits(t::CT, n::Int, j::Int)
+    for _ in (j + 1):t.scales
+        n = cld(n, 2)
+    end
+    l = t.direction_levels[j]
+    return l == 0 || n % 2^max(l - 1, 1) == 0
+end
+
+# Throws, naming the scale, the axis and the nearest length that fits, unless
+# every scale's bandpass of an image of size `dims` suits its bank.
+function _check_ct_dims(t::CT, dims::NTuple{2, Int})
+    for a in 1:2, j in 1:t.scales
+        n = dims[a]
+        _ct_axis_fits(t, n, j) && continue
+        fits(m) = all(k -> _ct_axis_fits(t, m, k), 1:t.scales)
+        near = 0
+        for d in 1:(4n + 64), m in (n - d, n + d)
+            m >= 1 && fits(m) && (near = m; break)
+        end
+        l = t.direction_levels[j]
+        bp = n
+        for _ in (j + 1):t.scales
+            bp = cld(bp, 2)
+        end
+        throw(ArgumentError("an image of size $(dims[1]) × $(dims[2]) does not fit: at scale $(j) of $(t.scales) (1 the coarsest) axis $(a) has bandpass length $(bp), which its $(l)-level directional filter bank needs divisible by $(2^max(l - 1, 1)); the nearest image length that fits is $(near)"))
+    end
+    return dims
+end
+
 function _layout(t::CT, dims::NTuple{2, Int})
+    _check_ct_dims(t, dims)
     n1, n2 = dims
     levels = Vector{Vector{NTuple{2, Int}}}(undef, t.scales)
     for j in t.scales:-1:1          # the bandpass halves from the finest scale on

@@ -5,8 +5,10 @@
     @test abs(sum(CDF97.g) - 2.0) < 1.0e-12
 end
 
-@testitem "Q2345 PR condition" tags = [:filters] begin
-    @test Contourlets.check_pr_condition(Q2345)
+@testitem "Q2345 reconstructs perfectly" tags = [:filters] begin
+    using Contourlets: qfb_decompose, qfb_reconstruct
+    x = randn(16, 16)
+    @test qfb_reconstruct(qfb_decompose(x, Q2345)..., Q2345) ≈ x atol = 1.0e-12
 end
 
 @testitem "Q2345 structure" tags = [:filters] begin
@@ -81,14 +83,6 @@ end
     @test_throws ArgumentError Contourlets.upsample_kernel([1.0 2.0], 0)
 end
 
-@testitem "check_pr_condition(FilterPair)" tags = [:filters] begin
-    @test Contourlets.check_pr_condition(CDF97)
-end
-
-@testitem "check_pr_condition scales its tolerance with the precision" tags = [:filters] begin
-    @test Contourlets.check_pr_condition(QuincunxFilterPair(Float32.(Q2345.f_ladder)))
-    @test Contourlets.check_pr_condition(FilterPair(Float32.(CDF97.h), Float32.(CDF97.g)))
-end
 
 @testitem "the ladder table is evaluated per point when it would outgrow the grid" tags = [:filters] begin
     v = Contourlets._ladder_half(Q2345.f_ladder)
@@ -114,8 +108,10 @@ end
     @test qfp.f_ladder == Float32.(Q2345.f_ladder)
     qfp64 = QuincunxFilterPair{Float64}(Float32[0.25, 0.25])
     @test eltype(qfp64.f_ladder) == Float64
-    # Any ladder filter gives a perfect-reconstruction pair.
-    @test Contourlets.check_pr_condition(QuincunxFilterPair([0.1, 0.4, 0.4, 0.1]))
+    # Any valid ladder filter gives a perfect-reconstruction pair.
+    q = QuincunxFilterPair([0.1, 0.4, 0.4, 0.1])
+    x = randn(16, 16)
+    @test Contourlets.qfb_reconstruct(Contourlets.qfb_decompose(x, q)..., q) ≈ x atol = 1.0e-12
 end
 
 @testitem "pkva_ladder_filter symmetric 12-tap" tags = [:filters] begin

@@ -53,7 +53,7 @@ All are re-exported (`FilterPair`, `CDF97`) or imported (internals) in
 workspace types, the re-exported MTB interface, `Q2345`/`QuincunxFilterPair`,
 `parabolic_levels` and the re-exported `FilterPair`/`CDF97`.  The pyramid
 and directional stages (`lp_*`, `nsp_*`, `qfb_*`, `dfb_*`, `nsdfb_*`) and
-`upsample_kernel`/`check_pr_condition` are `@compat public`, not exported.
+`upsample_kernel` are `@compat public`, not exported.
 The raw primitives (`conv2d*`, `rect_*sample*`, `qx_*sample*`, `shear*`,
 `inv_shear*`) are internal, so their signatures may change without a breaking
 release; tests and docstring examples call them qualified

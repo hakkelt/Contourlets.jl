@@ -127,9 +127,8 @@ MultiscaleFilterBanks.upsample_filter
 MultiscaleFilterBanks.ReadOnlyTaps
 ```
 
-The filter utilities below are public but not exported.
+The filter utility below is public but not exported.
 
 ```@docs
 upsample_kernel
-check_pr_condition
 ```

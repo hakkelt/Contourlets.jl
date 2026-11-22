@@ -42,8 +42,7 @@ its filter types `FilterPair` and `CDF97` are re-exported here.
 
 ### Building blocks
 The pyramid and directional stages (`lp_*`, `nsp_*`, `qfb_*`, `dfb_*`,
-`nsdfb_*`) and the filter utilities `upsample_kernel` and `check_pr_condition`
-are public but not exported: load them by name, e.g.
+`nsdfb_*`) and the filter utility `upsample_kernel` are public but not exported: load them by name, e.g.
 `using Contourlets: lp_decompose, dfb_decompose`.
 """
 module Contourlets
@@ -136,6 +135,6 @@ export
     qfb_decompose, qfb_decompose!, qfb_reconstruct, qfb_reconstruct!,
     dfb_decompose, dfb_decompose!, dfb_reconstruct, dfb_reconstruct!, dfb_subband_sizes,
     nsdfb_decompose, nsdfb_reconstruct,
-    upsample_kernel, check_pr_condition
+    upsample_kernel
 
 end # module

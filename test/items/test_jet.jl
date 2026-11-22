@@ -13,8 +13,6 @@
     # ── Filters ──────────────────────────────────────────────────────────────
     @test_call target_modules = (Contourlets,) upsample_filter([1.0, 2.0, 3.0], 2)
     @test_call target_modules = (Contourlets,) Contourlets.upsample_kernel([1.0 2.0; 3.0 4.0], 2)
-    @test_call target_modules = (Contourlets,) Contourlets.check_pr_condition(Q2345)
-    @test_call target_modules = (Contourlets,) Contourlets.check_pr_condition(CDF97)
 
     # ── Primitives ───────────────────────────────────────────────────────────
     x = randn(16, 16)
@@ -190,7 +188,6 @@ end
     @test_opt target_modules = M parabolic_levels(4)
     @test_opt target_modules = M upsample_filter([1.0, 2.0, 3.0], 2)
     @test_opt target_modules = M Contourlets.upsample_kernel([1.0 2.0; 3.0 4.0], 2)
-    @test_opt target_modules = M Contourlets.check_pr_condition(Q2345)
 
     # ── Primitives ───────────────────────────────────────────────────────────
     @test_opt target_modules = M Contourlets.conv2d(x, k)

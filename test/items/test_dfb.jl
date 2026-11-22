@@ -547,7 +547,7 @@ end
 @testitem "building blocks take any integer" tags = [:directional, :pyramid, :filters] begin
     using Contourlets: dfb_decompose, dfb_decompose!, dfb_subband_sizes, nsdfb_decompose, nsdfb_reconstruct
     using Contourlets: nsp_decompose, nsp_decompose!, nsp_reconstruct, nsp_reconstruct!
-    using Contourlets: upsample_kernel, check_pr_condition
+    using Contourlets: upsample_kernel
     using Random
     x = randn(Xoshiro(11), 32, 32)
     @test dfb_decompose(x, Q2345, Int32(2)) == dfb_decompose(x, Q2345, 2)
@@ -566,8 +566,6 @@ end
     @test nsp_reconstruct!(similar(x), c, bp, CDF97, UInt8(2)) == nsp_reconstruct(c, bp, CDF97, 2)
     K = [1.0 2.0; 3.0 4.0]
     @test upsample_kernel(K, Int32(2)) == upsample_kernel(K, 2)
-    @test check_pr_condition(CDF97; N = Int32(32))
-    @test check_pr_condition(CDF97; N = UInt8(32))
     @test parabolic_levels(Int32(4), UInt8(2)) == parabolic_levels(4, 2)
 end
 

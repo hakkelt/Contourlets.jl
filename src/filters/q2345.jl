@@ -60,14 +60,14 @@ its 2-D quincunx mapping, whose analysis filters have 23 × 23 and 45 × 45 supp
 Perfect reconstruction is structural — exact to machine precision at every tree
 depth.
 
-Perfect-reconstruction property:
-
 ```jldoctest
-julia> using Contourlets
+julia> using Contourlets, Random
 
-julia> using Contourlets: check_pr_condition
+julia> using Contourlets: qfb_decompose, qfb_reconstruct
 
-julia> check_pr_condition(Q2345)
+julia> x = randn(Xoshiro(1), 16, 16);
+
+julia> maximum(abs, qfb_reconstruct(qfb_decompose(x, Q2345)..., Q2345) .- x) < 1e-12
 true
 ```
 """

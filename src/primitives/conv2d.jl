@@ -131,6 +131,25 @@ function _build_fft_plan(
     return fwd, inv, (p1, p2)
 end
 
+# pad_src = src extended by boundary mode B: ext_lo/ext_hi samples above/below
+# (left/right) of the image, the ones before it wrapped to the end of pad_src.
+function _fill_padded!(pad_src::AbstractMatrix{T}, src::AbstractMatrix, ext_lo1::Int, ext_hi1::Int, ext_lo2::Int, ext_hi2::Int, bv::Val) where {T}
+    n1, n2 = size(src)
+    p1, p2 = size(pad_src)
+    fill!(pad_src, zero(T))
+    @inbounds for J in 1:p2
+        # map padded column J to (possibly out-of-range) source column j
+        j = J <= n2 + ext_hi2 ? J : J - p2
+        (j > n2 + ext_hi2 || j < 1 - ext_lo2) && continue
+        for I in 1:p1
+            i = I <= n1 + ext_hi1 ? I : I - p1
+            (i > n1 + ext_hi1 || i < 1 - ext_lo1) && continue
+            pad_src[I, J] = _get(src, i, j, n1, n2, bv)
+        end
+    end
+    return pad_src
+end
+
 """
     _conv2d_fftw!(dst, src, kernel, origin, ws_fftw; boundary=:symmetric)
 
@@ -150,7 +169,6 @@ function _conv2d_fftw!(
     n1, n2 = size(src)
     kn1, kn2 = size(kernel)
     o1, o2 = origin
-    bv = Val(boundary)
 
     # Fill the padded source.  The circular convolution reads extended samples on
     # all four sides: indices above n1 (reach o1−1 below the image) sit at rows
@@ -159,16 +177,15 @@ function _conv2d_fftw!(
     # filled with the requested boundary extension; the same applies to columns.
     ext_lo1, ext_hi1 = kn1 - o1, o1 - 1   # extension above / below the image
     ext_lo2, ext_hi2 = kn2 - o2, o2 - 1
-    fill!(pad_src, zero(T))
-    @inbounds for J in 1:p2
-        # map padded column J to (possibly out-of-range) source column j
-        j = J <= n2 + ext_hi2 ? J : J - p2
-        (j > n2 + ext_hi2 || j < 1 - ext_lo2) && continue
-        for I in 1:p1
-            i = I <= n1 + ext_hi1 ? I : I - p1
-            (i > n1 + ext_hi1 || i < 1 - ext_lo1) && continue
-            pad_src[I, J] = _get(src, i, j, n1, n2, bv)
-        end
+    # Each branch passes a literal `Val`: `clamp_idx` takes the mode statically.
+    if boundary === :symmetric
+        _fill_padded!(pad_src, src, ext_lo1, ext_hi1, ext_lo2, ext_hi2, Val(:symmetric))
+    elseif boundary === :periodic
+        _fill_padded!(pad_src, src, ext_lo1, ext_hi1, ext_lo2, ext_hi2, Val(:periodic))
+    elseif boundary === :zero
+        _fill_padded!(pad_src, src, ext_lo1, ext_hi1, ext_lo2, ext_hi2, Val(:zero))
+    else
+        _throw_boundary(boundary)
     end
 
     # Place kernel in pad_ker with zero-phase wrap

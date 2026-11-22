@@ -214,11 +214,13 @@ function _qfb_col_decompose_ladder!(
         img::AbstractMatrix, qfp::QuincunxFilterPair
     )
     T = eltype(sb0)
-    f = _ladder_modulate(T.(qfp.f_ladder))
+    # Real filters on real or complex data: complex·real, never complex·complex.
+    Tf = real(T)
+    f = _ladder_modulate(Tf.(qfp.f_ladder))
     c = length(f) ÷ 2
     n1 = size(img, 1)
     d2 = size(sb0, 2)
-    s2 = sqrt(T(2))
+    s2 = sqrt(Tf(2))
     # y0 = (1/√2)·(p0 − B₁(p1)),  B₁ lags m − c + 1
     @inbounds for k in 1:d2
         for i in 1:n1
@@ -249,11 +251,12 @@ function _qfb_col_reconstruct_ladder!(
         sb1::AbstractMatrix, qfp::QuincunxFilterPair
     )
     T = eltype(out)
-    f = _ladder_modulate(T.(qfp.f_ladder))
+    Tf = real(T)
+    f = _ladder_modulate(Tf.(qfp.f_ladder))
     c = length(f) ÷ 2
     n1 = size(out, 1)
     d2 = size(sb0, 2)
-    s2 = sqrt(T(2))
+    s2 = sqrt(Tf(2))
     # p1 = (−1/√2)·(y1 + B₀(y0)) → even columns
     @inbounds for k in 1:d2
         for i in 1:n1

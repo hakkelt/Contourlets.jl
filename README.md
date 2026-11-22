@@ -129,7 +129,7 @@ The authors' MATLAB toolboxes —
 (GPL) and
 [Nonsubsampled Contourlet Toolbox](https://www.mathworks.com/matlabcentral/fileexchange/10049-nonsubsampled-contourlet-toolbox)
 (no license stated) — served as black-box references for validation and
-benchmarks only; no code is derived from them.  See [`LICENSE`](LICENSE).
+benchmarks only; no code is derived from them.  See [`NOTICE`](NOTICE).
 
 ## Disclaimer
 

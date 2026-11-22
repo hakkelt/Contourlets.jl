@@ -47,7 +47,7 @@ The pyramid and directional stages (`lp_*`, `nsp_*`, `qfb_*`, `dfb_*`,
 """
 module Contourlets
 
-using FFTW: FFTW, plan_rfft, plan_fft, plan_fft!, plan_irfft, plan_brfft, plan_bfft, plan_bfft!
+using FFTW: FFTW, plan_rfft, plan_fft, plan_fft!, plan_brfft, plan_bfft, plan_bfft!
 using LinearAlgebra: mul!
 using FastBroadcast: @..
 using Compat: @compat
@@ -74,7 +74,6 @@ include("filters/filter_utils.jl")
 
 # ── DSP primitives ────────────────────────────────────────────────────────────
 include("primitives/threading.jl")
-include("primitives/conv2d.jl")
 include("primitives/conv2d_sep.jl")
 include("primitives/sampling.jl")
 include("primitives/quincunx.jl")
@@ -111,7 +110,7 @@ include("precompile.jl")
 
 # ── Exports ───────────────────────────────────────────────────────────────────
 # The transform API is exported.  The pyramid and directional stages and the
-# filter utilities are public but not exported; the raw primitives (conv2d*,
+# filter utilities are public but not exported; the raw primitives (conv2d_sep*,
 # rect_*sample*, qx_*sample*, shear*, inv_shear*) are internal.
 export
     # Transforms and their workspaces

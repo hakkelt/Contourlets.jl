@@ -1,6 +1,21 @@
 # Separable 2-D convolution (conv2d_sep! / conv2d_sep): a column pass then a row
-# pass with 1-D filters, plus a SIMD fast path for real CPU arrays.  The boundary
-# extension helper `_get` lives in `conv2d.jl`.
+# pass with 1-D filters, plus a SIMD fast path for real CPU arrays.
+
+# The boundary extension: `clamp_idx` (from MultiscaleFilterBanks) takes the mode
+# B as a type parameter, so each mode compiles to its own code with no dispatch
+# per sample.
+@inline function _get(
+        src::AbstractMatrix{T}, i::Int, j::Int, n1::Int, n2::Int,
+        bv::Val{B}
+    )::T where {T, B}
+    ii = clamp_idx(i, n1, bv)
+    jj = clamp_idx(j, n2, bv)
+    (B === :zero && (ii < 1 || ii > n1 || jj < 1 || jj > n2)) && return zero(T)
+    return @inbounds src[ii, jj]
+end
+
+@noinline _throw_boundary(boundary) =
+    throw(ArgumentError("boundary must be :symmetric, :periodic or :zero, got :$(boundary)"))
 
 """
     conv2d_sep!(dst, src, h_row, h_col; boundary=:symmetric, tmp=similar(src)) -> dst

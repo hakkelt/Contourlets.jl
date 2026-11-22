@@ -4,8 +4,7 @@
 Resolve a transform's `threaded` keyword for data of element type `T`: `true`
 and `false` are taken as given; `nothing` (let the transform decide) threads
 complex data only.  The result decides whether the mask-bank engine runs its
-subband loop threaded and whether the FFTW plans of the convolutions use all of
-Julia's threads.
+subband loop threaded.
 """
 function use_threading end
 

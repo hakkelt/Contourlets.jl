@@ -1,33 +1,3 @@
-@testitem "conv2d direct backend small kernel" tags = [:primitives] begin
-    using Random
-    Random.seed!(1)
-    x = randn(16, 16)
-    # 3-tap separable averaging kernel, compare against a hand-rolled reference
-    k = reshape([0.25, 0.5, 0.25], 3, 1)
-    out = Contourlets.conv2d(x, k, (2, 1); boundary = :symmetric)
-    # Symmetric (whole-sample) reflection: row 0 ↦ row 2, row n+1 ↦ row n-1.
-    refl(i) = i < 1 ? 2 - i : (i > 16 ? 32 - i : i)
-    ref = similar(x)
-    for j in 1:16, i in 1:16
-        ref[i, j] = 0.25x[refl(i - 1), j] + 0.5x[i, j] + 0.25x[refl(i + 1), j]
-    end
-    @test maximum(abs, out .- ref) < 1.0e-13
-end
-
-@testitem "conv2d FFTW backend matches direct (all boundaries)" tags = [:primitives] begin
-    using Random
-    Random.seed!(101)
-    x = randn(40, 48)
-    k = randn(7, 7)            # 49 taps > 25 ⇒ FFTW path
-    c = (4, 4)
-    for b in (:symmetric, :periodic, :zero)
-        out_fftw = Contourlets.conv2d(x, k, c; boundary = b)   # FFTW path
-        out_dir = similar(x)
-        Contourlets._conv2d_direct!(out_dir, x, k, c; boundary = b)
-        @test maximum(abs, out_fftw .- out_dir) < 1.0e-10
-    end
-end
-
 @testitem "rect_downsample / upsample round-trip" tags = [:primitives] begin
     using Random
     Random.seed!(2)
@@ -68,44 +38,6 @@ end
         @test dst == ref[dir]
         @test x == y           # the source is left alone
     end
-end
-
-@testitem "conv2d FFTW backend (large kernel)" tags = [:primitives] begin
-    using Random
-    Random.seed!(4)
-    x = randn(32, 32)
-    # Kernel with more than 25 elements triggers FFTW path
-    k = randn(6, 6)   # 36 elements
-    # origin at center
-    c = (3, 3)
-    out_fftw = Contourlets.conv2d(x, k, c; boundary = :symmetric)
-    # The FFT path equals the direct path on the whole array, for every boundary.
-    for boundary in (:symmetric, :periodic, :zero)
-        direct = Contourlets._conv2d_direct!(similar(x), x, k, c; boundary)
-        @test Contourlets.conv2d(x, k, c; boundary) ≈ direct atol = 1.0e-12
-    end
-end
-
-@testitem "conv2d boundary modes :periodic and :zero" tags = [:primitives] begin
-    using Random
-    Random.seed!(5)
-    x = randn(8, 8)
-    k = reshape([0.25, 0.5, 0.25], 3, 1)
-    out_sym = Contourlets.conv2d(x, k; boundary = :symmetric)
-    out_per = Contourlets.conv2d(x, k; boundary = :periodic)
-    out_zero = Contourlets.conv2d(x, k; boundary = :zero)
-    # Interior pixels should all agree (away from boundary)
-    @test maximum(abs, out_sym[3:6, :] .- out_per[3:6, :]) < 1.0e-13
-    @test maximum(abs, out_sym[3:6, :] .- out_zero[3:6, :]) < 1.0e-13
-    # Boundary pixels differ between modes
-    @test out_sym[1, 1] != out_per[1, 1] || out_sym[1, 1] != out_zero[1, 1]
-end
-
-@testitem "conv2d! size mismatch error" tags = [:primitives] begin
-    x = randn(8, 8)
-    k = randn(3, 3)
-    dst = zeros(4, 8)
-    @test_throws DimensionMismatch Contourlets.conv2d!(dst, x, k)
 end
 
 @testitem "qx_downsample / upsample round-trip" tags = [:primitives] begin
@@ -300,17 +232,6 @@ end
     end
 end
 
-@testitem "conv2d! large kernel threaded = true" tags = [:primitives] begin
-    using Random
-    Random.seed!(102)
-    x = randn(32, 32)
-    k = randn(6, 6)   # 36 taps > 25 ⇒ FFTW path
-    out_enabled = Contourlets.conv2d(x, k; threaded = true)
-    out_auto = Contourlets.conv2d(x, k; threaded = nothing)
-    @test size(out_enabled) == size(x)
-    @test maximum(abs, out_enabled .- out_auto) < 1.0e-10
-end
-
 @testitem "even-length filters: fast path matches generic path" tags = [:primitives] begin
     using Random
     Random.seed!(42)
@@ -338,9 +259,6 @@ end
     x = randn(16, 16)
     h = [0.25, 0.5, 0.25]
     msg = "boundary must be :symmetric, :periodic or :zero, got :reflect"
-    @test_throws msg Contourlets.conv2d(x, randn(3, 3); boundary = :reflect)   # direct backend
-    @test_throws msg Contourlets.conv2d(x, randn(7, 7); boundary = :reflect)   # FFTW backend
-    @test_throws msg Contourlets.conv2d!(similar(x), x, randn(7, 7); boundary = :reflect)
     @test_throws msg Contourlets.conv2d_sep(x, h, h; boundary = :reflect)
     @test_throws msg Contourlets.conv2d_sep!(similar(x), x, h, h; boundary = :reflect)
 end

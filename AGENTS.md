@@ -54,7 +54,7 @@ workspace types, the re-exported MTB interface, `Q2345`/`QuincunxFilterPair`,
 `parabolic_levels` and the re-exported `FilterPair`/`CDF97`.  The pyramid
 and directional stages (`lp_*`, `nsp_*`, `qfb_*`, `dfb_*`, `nsdfb_*`) and
 `upsample_kernel` are `@compat public`, not exported.
-The raw primitives (`conv2d*`, `rect_*sample*`, `qx_*sample*`, `shear*`,
+The raw primitives (`conv2d_sep*`, `rect_*sample*`, `qx_*sample*`, `shear*`,
 `inv_shear*`) are internal, so their signatures may change without a breaking
 release; tests and docstring examples call them qualified
 (`Contourlets.conv2d_sep`).  Every public name needs a docstring and an entry in
@@ -95,7 +95,7 @@ Conventions that are non-obvious or specific to this package's API contract:
   image data may be complex (`Td <: Number`). The two flow independently —
   `Td = data_eltype(image)`, `Tf = filter_eltype(Td) = real(float(Td))` — so a
   complex image is filtered as complex·real (never complex·complex). Multiply
-  kernels (`conv2d_sep!`, `conv2d` direct, `_sefilter2`, `_nsqfb_*`, `qfb`) take
+  kernels (`conv2d_sep!`, `_sefilter2`, `_nsqfb_*`, `qfb`) take
   `src::{Td}` / filter `::{Tf}` separately and accumulate in `Td`; workspace types
   start with the parameters `{Td, Tf}` (dispatch annotations `{T}` bind the first
   param = data type). The transforms are real-linear, `T(x + i·y) ≈ T(x) + i·T(y)`,
@@ -228,7 +228,7 @@ output.
 - **Hybrid Threading Architecture** — real data (`Float32`/`Float64`) uses
   single-threaded `@simd` loops; complex data uses
   `Polyester.@batch` (multi-core, near-zero spawn overhead). The NSCT and
-  TICT transforms (and `conv2d`) expose a `threaded::Union{Bool, Nothing}`
+  TICT transforms expose a `threaded::Union{Bool, Nothing}`
   keyword: `nothing` (default), `true`, `false`; the CT and STICT accept and ignore it.
   `nothing` enables threading for complex types only. Load the `my-threading` skill
   before adding or modifying threaded loops.  The FFT-bound workspace paths

@@ -16,10 +16,7 @@
 
     # ── Primitives ───────────────────────────────────────────────────────────
     x = randn(16, 16)
-    k = randn(3, 3)
-    @test_call target_modules = (Contourlets,) Contourlets.conv2d(x, k)
     dst = similar(x)
-    @test_call target_modules = (Contourlets,) Contourlets.conv2d!(dst, x, k)
     @test_call target_modules = (Contourlets,) Contourlets.conv2d_sep(x, [1.0, 2.0, 1.0], [1.0, 2.0, 1.0])
     @test_call target_modules = (Contourlets,) Contourlets.conv2d_sep!(dst, x, [1.0, 2.0, 1.0], [1.0, 2.0, 1.0])
 
@@ -177,7 +174,6 @@ end
     Random.seed!(103)
     M = (Contourlets,)
     x = randn(16, 16)
-    k = randn(3, 3)
     h = [1.0, 2.0, 1.0]
     dst = similar(x)
 
@@ -190,8 +186,6 @@ end
     @test_opt target_modules = M Contourlets.upsample_kernel([1.0 2.0; 3.0 4.0], 2)
 
     # ── Primitives ───────────────────────────────────────────────────────────
-    @test_opt target_modules = M Contourlets.conv2d(x, k)
-    @test_opt target_modules = M Contourlets.conv2d!(dst, x, k)
     @test_opt target_modules = M Contourlets.conv2d_sep!(dst, x, h, h)
     y = Contourlets.rect_downsample(x)
     qy = Contourlets.qx_downsample(x)

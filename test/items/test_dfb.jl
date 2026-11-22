@@ -85,7 +85,7 @@ end
     @test sbs[1] == x
 end
 
-@testitem "NSDFB PR levels 1–3, tree_level 1–3" tags = [:directional] begin
+@testitem "NSDFB PR levels 1–3, tree_level 1–5" tags = [:directional] begin
     using Random
     Random.seed!(23)
     x = randn(32, 32)
@@ -145,8 +145,7 @@ end
 @testitem "NSDFB angle sweep resolves all wedges" tags = [:directional] begin
     # Sweeping orientation over 180° at l=3 (8 wedges) must light up every wedge:
     # a directional bank resolves all 2^l distinct dominant subbands, a degenerate
-    # one collapses to far fewer (the old block bank resolved ≤6, the broken
-    # diagonal-only bank only 4).
+    # one (a block or a diagonal-only partition) collapses to far fewer.
     n = 128
     wave(θ) = [cos(2π * 0.42 * (cos(θ) * j + sin(θ) * i)) for i in 1:n, j in 1:n]
     doms = [
@@ -210,10 +209,9 @@ end
 
 @testitem "DFB and NSDFB resolve every wedge at every depth" tags = [:directional] begin
     # A plane wave sweeping 180° must make each of the 2ˡ subbands dominant in
-    # turn.  Perfect reconstruction proves nothing about the partition; this does.
-    # (The previous NSDFB, like the NSCT Toolbox's nsdfbdec run as a black box on
-    # the same sweep, merged sibling wedges from l = 4 on: 8 of 16 and 16 of 32
-    # subbands never dominate.)  Integer frequencies keep the waves periodic on
+    # turn.  Perfect reconstruction proves nothing about the partition; this does:
+    # a bank that merges sibling wedges (as the NSCT Toolbox's nsdfbdec does from
+    # l = 4 on: 8 of 16 and 16 of 32 subbands never dominate) fails it.  Integer frequencies keep the waves periodic on
     # the grid, so no spectral leakage blurs the wedge boundaries.
     #
     # At l = 5 the two 3.6°-wide wedges that border the ±45° fan boundary

@@ -95,7 +95,7 @@ end
     @test ws isa NSCTWorkspace{ComplexF64, Float64}
 end
 
-@testitem "_base_array_type on SubArray type" tags = [:ct] begin
+@testitem "_scratch_like on a SubArray" tags = [:ct] begin
     x = randn(8, 8)
     sv = @view x[1:4, 1:4]
     scratch = Contourlets._scratch_like(sv, 4, 4)

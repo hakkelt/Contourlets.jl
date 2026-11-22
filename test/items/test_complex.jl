@@ -63,13 +63,14 @@ end
     ws = make_workspace(t, ComplexF64, (64, 64))
     @test ws isa CTWorkspace{ComplexF64, Float64}
     cw = analyze(t, z; workspace = ws)
-    @test subband(t, cw, 1) ≈ subband(t, analyze(t, z), 1)
+    ca = analyze(t, z)
+    @test all(i -> subband(t, cw, i) ≈ subband(t, ca, i), 1:nsubbands(t, size(z)))
     @test maximum(abs, synthesize(t, cw) .- z) < 1.0e-12
 
     tn = NSCT(scales = 2, direction_levels = [2, 1])
     wsn = make_workspace(tn, ComplexF64, (64, 64))
     nw = analyze(tn, z; workspace = wsn)
-    @test subband(tn, nw, 1) ≈ subband(tn, analyze(tn, z), 1)
+    @test nw ≈ analyze(tn, z)
 end
 
 @testitem "primitive conv2d_sep with complex data, real filter" tags = [:primitives] begin

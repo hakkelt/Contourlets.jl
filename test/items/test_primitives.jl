@@ -55,12 +55,19 @@ end
 @testitem "shear does not alias src/dst" tags = [:primitives] begin
     x = randn(8, 8)
     y = copy(x)
-    sh = Contourlets.shear(x, :h)          # allocating — never aliases
-    @test sh != x              # result differs from identity
-    # in-place shear! into a separate dst is fine
-    dst = similar(x)
-    Contourlets.shear!(dst, x, :h)
-    @test dst == sh
+    n1, n2 = size(x)
+    # The shears are index remaps: :h shifts row i by i columns, :v column j by j rows.
+    ref = Dict(
+        :h => [x[i, mod1(j + i, n2)] for i in 1:n1, j in 1:n2],
+        :v => [x[mod1(i + j, n1), j] for i in 1:n1, j in 1:n2],
+    )
+    for dir in (:h, :v)
+        @test Contourlets.shear(x, dir) == ref[dir]
+        dst = similar(x)
+        Contourlets.shear!(dst, x, dir)
+        @test dst == ref[dir]
+        @test x == y           # the source is left alone
+    end
 end
 
 @testitem "conv2d FFTW backend (large kernel)" tags = [:primitives] begin
@@ -72,10 +79,11 @@ end
     # origin at center
     c = (3, 3)
     out_fftw = Contourlets.conv2d(x, k, c; boundary = :symmetric)
-    # Compute reference with direct backend via small kernel comparison:
-    # just ensure the output has correct size and is finite
-    @test size(out_fftw) == size(x)
-    @test all(isfinite, out_fftw)
+    # The FFT path equals the direct path on the whole array, for every boundary.
+    for boundary in (:symmetric, :periodic, :zero)
+        direct = Contourlets._conv2d_direct!(similar(x), x, k, c; boundary)
+        @test Contourlets.conv2d(x, k, c; boundary) ≈ direct atol = 1.0e-12
+    end
 end
 
 @testitem "conv2d boundary modes :periodic and :zero" tags = [:primitives] begin
@@ -194,18 +202,28 @@ end
 @testitem "conv2d_sep! periodic and zero boundaries" tags = [:primitives] begin
     using Random
     Random.seed!(60)
-    x = randn(8, 8)
-    h = Float64[0.25, 0.5, 0.25]
-    dst_per = similar(x)
-    Contourlets.conv2d_sep!(dst_per, x, h, h; boundary = :periodic)
-    dst_sym = similar(x)
-    Contourlets.conv2d_sep!(dst_sym, x, h, h; boundary = :symmetric)
-    @test maximum(abs, dst_per[3:6, 3:6] .- dst_sym[3:6, 3:6]) < 1.0e-12
-    dst_zero = similar(x)
-    Contourlets.conv2d_sep!(dst_zero, x, h, h; boundary = :zero)
-    @test size(dst_zero) == size(x)
-    @test all(isfinite, dst_zero)
-    @test maximum(abs, dst_zero[3:6, 3:6] .- dst_sym[3:6, 3:6]) < 1.0e-12
+    # Reference: a separable convolution reading x through `get(i, n)`, which
+    # returns the extended index or 0 for a zero sample.
+    function ref_conv_sep(x, h, get)
+        n1, n2 = size(x)
+        c = (length(h) + 1) ÷ 2
+        at(i, j) = (ii = get(i, n1); jj = get(j, n2); ii == 0 || jj == 0 ? zero(eltype(x)) : x[ii, jj])
+        tmp = [sum(h[k] * at(i - (k - c), j) for k in eachindex(h)) for i in 1:n1, j in 1:n2]
+        tat(i, j) = (jj = get(j, n2); jj == 0 ? zero(eltype(x)) : tmp[i, jj])
+        return [sum(h[k] * tat(i, j - (k - c)) for k in eachindex(h)) for i in 1:n1, j in 1:n2]
+    end
+    periodic(i, n) = mod1(i, n)
+    zeropad(i, n) = 1 <= i <= n ? i : 0
+    h = Float64[0.1, 0.25, 0.3, 0.25, 0.1]
+    for (nr, nc) in ((8, 8), (7, 5))
+        x = randn(nr, nc)
+        for (boundary, get) in ((:periodic, periodic), (:zero, zeropad))
+            dst = similar(x)
+            Contourlets.conv2d_sep!(dst, x, h, h; boundary)
+            @test dst ≈ ref_conv_sep(x, h, get) atol = 1.0e-12
+            @test Contourlets.conv2d_sep(x, h, h; boundary) == dst
+        end
+    end
 end
 
 @testitem "conv2d_sep allocating matches in-place" tags = [:primitives] begin
@@ -219,31 +237,12 @@ end
     @test dst_alloc == dst_ip
 end
 
-@testitem "conv2d_sep periodic boundary allocating" tags = [:primitives] begin
-    using Random
-    Random.seed!(95)
-    x = randn(8, 8)
-    h = [0.25, 0.5, 0.25]
-    out = Contourlets.conv2d_sep(x, h, h; boundary = :periodic)
-    @test size(out) == size(x)
-    @test all(isfinite, out)
-end
-
-@testitem "conv2d_sep zero boundary allocating" tags = [:primitives] begin
-    using Random
-    Random.seed!(96)
-    x = randn(8, 8)
-    h = [0.25, 0.5, 0.25]
-    out = Contourlets.conv2d_sep(x, h, h; boundary = :zero)
-    @test size(out) == size(x)
-    @test all(isfinite, out)
-end
-
 @testitem "conv2d_sep symmetric: no OOB with long filter on small image" tags = [:primitives] begin
     using Random
     Random.seed!(200)
     # CDF97 analysis filter (9 taps): radius 4 exceeds image radius on 3×3 and 4×4 inputs.
-    # The single-fold reflection formula previously left indices out of [1,n] → OOB under @inbounds.
+    # The reflection must fold indices back into 1:n however far the filter reaches
+    # past the edge: a single reflection would index out of bounds under @inbounds.
     h9 = Float64[
         0.02674875741081, -0.016864118442875, -0.07822326652899,
         0.266864118442875, 0.60294901823636, 0.266864118442875,

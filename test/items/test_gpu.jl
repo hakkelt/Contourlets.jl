@@ -156,7 +156,10 @@ end
             zg = to_gpu(backend, z)
             cgpu = analyze(t, zg)
             @test eltype(cgpu) <: Complex
-            @test maximum(abs, Array(subband(t, cgpu, 1)) .- subband(t, ccpu, 1)) < 1.0f-5
+            # Every subband, not only the lowpass.
+            for i in 1:nsubbands(t, size(z))
+                @test maximum(abs, Array(subband(t, cgpu, i)) .- subband(t, ccpu, i)) < 1.0f-4
+            end
             @test maximum(abs, Array(synthesize(t, cgpu)) .- z) < 1.0f-4
         end
     end
@@ -550,8 +553,8 @@ end
 @testitem "GPU interface conformance (JLArrays)" tags = [:gpu] setup = [GPUBackends] begin
     using GPUEnv, Random
     using MultiscaleTransformsBase.Testing: test_transform
-    x = randn(Xoshiro(13), Float32, 32, 32)
-    for backend in GPUBackends.fft_backends
+    rng = Xoshiro(13)
+    for backend in GPUBackends.fft_backends, x in (randn(rng, Float32, 32, 32), randn(rng, ComplexF32, 32, 32))
         backend.name === :JLArray || continue
         xg = to_gpu(backend, x)
         for t in (CT(scales = 2, direction_levels = [3, 2]), NSCT(scales = 2, direction_levels = [3, 2]), TICT(scales = 2, direction_levels = [1, 2]), STICT(scales = 2, direction_levels = [2, 3]))

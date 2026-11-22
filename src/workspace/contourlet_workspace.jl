@@ -209,7 +209,8 @@ type means `float(T)`), on the host.  The second form takes size, element type
 and array type from the image `x`; pass a device array to build a device
 workspace.  With it, `analyze!` and `synthesize!` allocate nothing.  The
 workspace runs at the precision of `T`: a `Float32` workspace converts the
-filters of a `Float64` transform.
+filters of a `Float64` transform.  A workspace's buffers serve one call at a
+time: tasks that run transforms concurrently need a workspace each.
 
 $(_WORKSPACE_KEYWORDS)
 

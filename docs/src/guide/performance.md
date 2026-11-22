@@ -85,7 +85,7 @@ in one task per Julia thread (FFTW's own threads, which split a single FFT, gain
 little at image sizes).  Real data stays single-threaded by default there too;
 pass `threaded = true` to use the cores.  `make_workspace(t, img; tasks = n)`
 bounds a workspace to `n` tasks (and `n` FFT buffers), for instance when the
-caller runs several workspaces in its own threads:
+caller runs several workspaces in its own threads.  A workspace's buffers serve one call at a time: tasks that run transforms concurrently need a workspace each.:
 
 ```@example perf
 tt = TICT(scales = 3, direction_levels = [2, 3, 4])

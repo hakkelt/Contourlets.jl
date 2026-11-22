@@ -306,6 +306,8 @@ buys.
     their independent subband FFTs between those tasks.  The choice is made per
     call; `tasks = 1` gives a serial workspace.  `make_workspace` also takes the
     FFTW planner `flags` of its host plans (`FFTW.MEASURE` by default).
+    A workspace's buffers serve one call at a time: tasks that run transforms
+    concurrently need a workspace each.
 
 ## Using the stages on their own
 

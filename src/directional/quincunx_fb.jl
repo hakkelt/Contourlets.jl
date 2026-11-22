@@ -26,6 +26,7 @@ Two-channel quincunx filter bank analysis.
 * `dir=:row`: filter in row direction, keep even rows (via transpose).
 
 Returns `(sb0, sb1)` where `sb0` is the LP subband and `sb1` the HP subband.
+`image` must be indexed from 1.
 
 # Examples
 ```jldoctest
@@ -52,6 +53,7 @@ julia> size(sb0), size(sb0_r)
    EPFL, 2001, §3.2–3.3.
 """
 function qfb_decompose(image::AbstractMatrix, qfp::QuincunxFilterPair; dir::Symbol = :col)
+    Base.require_one_based_indexing(image)
     Td = data_eltype(image)         # data type (real or complex)
     Tf = filter_eltype(Td)          # real filter precision
     img = Td === eltype(image) ? image : Td.(image)
@@ -68,7 +70,7 @@ end
 """
     qfb_decompose!(sb0, sb1, image, qfp; dir=:col) -> (sb0, sb1)
 
-In-place two-channel quincunx filter bank analysis.
+In-place two-channel quincunx filter bank analysis.  All arrays must be indexed from 1.
 """
 function qfb_decompose!(
         sb0::AbstractMatrix, sb1::AbstractMatrix,
@@ -92,7 +94,7 @@ end
 """
     qfb_reconstruct(sb0, sb1, qfp; dir=:col) -> image
 
-Two-channel quincunx filter bank synthesis.
+Two-channel quincunx filter bank synthesis.  `sb0` and `sb1` must be indexed from 1.
 
 # Examples
 ```jldoctest
@@ -114,6 +116,7 @@ function qfb_reconstruct(
         sb0::AbstractMatrix, sb1::AbstractMatrix,
         qfp::QuincunxFilterPair; dir::Symbol = :col
     )
+    Base.require_one_based_indexing(sb0, sb1)
     Td = data_eltype(promote_type(eltype(sb0), eltype(sb1)))  # data type
     Tf = filter_eltype(Td)                                    # real filter precision
     sb0T = Td === eltype(sb0) ? sb0 : Td.(sb0)
@@ -131,7 +134,7 @@ end
 """
     qfb_reconstruct!(out, sb0, sb1, qfp; dir=:col) -> out
 
-In-place two-channel quincunx filter bank synthesis.
+In-place two-channel quincunx filter bank synthesis.  All arrays must be indexed from 1.
 """
 function qfb_reconstruct!(
         out::AbstractMatrix, sb0::AbstractMatrix,
@@ -155,6 +158,7 @@ end
 
 # The two channels are the quincunx half grid of the image along `dir`.
 function _check_qfb_sizes(sb0::AbstractMatrix, sb1::AbstractMatrix, image::AbstractMatrix, dir::Symbol)
+    Base.require_one_based_indexing(sb0, sb1, image)
     n1, n2 = size(image)
     half = dir === :col ? (iseven(n2) ? (n1, n2 ÷ 2) : nothing) : (iseven(n1) ? (n1 ÷ 2, n2) : nothing)
     half === nothing &&

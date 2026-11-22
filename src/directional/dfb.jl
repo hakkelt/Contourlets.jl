@@ -20,6 +20,14 @@
 # §3.3; M. N. Do & M. Vetterli, "The contourlet transform: an efficient
 # directional multiresolution image representation", IEEE TIP 14(12), 2005.
 
+# Throws unless the subband vector and every subband in it are indexed from 1
+# (the bank loops and the quincunx packing index them by position).
+function _require_one_based_bands(subbands::AbstractVector)
+    Base.require_one_based_indexing(subbands)
+    foreach(Base.require_one_based_indexing, subbands)
+    return nothing
+end
+
 # Bank for `bandpass`, or the matching one carried by a workspace.
 function _dfb_runner(bandpass::AbstractMatrix, l::Int, qfp::QuincunxFilterPair, half::Symbol, ::Type{Tf}) where {Tf}
     bank = _directional_bank(Tf, size(bandpass), l, qfp.f_ladder; decimated = true, half = half)
@@ -60,7 +68,7 @@ Decompose `bandpass` into `2^l_levels` directional subbands using an
 This is the directional filter bank of Do & Vetterli (2005) built from the ladder
 pair `qfp` (default [`Q2345`](@ref)): the subbands tile the frequency plane into
 `2^l_levels` directional wedges.  Both image dimensions must be divisible by
-`2^max(l_levels - 1, 1)`.
+`2^max(l_levels - 1, 1)`.  `bandpass` must be indexed from 1.
 
 `half = :first` or `:second` gives the half trees of Eslami & Radha (2006): only one
 of the two level-1 fans is split further, so there are `2^(l_levels-1) + 1`
@@ -98,6 +106,7 @@ function dfb_decompose(
     l_levels = Int(l_levels)
     l_levels >= 0 || throw(ArgumentError("l_levels must be ≥ 0"))
     _check_half(half)
+    Base.require_one_based_indexing(bandpass)
     l_levels == 0 && return [copy(bandpass)]
     Td = data_eltype(bandpass)      # data type (real or complex)
     Tf = filter_eltype(Td)          # real filter precision
@@ -116,7 +125,7 @@ In-place DFB analysis into preallocated `subbands` of the sizes
 image size and depth match supplies the precomputed filters and FFT buffers, so the
 call allocates nothing.  A workspace that cannot serve the call (no DFB for this
 bandpass size and depth, other filters, another precision, or `half ≠ :both`)
-throws an `ArgumentError`.
+throws an `ArgumentError`.  `bandpass` and the subbands must be indexed from 1.
 """
 function dfb_decompose!(
         subbands::AbstractVector{<:AbstractMatrix}, bandpass::AbstractMatrix,
@@ -127,6 +136,8 @@ function dfb_decompose!(
     l_levels = Int(l_levels)
     l_levels >= 0 || throw(ArgumentError("l_levels must be ≥ 0"))
     _check_half(half)
+    Base.require_one_based_indexing(bandpass)
+    _require_one_based_bands(subbands)
     length(subbands) == _bank_n_subbands(l_levels, half) ||
         throw(ArgumentError("subbands must hold $(_bank_n_subbands(l_levels, half)) matrices"))
     l_levels == 0 && return (_check_size(size(bandpass), "subbands[1]" => subbands[1]); copyto!(subbands[1], bandpass); subbands)
@@ -138,7 +149,7 @@ end
     dfb_reconstruct(subbands, qfp::QuincunxFilterPair; half=:both, workspace=nothing) -> bandpass
 
 Reconstruct a bandpass image from its directional subbands (pass the same `half`
-as the analysis).
+as the analysis).  The subbands must be indexed from 1.
 
 # Examples
 ```jldoctest
@@ -162,6 +173,7 @@ function dfb_reconstruct(
         half::Symbol = :both,
         workspace = nothing
     )
+    _require_one_based_bands(subbands)
     n = length(subbands)
     n >= 1 || throw(ArgumentError("subbands must be non-empty"))
     _check_half(half)
@@ -180,7 +192,8 @@ end
 
 In-place DFB synthesis into `bandpass`.  A matching workspace from
 [`make_workspace`](@ref) makes the call allocation-free; one that does not match
-throws an `ArgumentError`, as for [`dfb_decompose!`](@ref).
+throws an `ArgumentError`, as for [`dfb_decompose!`](@ref).  `bandpass` and the
+subbands must be indexed from 1.
 """
 function dfb_reconstruct!(
         bandpass::AbstractMatrix, subbands::AbstractVector{<:AbstractMatrix}, qfp::QuincunxFilterPair;
@@ -188,6 +201,8 @@ function dfb_reconstruct!(
         workspace = nothing
     )
     _check_half(half)
+    Base.require_one_based_indexing(bandpass)
+    _require_one_based_bands(subbands)
     n = length(subbands)
     n == 1 && return (_check_size(size(bandpass), "subbands[1]" => subbands[1]); copyto!(bandpass, subbands[1]))
     l_levels = _dfb_levels_from_count(n, half)

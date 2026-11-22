@@ -93,7 +93,7 @@ end
 
 Nonsubsampled DFB analysis.  Returns `2^l_levels` directional subbands, each the
 same size as `bandpass`, each occupying an angular wedge of the frequency plane.
-Every subband commutes with circular shifts of `bandpass`.
+Every subband commutes with circular shifts of `bandpass`, which must be indexed from 1.
 
 `tree_level` is the pyramid split `j` the bandpass comes from, counted from the
 first, finest split (`j = 1`); scale `s` of an [`NSCT`](@ref) with `scales`
@@ -131,6 +131,7 @@ function nsdfb_decompose(
     l_levels >= 0 || throw(ArgumentError("l_levels must be ≥ 0"))
     tree_level >= 1 || throw(ArgumentError("tree_level must be ≥ 1"))
     _check_half(half)
+    Base.require_one_based_indexing(bandpass)
     l_levels == 0 && return [copy(bandpass)]
     Td = data_eltype(bandpass)
     Tf = filter_eltype(Td)
@@ -150,7 +151,7 @@ end
 
 Nonsubsampled DFB synthesis (inverse of [`nsdfb_decompose`](@ref)).  Pass the
 same `tree_level` and `half` as the analysis; the tree depth is inferred from
-`length(subbands)`.
+`length(subbands)`.  The subbands must be indexed from 1.
 
 # Examples
 ```jldoctest
@@ -174,7 +175,7 @@ function nsdfb_reconstruct(
     )
     tree_level = Int(tree_level)
     tree_level >= 1 || throw(ArgumentError("tree_level must be ≥ 1"))
-    Base.require_one_based_indexing(subbands)
+    _require_one_based_bands(subbands)
     _check_half(half)
     n = length(subbands)
     n >= 1 || throw(ArgumentError("subbands must be non-empty"))

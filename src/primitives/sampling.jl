@@ -8,11 +8,13 @@
 
 # Shape contract of both directions: the coarse grid has size cld.(fine size, 2), and
 # both arrays are 1-based (the loops index with 2i - 1).
-# Throws a DimensionMismatch naming the first of `arrays` (name => array pairs)
-# whose size is not `dims`.  The in-place stages call it before their first
-# write: their loops index under @inbounds.
+# Throws an ArgumentError for an array with offset axes, and a DimensionMismatch
+# naming the first of `arrays` (name => array pairs) whose size is not `dims`.  The
+# in-place stages call it before their first write: their loops index 1:n under
+# @inbounds.
 function _check_size(dims::Tuple, arrays::Vararg{Pair{String}, N}) where {N}
     for (name, a) in arrays
+        Base.require_one_based_indexing(a)
         size(a) == dims || throw(DimensionMismatch("$(name) has size $(size(a)), expected $(dims)"))
     end
     return nothing
@@ -21,6 +23,7 @@ end
 # The quincunx half grid of a `full` grid with an even number of columns:
 # `(n1, n2 ÷ 2)`.
 function _check_qx_sizes(half::AbstractMatrix, full::AbstractMatrix)
+    Base.require_one_based_indexing(half, full)
     n1, n2 = size(full)
     iseven(n2) || throw(ArgumentError("quincunx sampling needs an even number of columns, got $(n2)"))
     size(half) == (n1, n2 ÷ 2) ||

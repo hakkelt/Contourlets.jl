@@ -52,6 +52,7 @@ function MultiscaleTransformsBase.make_workspace(
         t::TICT, x::AbstractArray; flags::Integer = FFTW.MEASURE,
         tasks::Union{Integer, Nothing} = nothing, tune::Bool = false, prewarm::Bool = true
     )
+    Base.require_one_based_indexing(x)
     Td = data_eltype(x)
     return _tict_workspace(t, Td, _check_image(size(x)), _matrix_type(x, Td), prewarm, flags, _check_tasks(tasks), tune)
 end

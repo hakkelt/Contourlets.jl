@@ -15,7 +15,7 @@
 """
     lp_decompose(image, fp::FilterPair) -> (coarse, bandpass)
 
-One-level Laplacian Pyramid analysis.
+One-level Laplacian Pyramid analysis.  `image` must be indexed from 1.
 
 # Examples
 ```jldoctest
@@ -40,6 +40,7 @@ julia> size(c), size(bp) == size(x)
    [doi:10.1109/TSP.2003.815389](https://doi.org/10.1109/TSP.2003.815389)
 """
 function lp_decompose(image::AbstractMatrix, fp::FilterPair)
+    Base.require_one_based_indexing(image)
     Td = data_eltype(image)   # data type (preserves complex)
     Tf = filter_eltype(Td)    # real filter precision
     # Convert only when the element type actually differs (T.(x) always copies).
@@ -60,7 +61,7 @@ end
 
 In-place Laplacian Pyramid analysis.  `tmp` and `tmp2` must be distinct buffers
 of the same size as `image`, and `coarse` of size `cld.(size(image), 2)`; when
-both are supplied the call is allocation-free.
+both are supplied the call is allocation-free.  All arrays must be indexed from 1.
 """
 function lp_decompose!(
         coarse::AbstractMatrix, bandpass::AbstractMatrix,
@@ -68,6 +69,7 @@ function lp_decompose!(
         tmp::AbstractMatrix = similar(image),
         tmp2::AbstractMatrix = similar(image)
     )
+    Base.require_one_based_indexing(image)
     _check_size(size(image), "bandpass" => bandpass, "tmp" => tmp, "tmp2" => tmp2)
     _check_size(cld.(size(image), 2), "coarse" => coarse)
     Tf = filter_eltype(eltype(image))
@@ -86,7 +88,7 @@ end
 """
     lp_reconstruct(coarse, bandpass, fp::FilterPair) -> image
 
-One-level Laplacian Pyramid synthesis.
+One-level Laplacian Pyramid synthesis.  `coarse` and `bandpass` must be indexed from 1.
 
 # Examples
 ```jldoctest
@@ -108,6 +110,7 @@ function lp_reconstruct(
         coarse::AbstractMatrix, bandpass::AbstractMatrix,
         fp::FilterPair
     )
+    Base.require_one_based_indexing(coarse, bandpass)
     Td = promote_type(eltype(coarse), eltype(bandpass))  # data type
     Tf = filter_eltype(Td)                              # real filter precision
     g = Tf === eltype(fp) ? fp.g : Tf.(fp.g)
@@ -130,6 +133,7 @@ function lp_reconstruct!(
         tmp::AbstractMatrix = similar(image),
         tmp2::AbstractMatrix = similar(image)
     )
+    Base.require_one_based_indexing(image)
     _check_size(size(image), "bandpass" => bandpass, "tmp" => tmp, "tmp2" => tmp2)
     _check_size(cld.(size(image), 2), "coarse" => coarse)
     Tf = filter_eltype(eltype(image))

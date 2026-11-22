@@ -49,7 +49,7 @@ end
     nsp_decompose(image, fp::FilterPair, level::Integer) -> (coarse, bandpass)
 
 One level of the Nonsubsampled Pyramid at pyramid level `level` (1 = finest).
-Both outputs have the same spatial size as `image`.
+Both outputs have the same spatial size as `image`, which must be indexed from 1.
 
 # Examples
 ```jldoctest
@@ -74,6 +74,7 @@ true
 function nsp_decompose(image::AbstractMatrix, fp::FilterPair, level::Integer)
     level = Int(level)
     level >= 1 || throw(ArgumentError("level must be ≥ 1"))
+    Base.require_one_based_indexing(image)
     Td = data_eltype(image)   # data type (preserves complex)
     Tf = filter_eltype(Td)    # real filter precision
     im = Td === eltype(image) ? image : Td.(image)
@@ -90,7 +91,7 @@ end
 
 In-place NSP decomposition.  `tmp` and `tmp2` must be distinct buffers of the
 same size as `image`; when both are supplied the call is allocation-free
-(except for the à trous filter vectors).
+(except for the à trous filter vectors).  All arrays must be indexed from 1.
 """
 function nsp_decompose!(
         coarse::AbstractMatrix, bandpass::AbstractMatrix,
@@ -100,6 +101,7 @@ function nsp_decompose!(
         h_j::Union{AbstractVector, Nothing} = nothing,
         g_j::Union{AbstractVector, Nothing} = nothing
     )
+    Base.require_one_based_indexing(image)
     _check_size(size(image), "coarse" => coarse, "bandpass" => bandpass, "tmp" => tmp, "tmp2" => tmp2)
     # Use caller-supplied (workspace-cached) à trous filters when given; otherwise
     # build them here.  The cached `g_j` already carries the synthesis rescale.
@@ -117,7 +119,7 @@ end
 """
     nsp_reconstruct(coarse, bandpass, fp::FilterPair, level) -> image
 
-Reconstruct one NSP level.
+Reconstruct one NSP level.  `coarse` and `bandpass` must be indexed from 1.
 
 # Examples
 ```jldoctest
@@ -139,6 +141,7 @@ function nsp_reconstruct(
         coarse::AbstractMatrix, bandpass::AbstractMatrix,
         fp::FilterPair, level::Integer
     )
+    Base.require_one_based_indexing(coarse, bandpass)
     Td = promote_type(eltype(coarse), eltype(bandpass))  # data type
     Tf = filter_eltype(Td)                              # real filter precision
     coarse_T = Td === eltype(coarse) ? coarse : Td.(coarse)
@@ -162,6 +165,7 @@ function nsp_reconstruct!(
         tmp2::AbstractMatrix = similar(image),
         g_j::Union{AbstractVector, Nothing} = nothing
     )
+    Base.require_one_based_indexing(image)
     _check_size(size(image), "coarse" => coarse, "bandpass" => bandpass, "tmp" => tmp, "tmp2" => tmp2)
     # Use the caller-supplied (workspace-cached) synthesis filter when given.
     if g_j === nothing

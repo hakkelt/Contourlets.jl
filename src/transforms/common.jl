@@ -71,16 +71,18 @@ MultiscaleTransformsBase.signal_size(::_StackedTransform, c::AbstractArray{<:Any
     similar_coefficients(t::Union{CT, NSCT, TICT, STICT}, x::AbstractMatrix)
 
 Zero coefficients of `t` for images like `x` (size, element type `float(eltype(x))`
-and array type, so device), for [`analyze!`](@ref): an array of size
+and array type, so device; `x` must be indexed from 1), for [`analyze!`](@ref): an array of size
 `(size(x)..., n)` for the [`NSCT`](@ref) and [`TICT`](@ref), a
 [`SubbandVector`](@ref) for the [`CT`](@ref) and [`STICT`](@ref).
 """
 function MultiscaleTransformsBase.similar_coefficients(t::_StackedTransform, x::AbstractArray)
+    Base.require_one_based_indexing(x)
     dims = _check_image(size(x))
     return _zero_stack(x, data_eltype(x), dims, nsubbands(t, dims))
 end
 
 function MultiscaleTransformsBase.similar_coefficients(t::_RaggedTransform, x::AbstractArray)
+    Base.require_one_based_indexing(x)
     Td = data_eltype(x)
     layout = first(_layout(t, _check_image(size(x))))
     return SubbandVector(fill!(similar(x, Td, length(layout)), zero(Td)), layout)
@@ -121,6 +123,9 @@ end
 _Bands(c::SubbandVector, first::Int, n::Int) = _Bands{typeof(subband(c, first)), typeof(c)}(c, first, n)
 
 Base.size(b::_Bands) = (b.n,)
+# The subbands are views of the one-based storage `c.data`; checking the storage
+# avoids materializing each subband.
+_require_one_based_bands(b::_Bands) = Base.require_one_based_indexing(b.c.data)
 Base.@propagate_inbounds function Base.getindex(b::_Bands, k::Int)
     @boundscheck checkbounds(b, k)
     return subband(b.c, b.first + k - 1)
@@ -217,11 +222,14 @@ for another transform, element type or image size throws.
 the workspace was built with fewer `tasks`), `false` runs them
 serially, and `nothing` (the default) threads complex data only.  The
 [`CT`](@ref) and [`STICT`](@ref) run serially and ignore it.
+
+`x` and the coefficients must be indexed from 1 (an `ArgumentError` otherwise).
 """
 function MultiscaleTransformsBase.analyze!(
         c::AbstractArray, t::_StackedTransform, x::AbstractArray;
         workspace = nothing, threaded::Union{Bool, Nothing} = nothing
     )
+    Base.require_one_based_indexing(c, x)
     dims = _check_image(size(x))
     Td = data_eltype(x)
     workspace === nothing || check_workspace(workspace, t, Td, dims)
@@ -239,12 +247,13 @@ Synthesis of the coefficients `c` of `t` into the image `x`: the inverse of
 nothing.  `threaded` as for [`analyze!`](@ref).
 
 The transforms are frames, not tight frames: the synthesis is the inverse of
-the analysis, not its adjoint.
+the analysis, not its adjoint.  `x` and the coefficients must be indexed from 1.
 """
 function MultiscaleTransformsBase.synthesize!(
         x::AbstractArray, t::_StackedTransform, c::AbstractArray;
         workspace = nothing, threaded::Union{Bool, Nothing} = nothing
     )
+    Base.require_one_based_indexing(x, c)
     dims = _check_image(size(x))
     _check_stack(c, dims, nsubbands(t, dims))
     workspace === nothing && return _synthesize_direct!(x, t, c, threaded)
@@ -272,6 +281,7 @@ function MultiscaleTransformsBase.analyze(
 end
 
 function _ragged_analyze!(c::SubbandVector, t::_RaggedTransform, x::AbstractArray, workspace, capture::Bool)
+    Base.require_one_based_indexing(c.data, x)
     dims = _check_image(size(x))
     Td = data_eltype(x)
     if workspace === nothing
@@ -301,6 +311,7 @@ function MultiscaleTransformsBase.synthesize(
 end
 
 function _ragged_synthesize!(x::AbstractArray, t::_RaggedTransform, c::SubbandVector, workspace, capture::Bool)
+    Base.require_one_based_indexing(x, c.data)
     dims = _check_image(size(x))
     if workspace === nothing
         layout, first = _layout(t, dims)

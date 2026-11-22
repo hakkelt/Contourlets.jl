@@ -26,7 +26,8 @@ Separable 2-D convolution: first apply 1-D filter `h_col` to each column, then
 Pass a preallocated `tmp` buffer (same size as `src`, distinct from `dst` and
 `src`) to make the call allocation-free.
 
-This is the workhorse for the Laplacian Pyramid stage.
+This is the workhorse for the Laplacian Pyramid stage.  All arrays and filters must
+be indexed from 1.
 """
 function conv2d_sep!(
         dst::AbstractMatrix{Td},
@@ -36,6 +37,7 @@ function conv2d_sep!(
         boundary::Symbol = :symmetric,
         tmp::AbstractMatrix{Td} = similar(src)
     ) where {Td, Tf}
+    Base.require_one_based_indexing(src, h_row, h_col)
     _check_size(size(src), "dst" => dst, "tmp" => tmp)
     if boundary === :symmetric
         _conv2d_sep_impl!(dst, src, h_row, h_col, tmp, Val(:symmetric))

@@ -239,6 +239,7 @@ function MultiscaleTransformsBase.make_workspace(
         t::CT, x::AbstractArray; flags::Integer = FFTW.MEASURE,
         tasks::Union{Integer, Nothing} = nothing, tune::Bool = false, prewarm::Bool = true
     )
+    Base.require_one_based_indexing(x)
     Td = data_eltype(x)
     _check_tasks(tasks)
     return _ct_workspace(t, Td, _check_image(size(x)), _matrix_type(x, Td), prewarm, flags)
@@ -275,6 +276,7 @@ function MultiscaleTransformsBase.make_workspace(
         t::NSCT, x::AbstractArray; flags::Integer = FFTW.MEASURE,
         tasks::Union{Integer, Nothing} = nothing, tune::Bool = false, prewarm::Bool = true
     )
+    Base.require_one_based_indexing(x)
     Td = data_eltype(x)
     return _nsct_workspace(t, Td, _check_image(size(x)), _matrix_type(x, Td), prewarm, flags, _check_tasks(tasks), tune)
 end

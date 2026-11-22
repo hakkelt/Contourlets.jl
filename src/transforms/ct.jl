@@ -109,13 +109,15 @@ end
 # seam that `ContourletsCUDAExt` overloads to capture device graphs.
 function _ragged_forward!(c::SubbandVector, image::AbstractMatrix, ws::CTWorkspace, capture::Bool)
     T = eltype(ws)
-    img = T === eltype(image) ? image : T.(image)
+    img = _stage_in(ws, T === eltype(image) ? image : T.(image))
     capture ? _ct_forward_ws!(c, img, ws) : _ct_forward_inner!(c, img, ws)
     return c
 end
 
 function _ragged_inverse!(x::AbstractMatrix, c::SubbandVector, ws::CTWorkspace, capture::Bool)
-    capture ? _ct_inverse_ws!(x, c, ws) : _ct_inverse_inner!(x, c, ws)
+    _stage_out!(ws, x) do y
+        capture ? _ct_inverse_ws!(y, c, ws) : _ct_inverse_inner!(y, c, ws)
+    end
     return x
 end
 

@@ -123,12 +123,16 @@ end
 # overloads to capture device graphs.
 function _ragged_forward!(c::SubbandVector, x::AbstractMatrix, ws::STICTWorkspace, capture::Bool)
     T = eltype(ws)
-    img = T === eltype(x) ? x : T.(x)
+    img = _stage_in(ws, T === eltype(x) ? x : T.(x))
     return capture ? _stict_forward_ws!(c, img, ws) : _stict_forward_inner!(c, img, ws)
 end
 
-_ragged_inverse!(x::AbstractMatrix, c::SubbandVector, ws::STICTWorkspace, capture::Bool) =
-    capture ? _stict_inverse_ws!(x, c, ws) : _stict_inverse_inner!(x, c, ws)
+function _ragged_inverse!(x::AbstractMatrix, c::SubbandVector, ws::STICTWorkspace, capture::Bool)
+    _stage_out!(ws, x) do y
+        capture ? _stict_inverse_ws!(y, c, ws) : _stict_inverse_inner!(y, c, ws)
+    end
+    return x
+end
 
 # The workspace paths: the same kernels on the same buffers every call, which
 # `ContourletsCUDAExt` captures as CUDA graphs.  Nothing in them may allocate.

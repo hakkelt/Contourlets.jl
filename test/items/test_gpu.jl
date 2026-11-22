@@ -578,3 +578,24 @@ end
         end
     end
 end
+
+@testitem "GPU CT and STICT workspaces stage host images" tags = [:gpu] setup = [GPUBackends] begin
+    using GPUEnv, Random
+    x = randn(Xoshiro(15), Float32, 32, 32)
+    for backend in GPUBackends.fft_backends
+        xg = to_gpu(backend, x)
+        for t in (CT(scales = 2, direction_levels = [3, 2]), STICT(scales = 2, direction_levels = [2, 3]))
+            ws = make_workspace(t, xg)
+            cd = analyze(t, xg; workspace = ws)
+            # A host image into the device workspace gives the same coefficients.
+            ch = analyze!(similar(cd), t, x; workspace = ws)
+            for i in 1:nsubbands(t, size(x))
+                @test Array(subband(t, ch, i)) ≈ Array(subband(t, cd, i))
+            end
+            # Synthesis into a host image.
+            y = zeros(Float32, 32, 32)
+            @test synthesize!(y, t, cd; workspace = ws) === y
+            @test maximum(abs, y .- x) < 1.0f-4
+        end
+    end
+end

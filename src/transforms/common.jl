@@ -126,6 +126,24 @@ Base.@propagate_inbounds function Base.getindex(b::_Bands, k::Int)
     return subband(b.c, b.first + k - 1)
 end
 
+# ── Images of the ragged transforms (CT, STICT) ──────────────────────────────
+
+# An array like the workspace's own: a CT workspace's matrix type (empty, so it
+# allocates nothing), an STICT workspace's spectrum buffer.
+_ws_proto(::CTWorkspace{Td, Tf, M}) where {Td, Tf, M} = _allocate_zeros(M, Td, (0, 0))
+_ws_proto(ws::STICTWorkspace) = ws.X
+
+# Whether the data of `x` lives elsewhere than the workspace's: a host image for
+# a device workspace, or the reverse.  Such images are copied through an array
+# like the workspace's.
+_foreign(ws, x::AbstractMatrix) = is_device_array(x) != is_device_array(_ws_proto(ws))
+
+_stage_in(ws, x::AbstractMatrix) = _foreign(ws, x) ? copyto!(similar(_ws_proto(ws), eltype(ws), size(x)), x) : x
+
+# Run `f(y)`, which writes the image into `y`, for the output `x`.
+_stage_out!(f::F, ws, x::AbstractMatrix) where {F} =
+    _foreign(ws, x) ? copyto!(x, f(similar(_ws_proto(ws), eltype(ws), size(x)))) : f(x)
+
 # ── Stacked coefficients (NSCT, TICT) ─────────────────────────────────────────
 
 const _StackedWorkspace = Union{NSCTWorkspace, TICTWorkspace}

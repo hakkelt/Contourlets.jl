@@ -18,7 +18,9 @@ Phoong et al. (1995), built from the symmetric, even-length 1-D ladder filter
 `f_ladder`.  The DFB, NSDFB and the shear-based [`qfb_decompose`](@ref) all derive
 their filters from `f_ladder` (see [`Q2345`](@ref)).  The pair holds a copy of
 `f_ladder` at precision `T`, by default `float(eltype(f_ladder))`, so integer
-taps give a `Float64` pair; the copy is read-only (a `ReadOnlyTaps`), so a pair
+taps give a `Float64` pair.  The constructor throws an `ArgumentError` for an
+empty, odd-length or asymmetric `f_ladder` and makes one symmetric to rounding
+exactly symmetric.  The copy is read-only (a `ReadOnlyTaps`), so a pair
 (and the shared [`Q2345`](@ref)) cannot change after it is built.
 
 # Examples
@@ -33,7 +35,15 @@ Float32
 """
 struct QuincunxFilterPair{T <: AbstractFloat}
     f_ladder::ReadOnlyTaps{T}  # 1-D ladder (lifting) filter β, unmodulated
-    QuincunxFilterPair{T}(f_ladder) where {T <: AbstractFloat} = new{T}(ReadOnlyTaps{T}(f_ladder))
+    function QuincunxFilterPair{T}(f_ladder) where {T <: AbstractFloat}
+        f = collect(T, f_ladder)
+        n = length(f)
+        (iseven(n) && n > 0) || throw(ArgumentError("f_ladder must have an even, nonzero length, got $(n)"))
+        isapprox(f, reverse(f); rtol = sqrt(eps(T))) ||
+            throw(ArgumentError("f_ladder must be symmetric (Phoong et al.'s type-2 β), got $(f)"))
+        # Symmetric to rounding is made exact: the directional banks need f = reverse(f).
+        return new{T}(ReadOnlyTaps{T}((f .+ reverse(f)) ./ 2))
+    end
 end
 
 QuincunxFilterPair(f_ladder::AbstractVector) = QuincunxFilterPair{float(eltype(f_ladder))}(f_ladder)

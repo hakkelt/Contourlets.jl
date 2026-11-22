@@ -498,13 +498,10 @@ end
 end
 
 @testitem "the ladder filter must be Phoong's symmetric even-length β" tags = [:directional] begin
-    x = randn(32, 32)
-    odd = QuincunxFilterPair([0.25, 0.5, 0.25])
-    asym = QuincunxFilterPair([0.1, 0.4, 0.5, 0.3])
-    for qfp in (odd, asym)
-        @test_throws ArgumentError Contourlets.dfb_decompose(x, qfp, 2)
-        @test_throws ArgumentError Contourlets.nsdfb_decompose(x, qfp, 2)
-    end
+    # The pair itself rejects such filters; the banks keep an internal check.
+    @test_throws "even, nonzero length" QuincunxFilterPair([0.25, 0.5, 0.25])
+    @test_throws "must be symmetric" QuincunxFilterPair([0.1, 0.4, 0.5, 0.3])
+    @test_throws "must be symmetric" Contourlets._ladder_half([0.1, 0.4, 0.5, 0.3])
 end
 
 @testitem "DFB rejects image sizes its sampling lattices do not divide" tags = [:directional] begin

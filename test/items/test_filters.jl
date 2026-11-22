@@ -141,3 +141,18 @@ end
         lp_filters = FilterPair(Float32.(CDF97.h), Float32.(CDF97.g))
     ) isa CT{Float32}
 end
+
+@testitem "QuincunxFilterPair validates its ladder filter" tags = [:filters] begin
+    using Random
+    @test_throws "f_ladder must have an even, nonzero length, got 3" QuincunxFilterPair([0.25, 0.5, 0.25])
+    @test_throws "f_ladder must have an even, nonzero length, got 0" QuincunxFilterPair(Float64[])
+    @test_throws "f_ladder must be symmetric" QuincunxFilterPair([0.1, 0.4, 0.5, 0.3])
+    # Symmetric to rounding: made exactly symmetric, and the transforms run.
+    q = QuincunxFilterPair([1, 2, 2, 1.0000000000000002])
+    @test q.f_ladder == reverse(q.f_ladder)
+    x = randn(Xoshiro(3), 32, 32)
+    t = CT(scales = 1, direction_levels = [1], dfb_filters = q)
+    @test synthesize(t, analyze(t, x)) ≈ x
+    # Q2345 is exactly symmetric already, so it is unchanged.
+    @test Q2345.f_ladder == Contourlets.pkva_ladder_filter()
+end

@@ -27,12 +27,12 @@ const WT97 = wavelet(WT.cdf97, WT.Lifting)
 # magnitudes by γ makes the M-term selection energy-consistent across the
 # (non-orthonormal, redundant) contourlet frame.  Subband 1 is the low-pass
 # residual, which keeps every coefficient.
-function ct_subband_gains(t, sz)
+function ct_subband_gains(t, sz; rng = Xoshiro(1))
     γ = zeros(nsubbands(t, sz))
     for i in 2:length(γ)
         c = analyze(t, zeros(sz...))
         sb = subband(t, c, i)
-        sb .= randn(size(sb))
+        sb .= randn(rng, size(sb))
         γ[i] = sqrt(sum(abs2, synthesize(t, c)) / length(sb))
     end
     return γ
@@ -61,10 +61,10 @@ end
 
 # Per-subband noise standard deviation of the NSCT for unit-variance input
 # noise — the correct scale for the universal hard threshold k·σ·gain.
-function nsct_noise_gains(t, sz; trials = 6)
+function nsct_noise_gains(t, sz; trials = 6, rng = Xoshiro(2))
     acc = zeros(nsubbands(t, sz))
     for _ in 1:trials
-        c = analyze(t, randn(sz...))
+        c = analyze(t, randn(rng, sz...))
         for i in eachindex(acc)
             sb = subband(t, c, i)
             acc[i] += sqrt(sum(abs2, sb) / length(sb))

@@ -192,12 +192,13 @@ errors and timings for both. For Julia-only benchmarks use `benchmark/benchmarks
    These are two *different* filters for two different stages, not aliases.
 
 2. **Subband ordering**: The MATLAB toolbox returns subbands as a cell array ordered
-   by the binary tree traversal.  Contourlets.jl uses the same ordering (`subbands[j][k]`
-   where `k` runs left-to-right in the binary tree).
+   by the binary tree traversal.  Contourlets.jl uses the same ordering:
+   `subband(t, c, i)` returns subband `i`, and `subband_layout(t, size(x))[i]`
+   names its `(scale, direction)`, the directions of a scale running
+   left to right in the binary tree.
 
 3. **Boundary conditions**: The Laplacian pyramid uses symmetric (reflect)
-   extension by default (`:periodic` and `:zero` are available through the
-   `boundary` keyword).  The DFB is periodic: it filters on the DFT grid.
+   extension.  The DFB is periodic: it filters on the DFT grid.
 
 4. **DFB from `L = 3`**: the toolbox's deeper tree is not shift-equivariant on
    its sampling lattices, while this package computes the thesis' multichannel
@@ -211,7 +212,7 @@ errors and timings for both. For Julia-only benchmarks use `benchmark/benchmarks
 ### Differences from the MATLAB NSCT toolbox
 
 1. **À trous implementation**: Both use zero-insertion filter upsampling
-   (`upsample_filter`) for the à trous scheme.
+   (`MultiscaleFilterBanks.upsample_filter`) for the à trous scheme.
 
 2. **Coarse-scale directional filters**: at pyramid level `j ≥ 3` (counted
    from the first, finest split) the NSDFB

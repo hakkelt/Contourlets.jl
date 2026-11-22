@@ -111,6 +111,7 @@ dispatch does the rest:
 
 ```julia
 using CUDA, Contourlets
+img = rand(Float32, 256, 256)
 t = CT(scales = 2, direction_levels = [2, 3])
 coeffs = analyze(t, CuArray(img))        # a SubbandVector over a CuArray
 img_back = Array(synthesize(t, coeffs))

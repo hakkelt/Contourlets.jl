@@ -88,7 +88,10 @@ takes `direction_levels = parabolic_levels(scales)` (see
 The filters are stored at the precision of the wider of the two pairs, or at
 precision `T` with the `{T}` form; a transform runs at the precision of its data (`Float32` data uses `Float32`
 filters), whatever the precision it holds.  Transforms with equal parameters
-are `==` and hash alike."""
+are `==` and hash alike.
+
+The parameters are public properties: `t.scales`, `t.direction_levels` (a
+read-only vector), `t.lp_filters` and `t.dfb_filters`."""
 
 """
     CT(; scales, direction_levels, lp_filters = CDF97, dfb_filters = Q2345)

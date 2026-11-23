@@ -83,7 +83,9 @@ zeros between samples. Synthesis adds the prediction back,
 `image = bandpass + g ⊛ (↑2 coarse)`, which is exact for any filters. The
 pyramid extends the image symmetrically at its borders. The default filters
 [`CDF97`](@ref) are the CDF 9/7 biorthogonal wavelet filters (Cohen,
-Daubechies & Feauveau 1992).
+Daubechies & Feauveau 1992). The filter pairs and the pyramid come from
+MultiscaleFilterBanks.jl, whose
+[theory page](https://hakkelt.github.io/MultiscaleFilterBanks.jl/dev/theory/#The-Laplacian-pyramid) explains them in more detail.
 
 ## Directional filter bank
 
@@ -234,7 +236,8 @@ all subbands have the size of the image:
 
 - The *nonsubsampled pyramid* upsamples the pyramid filters by ``2^{s-1}`` at
   its ``s``-th split, counted from the finest (the *à trous* scheme; Shensa
-  1992). It uses the CDF 9/7 filters along each axis, where the paper designs
+  1992), as described in MultiscaleFilterBanks.jl's explanation of the
+  [nonsubsampled pyramid](https://hakkelt.github.io/MultiscaleFilterBanks.jl/dev/theory/#The-nonsubsampled-pyramid). It uses the CDF 9/7 filters along each axis, where the paper designs
   non-separable 2-D filters.
 - The *nonsubsampled DFB* filters each bandpass image with the DFB's equivalent
   filters at full rate, scaled so that synthesis reconstructs exactly. Every
@@ -268,7 +271,9 @@ with the polyphase components ``G_c(z) = {\downarrow_M}\{z^{k_c}G(z)\}`` and
 ``H_c(z) = {\downarrow_M}\{z^{-k_c}H(z)\}``. Without downsampling,
 ``\tfrac14\,(GH + \sum_c F_c K_c) = 1`` for biorthogonal ``h`` and ``g``, so
 each level reconstructs exactly. This is the *translation-invariant Laplacian
-pyramid* (TILP). The magnitude responses of the four highpass channels of one
+pyramid* (TILP). Because nothing is decimated, the TICT and the STICT apply
+every channel as a mask on the DFT grid, with the mask-bank engine of
+MultiscaleFilterBanks.jl ([How the engine computes](https://hakkelt.github.io/MultiscaleFilterBanks.jl/dev/engine/)). The magnitude responses of the four highpass channels of one
 level and of the lowpass (compare Eslami & Radha, Fig. 6):
 
 ```@example theory

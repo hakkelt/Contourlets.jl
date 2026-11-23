@@ -17,8 +17,10 @@ function tiling_figure()
         sb[size(sb, 1) ÷ 2 + 1, size(sb, 2) ÷ 2 + 1] = 1.0
         tiling .= max.(tiling, abs.(fftshift(fft(synthesize(t, c)))))
     end
-    return heatmap(log1p.(tiling); color = :viridis, aspect_ratio = :equal,
-        axis = false, grid = false, colorbar = false, size = (300, 300), margin = 0Plots.mm)
+    return heatmap(
+        log1p.(tiling); color = :viridis, aspect_ratio = :equal,
+        axis = false, grid = false, colorbar = false, size = (300, 300), margin = 0Plots.mm
+    )
 end
 
 # A noisy crop of Barbara and its NSCT hard-threshold estimate.
@@ -37,11 +39,15 @@ function denoising_figure()
     end
     denoised = synthesize(t, c; workspace = ws)
     psnr(x) = round(10 * log10(1 / mean(abs2, x .- ref)); digits = 1)
-    gray(x, title) = heatmap(x[129:384, 129:384]; title, titlefontsize = 10,
+    gray(x, title) = heatmap(
+        x[129:384, 129:384]; title, titlefontsize = 10,
         color = :grays, clims = (0, 1), aspect_ratio = :equal, axis = false,
-        grid = false, colorbar = false, yflip = true)
-    return plot(gray(noisy, "noisy, $(psnr(noisy)) dB"),
-        gray(denoised, "NSCT, $(psnr(denoised)) dB"); layout = (1, 2), size = (600, 300))
+        grid = false, colorbar = false, yflip = true
+    )
+    return plot(
+        gray(noisy, "noisy, $(psnr(noisy)) dB"),
+        gray(denoised, "NSCT, $(psnr(denoised)) dB"); layout = (1, 2), size = (600, 300)
+    )
 end
 
 savefig(tiling_figure(), joinpath(ASSETS, "readme-tiling.png"))

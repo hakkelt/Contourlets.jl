@@ -33,7 +33,7 @@ struct STICTWorkspace{Td <: Number, Tf <: AbstractFloat, C <: AbstractMatrix{Com
     inv_graph_cache::_GraphCache
 end
 
-MultiscaleTransformsBase.transform(ws::STICTWorkspace) = ws.transform
+AbstractMultiscaleTransforms.transform(ws::STICTWorkspace) = ws.transform
 Base.size(ws::STICTWorkspace) = ws.image_size
 Base.eltype(::Type{<:STICTWorkspace{Td}}) where {Td} = Td
 Base.show(io::IO, ws::STICTWorkspace) = print(io, "STICTWorkspace(", ws.transform, ", ", eltype(ws), ", ", ws.image_size, ")")
@@ -46,7 +46,7 @@ function _layout(t::STICT, dims::NTuple{2, Int})
     return _stack_levels(dims, groups, dims)
 end
 
-function MultiscaleTransformsBase.make_workspace(
+function AbstractMultiscaleTransforms.make_workspace(
         t::STICT, ::Type{T}, dims::Dims; flags::Integer = FFTW.MEASURE,
         tasks::Union{Integer, Nothing} = nothing, tune::Bool = false, prewarm::Bool = true
     ) where {T <: Number}
@@ -55,7 +55,7 @@ function MultiscaleTransformsBase.make_workspace(
     return _stict_workspace(t, Td, _check_image(dims), Matrix{Td}, prewarm, flags)
 end
 
-function MultiscaleTransformsBase.make_workspace(
+function AbstractMultiscaleTransforms.make_workspace(
         t::STICT, x::AbstractArray; flags::Integer = FFTW.MEASURE,
         tasks::Union{Integer, Nothing} = nothing, tune::Bool = false, prewarm::Bool = true
     )

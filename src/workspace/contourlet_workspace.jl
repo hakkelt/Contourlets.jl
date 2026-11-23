@@ -78,7 +78,7 @@ end
 
 const _AnyWorkspace = Union{CTWorkspace, NSCTWorkspace}
 
-MultiscaleTransformsBase.transform(ws::_AnyWorkspace) = ws.transform
+AbstractMultiscaleTransforms.transform(ws::_AnyWorkspace) = ws.transform
 Base.size(ws::_AnyWorkspace) = ws.image_size
 Base.eltype(::Type{<:CTWorkspace{Td}}) where {Td} = Td
 Base.eltype(::Type{<:NSCTWorkspace{Td}}) where {Td} = Td
@@ -171,7 +171,7 @@ end
 
 const _WORKSPACE_KEYWORDS = """
 Keywords, accepted by the workspaces of all four transforms (the shared
-keywords of `make_workspace` in MultiscaleTransformsBase):
+keywords of `make_workspace` in AbstractMultiscaleTransforms):
 - `flags = FFTW.MEASURE`: the FFTW planner flags of the host FFT plans — those
   of the directional filter banks of a [`CT`](@ref) or [`STICT`](@ref), and
   the image-size FFTs of an [`NSCT`](@ref) or [`TICT`](@ref), which are
@@ -226,7 +226,7 @@ julia> transform(ws) == t, eltype(ws), size(ws)
 (true, Float64, (64, 64))
 ```
 """
-function MultiscaleTransformsBase.make_workspace(
+function AbstractMultiscaleTransforms.make_workspace(
         t::CT, ::Type{T}, dims::Dims; flags::Integer = FFTW.MEASURE,
         tasks::Union{Integer, Nothing} = nothing, tune::Bool = false, prewarm::Bool = true
     ) where {T <: Number}
@@ -235,7 +235,7 @@ function MultiscaleTransformsBase.make_workspace(
     return _ct_workspace(t, Td, _check_image(dims), Matrix{Td}, prewarm, flags)
 end
 
-function MultiscaleTransformsBase.make_workspace(
+function AbstractMultiscaleTransforms.make_workspace(
         t::CT, x::AbstractArray; flags::Integer = FFTW.MEASURE,
         tasks::Union{Integer, Nothing} = nothing, tune::Bool = false, prewarm::Bool = true
     )
@@ -264,7 +264,7 @@ function _ct_workspace(t::CT, ::Type{Td}, image_size::NTuple{2, Int}, ::Type{M},
     return ws
 end
 
-function MultiscaleTransformsBase.make_workspace(
+function AbstractMultiscaleTransforms.make_workspace(
         t::NSCT, ::Type{T}, dims::Dims; flags::Integer = FFTW.MEASURE,
         tasks::Union{Integer, Nothing} = nothing, tune::Bool = false, prewarm::Bool = true
     ) where {T <: Number}
@@ -272,7 +272,7 @@ function MultiscaleTransformsBase.make_workspace(
     return _nsct_workspace(t, Td, _check_image(dims), Matrix{Td}, prewarm, flags, _check_tasks(tasks), tune)
 end
 
-function MultiscaleTransformsBase.make_workspace(
+function AbstractMultiscaleTransforms.make_workspace(
         t::NSCT, x::AbstractArray; flags::Integer = FFTW.MEASURE,
         tasks::Union{Integer, Nothing} = nothing, tune::Bool = false, prewarm::Bool = true
     )

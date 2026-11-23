@@ -5,32 +5,32 @@
 end
 
 @testitem "Documentation structure (draft build)" tags = [:docs, :quality] begin
-    using Documenter, MultiscaleFilterBanks, MultiscaleTransformsBase
+    using Documenter, MultiscaleFilterBanks, AbstractMultiscaleTransforms
     using Logging: Logging, with_logger
     pkg_root = pkgdir(Contourlets)
     # @meta blocks evaluate `CurrentModule = Contourlets` in Main; the module
     # must be importable there (same as `using Contourlets` in make.jl).
-    Base.eval(Main, :(using Contourlets, MultiscaleTransformsBase))
+    Base.eval(Main, :(using Contourlets, AbstractMultiscaleTransforms))
     DocMeta.setdocmeta!(
         MultiscaleFilterBanks, :DocTestSetup,
         :(using MultiscaleFilterBanks, Random); recursive = true
     )
     DocMeta.setdocmeta!(
-        MultiscaleTransformsBase, :DocTestSetup,
-        :(using MultiscaleTransformsBase); recursive = true
+        AbstractMultiscaleTransforms, :DocTestSetup,
+        :(using AbstractMultiscaleTransforms); recursive = true
     )
     DocMeta.setdocmeta!(Contourlets, :DocTestSetup, :(using Contourlets, Random); recursive = true)
     build_dir = mktempdir()
     logger = Test.TestLogger(; min_level = Logging.Warn)
     with_logger(logger) do
         makedocs(;
-            modules = [Contourlets, MultiscaleFilterBanks, MultiscaleTransformsBase],
-            checkdocs_ignored_modules = [MultiscaleFilterBanks, MultiscaleTransformsBase],
+            modules = [Contourlets, MultiscaleFilterBanks, AbstractMultiscaleTransforms],
+            checkdocs_ignored_modules = [MultiscaleFilterBanks, AbstractMultiscaleTransforms],
             remotes = Dict(
                 pkgdir(MultiscaleFilterBanks) =>
                     Documenter.Remotes.GitHub("hakkelt", "MultiscaleFilterBanks.jl"),
-                pkgdir(MultiscaleTransformsBase) =>
-                    Documenter.Remotes.GitHub("hakkelt", "MultiscaleTransformsBase.jl"),
+                pkgdir(AbstractMultiscaleTransforms) =>
+                    Documenter.Remotes.GitHub("hakkelt", "AbstractMultiscaleTransforms.jl"),
             ),
             sitename = "Contourlets.jl",
             root = joinpath(pkg_root, "docs"),

@@ -28,7 +28,7 @@ parabolic_levels
 ## Running a transform
 
 These functions come from
-[MultiscaleTransformsBase.jl](https://github.com/hakkelt/MultiscaleTransformsBase.jl);
+[AbstractMultiscaleTransforms.jl](https://github.com/hakkelt/AbstractMultiscaleTransforms.jl);
 each entry gives the general contract first and the contourlet methods after
 it. Every function also accepts a workspace in place of the transform, as in
 `analyze(ws, x)` and `synthesize!(x, ws, c)`.
@@ -105,14 +105,14 @@ qfb_reconstruct!
 
 ## Interface types
 
-Types and functions of MultiscaleTransformsBase.jl and MultiscaleFilterBanks.jl
+Types and functions of AbstractMultiscaleTransforms.jl and MultiscaleFilterBanks.jl
 that the entries above refer to.
 
 ```@docs
 AbstractMultiscaleTransform
 AbstractTransformWorkspace
-MultiscaleTransformsBase.DefaultWorkspace
-MultiscaleTransformsBase.check_workspace
-MultiscaleTransformsBase.supports_streaming
+AbstractMultiscaleTransforms.DefaultWorkspace
+AbstractMultiscaleTransforms.check_workspace
+AbstractMultiscaleTransforms.supports_streaming
 MultiscaleFilterBanks.ReadOnlyTaps
 ```

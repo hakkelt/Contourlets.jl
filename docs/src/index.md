@@ -10,12 +10,12 @@ and semi-translation-invariant contourlet transforms ([`TICT`](@ref),
 
 ## Installation
 
-Contourlets.jl and its dependencies MultiscaleTransformsBase.jl and
+Contourlets.jl and its dependencies AbstractMultiscaleTransforms.jl and
 MultiscaleFilterBanks.jl are not registered. Clone the three repositories side
 by side:
 
 ```bash
-git clone https://github.com/hakkelt/MultiscaleTransformsBase.jl MultiscaleTransformsBase
+git clone https://github.com/hakkelt/AbstractMultiscaleTransforms.jl AbstractMultiscaleTransforms
 git clone https://github.com/hakkelt/MultiscaleFilterBanks.jl MultiscaleFilterBanks
 git clone https://github.com/hakkelt/Contourlets.jl Contourlets
 ```
@@ -24,7 +24,7 @@ and add them to your environment:
 
 ```julia
 using Pkg
-Pkg.develop([PackageSpec(path = "MultiscaleTransformsBase"),
+Pkg.develop([PackageSpec(path = "AbstractMultiscaleTransforms"),
              PackageSpec(path = "MultiscaleFilterBanks"),
              PackageSpec(path = "Contourlets")])
 ```
@@ -64,4 +64,4 @@ Related packages: [Surfacelets.jl](https://github.com/hakkelt/Surfacelets.jl)
 provides the surfacelet transform for volumes, and
 [Shearlets.jl](https://github.com/hakkelt/Shearlets.jl) 2-D and 3-D shearlet
 transforms. All of them implement the interface of
-[MultiscaleTransformsBase.jl](https://github.com/hakkelt/MultiscaleTransformsBase.jl).
+[AbstractMultiscaleTransforms.jl](https://github.com/hakkelt/AbstractMultiscaleTransforms.jl).

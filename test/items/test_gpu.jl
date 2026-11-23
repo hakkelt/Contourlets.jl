@@ -544,7 +544,7 @@ end
 
 @testitem "GPU interface conformance (JLArrays)" tags = [:gpu] setup = [GPUBackends] begin
     using GPUEnv, Random
-    using MultiscaleTransformsBase.Testing: test_transform
+    using AbstractMultiscaleTransforms.Testing: test_transform
     rng = Xoshiro(13)
     for backend in GPUBackends.fft_backends, x in (randn(rng, Float32, 32, 32), randn(rng, ComplexF32, 32, 32))
         backend.name === :JLArray || continue

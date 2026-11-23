@@ -48,11 +48,11 @@ julia> subband_layout(CT(scales = 2, direction_levels = [0, 1]), (32, 32))
  (scale = 2, direction = 2)
 ```
 """
-MultiscaleTransformsBase.subband_layout(t::Union{CT, NSCT}, dims::Dims) = (_check_image(dims); _scale_layout(t))
-MultiscaleTransformsBase.subband_layout(t::Union{TICT, STICT}, dims::Dims) = (_check_image(dims); _channel_layout(t))
+AbstractMultiscaleTransforms.subband_layout(t::Union{CT, NSCT}, dims::Dims) = (_check_image(dims); _scale_layout(t))
+AbstractMultiscaleTransforms.subband_layout(t::Union{TICT, STICT}, dims::Dims) = (_check_image(dims); _channel_layout(t))
 
-MultiscaleTransformsBase.nsubbands(t::Union{CT, NSCT}, dims::Dims) = (_check_image(dims); 1 + sum(l -> 1 << l, t.direction_levels))
-MultiscaleTransformsBase.nsubbands(t::Union{TICT, STICT}, dims::Dims) = (_check_image(dims); 1 + sum(l -> sum(c -> _tict_n_subbands(l, c), 1:4), t.direction_levels))
+AbstractMultiscaleTransforms.nsubbands(t::Union{CT, NSCT}, dims::Dims) = (_check_image(dims); 1 + sum(l -> 1 << l, t.direction_levels))
+AbstractMultiscaleTransforms.nsubbands(t::Union{TICT, STICT}, dims::Dims) = (_check_image(dims); 1 + sum(l -> sum(c -> _tict_n_subbands(l, c), 1:4), t.direction_levels))
 
 """
     subband(t::Union{CT, NSCT, TICT, STICT}, c, i) -> AbstractMatrix
@@ -62,10 +62,10 @@ Subband `i` of the coefficients `c` of `t`, as a view (writing to it changes
 [`NSCT`](@ref) and [`TICT`](@ref) it is `view(c, :, :, i)`, for the
 [`CT`](@ref) and [`STICT`](@ref) `subband(c, i)` of the [`SubbandVector`](@ref).
 """
-MultiscaleTransformsBase.subband(::_StackedTransform, c::AbstractArray{<:Any, 3}, i::Integer) = view(c, :, :, i)
-MultiscaleTransformsBase.subband(::_RaggedTransform, c::SubbandVector, i::Integer) = subband(c, i)
+AbstractMultiscaleTransforms.subband(::_StackedTransform, c::AbstractArray{<:Any, 3}, i::Integer) = view(c, :, :, i)
+AbstractMultiscaleTransforms.subband(::_RaggedTransform, c::SubbandVector, i::Integer) = subband(c, i)
 
-MultiscaleTransformsBase.signal_size(::_StackedTransform, c::AbstractArray{<:Any, 3}) = (size(c, 1), size(c, 2))
+AbstractMultiscaleTransforms.signal_size(::_StackedTransform, c::AbstractArray{<:Any, 3}) = (size(c, 1), size(c, 2))
 
 """
     similar_coefficients(t::Union{CT, NSCT, TICT, STICT}, x::AbstractMatrix)
@@ -75,13 +75,13 @@ and array type, so device; `x` must be indexed from 1), for [`analyze!`](@ref): 
 `(size(x)..., n)` for the [`NSCT`](@ref) and [`TICT`](@ref), a
 [`SubbandVector`](@ref) for the [`CT`](@ref) and [`STICT`](@ref).
 """
-function MultiscaleTransformsBase.similar_coefficients(t::_StackedTransform, x::AbstractArray)
+function AbstractMultiscaleTransforms.similar_coefficients(t::_StackedTransform, x::AbstractArray)
     Base.require_one_based_indexing(x)
     dims = _check_image(size(x))
     return _zero_stack(x, data_eltype(x), dims, nsubbands(t, dims))
 end
 
-function MultiscaleTransformsBase.similar_coefficients(t::_RaggedTransform, x::AbstractArray)
+function AbstractMultiscaleTransforms.similar_coefficients(t::_RaggedTransform, x::AbstractArray)
     Base.require_one_based_indexing(x)
     Td = data_eltype(x)
     layout = first(_layout(t, _check_image(size(x))))
@@ -225,7 +225,7 @@ serially, and `nothing` (the default) threads complex data only.  The
 
 `x` and the coefficients must be indexed from 1 (an `ArgumentError` otherwise).
 """
-function MultiscaleTransformsBase.analyze!(
+function AbstractMultiscaleTransforms.analyze!(
         c::AbstractArray, t::_StackedTransform, x::AbstractArray;
         workspace = nothing, threaded::Union{Bool, Nothing} = nothing
     )
@@ -249,7 +249,7 @@ nothing.  `threaded` as for [`analyze!`](@ref).
 The transforms are frames, not tight frames: the synthesis is the inverse of
 the analysis, not its adjoint.  `x` and the coefficients must be indexed from 1.
 """
-function MultiscaleTransformsBase.synthesize!(
+function AbstractMultiscaleTransforms.synthesize!(
         x::AbstractArray, t::_StackedTransform, c::AbstractArray;
         workspace = nothing, threaded::Union{Bool, Nothing} = nothing
     )
@@ -264,7 +264,7 @@ end
 
 # ── SubbandVector coefficients (CT, STICT) ────────────────────────────────────
 
-function MultiscaleTransformsBase.analyze!(
+function AbstractMultiscaleTransforms.analyze!(
         c::SubbandVector, t::_RaggedTransform, x::AbstractArray;
         workspace = nothing, threaded::Union{Bool, Nothing} = nothing
     )
@@ -273,7 +273,7 @@ end
 
 # Not `analyze!`: the coefficients are new on every call, so a device graph
 # captured with them would never replay (`ContourletsCUDAExt`).
-function MultiscaleTransformsBase.analyze(
+function AbstractMultiscaleTransforms.analyze(
         t::_RaggedTransform, x::AbstractArray;
         workspace = nothing, threaded::Union{Bool, Nothing} = nothing
     )
@@ -294,14 +294,14 @@ function _ragged_analyze!(c::SubbandVector, t::_RaggedTransform, x::AbstractArra
     return _ragged_forward!(c, x, workspace, capture)
 end
 
-function MultiscaleTransformsBase.synthesize!(
+function AbstractMultiscaleTransforms.synthesize!(
         x::AbstractArray, t::_RaggedTransform, c::SubbandVector;
         workspace = nothing, threaded::Union{Bool, Nothing} = nothing
     )
     return _ragged_synthesize!(x, t, c, workspace, true)
 end
 
-function MultiscaleTransformsBase.synthesize(
+function AbstractMultiscaleTransforms.synthesize(
         t::_RaggedTransform, c::SubbandVector;
         workspace = nothing, threaded::Union{Bool, Nothing} = nothing
     )

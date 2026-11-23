@@ -1,4 +1,4 @@
-using Documenter, Contourlets, MultiscaleFilterBanks, MultiscaleTransformsBase
+using Documenter, Contourlets, MultiscaleFilterBanks, AbstractMultiscaleTransforms
 
 # Doctests run in every spliced docstring, including those of the two dependencies.
 DocMeta.setdocmeta!(Contourlets, :DocTestSetup, :(using Contourlets, Random); recursive = true)
@@ -7,8 +7,8 @@ DocMeta.setdocmeta!(
     :(using MultiscaleFilterBanks, Random); recursive = true
 )
 DocMeta.setdocmeta!(
-    MultiscaleTransformsBase, :DocTestSetup,
-    :(using MultiscaleTransformsBase); recursive = true
+    AbstractMultiscaleTransforms, :DocTestSetup,
+    :(using AbstractMultiscaleTransforms); recursive = true
 )
 
 makedocs(;
@@ -16,15 +16,15 @@ makedocs(;
     # dependencies are listed for the names Contourlets re-exports (`FilterPair`,
     # `CDF97`, the interface); their other public names are documented in their
     # own manuals, so `checkdocs` skips them.
-    modules = [Contourlets, MultiscaleFilterBanks, MultiscaleTransformsBase],
-    checkdocs_ignored_modules = [MultiscaleFilterBanks, MultiscaleTransformsBase],
+    modules = [Contourlets, MultiscaleFilterBanks, AbstractMultiscaleTransforms],
+    checkdocs_ignored_modules = [MultiscaleFilterBanks, AbstractMultiscaleTransforms],
     sitename = "Contourlets.jl",
     # Docstrings spliced from the two dependencies link to their repositories.
     remotes = Dict(
         pkgdir(MultiscaleFilterBanks) =>
             Documenter.Remotes.GitHub("hakkelt", "MultiscaleFilterBanks.jl"),
-        pkgdir(MultiscaleTransformsBase) =>
-            Documenter.Remotes.GitHub("hakkelt", "MultiscaleTransformsBase.jl"),
+        pkgdir(AbstractMultiscaleTransforms) =>
+            Documenter.Remotes.GitHub("hakkelt", "AbstractMultiscaleTransforms.jl"),
     ),
     authors = "Tamás Hakkel",
     format = Documenter.HTML(;

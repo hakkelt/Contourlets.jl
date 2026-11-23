@@ -12,7 +12,7 @@ FFTW = "7a1cc6ca-52ef-59f5-83cd-3a7055c09341"
 FastBroadcast = "7034ab61-46d4-4ed7-9d0f-46aef9175898"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 MultiscaleFilterBanks = "6efc46e8-ef8d-4233-93b5-7ad1cba20951"
-MultiscaleTransformsBase = "bb7a9938-a16c-4a85-ac5b-efa2b8f5fd01"
+AbstractMultiscaleTransforms = "bb7a9938-a16c-4a85-ac5b-efa2b8f5fd01"
 PrecompileTools = "aea7be01-6a6a-4083-8856-8a6e6704d82a"
 
 [weakdeps]
@@ -21,7 +21,7 @@ GPUArrays = "0c68f7d7-f131-5f86-a1c3-88cf8149b2d7"
 KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
 
 [sources]
-MultiscaleTransformsBase = {path = "../MultiscaleTransformsBase"}
+AbstractMultiscaleTransforms = {path = "../AbstractMultiscaleTransforms"}
 
 [extensions]
 ContourletsCUDAExt = ["CUDA"]
@@ -36,6 +36,6 @@ GPUArrays = "10, 11, 12.2"
 KernelAbstractions = "0.9"
 LinearAlgebra = "1"
 MultiscaleFilterBanks = "0.2"
-MultiscaleTransformsBase = "0.1"
+AbstractMultiscaleTransforms = "0.1"
 PrecompileTools = "1"
 julia = "1.10"

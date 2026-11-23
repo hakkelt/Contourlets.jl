@@ -26,12 +26,12 @@ The surface shared with the core is the `using MultiscaleFilterBanks:` block in
 adds `mask_bank_subband`/`mask_bank_coarse`/`mask_bank_storage` methods for its
 stacked coefficients in `src/workspace/mask_bank.jl`.
 
-**The transform interface** comes from MultiscaleTransformsBase (MTB): the
+**The transform interface** comes from AbstractMultiscaleTransforms (MTB): the
 transform types `CT`, `NSCT`, `TICT`, `STICT` subtype
 `AbstractMultiscaleTransform`, the workspaces `AbstractTransformWorkspace`, and
 the verbs (`analyze`, `analyze!`, `synthesize`, `synthesize!`, `make_workspace`,
 `similar_coefficients`, `subband_layout`, `nsubbands`, `subband`, `transform`)
-get qualified methods (`MultiscaleTransformsBase.analyze!(...) = ...`) on this
+get qualified methods (`AbstractMultiscaleTransforms.analyze!(...) = ...`) on this
 package's own types only — never a signature more generic than them in a
 position MTB uses.  MTB's exported names are re-exported.  Coefficients: NSCT and
 TICT a stacked `(n1, n2, n)` array, CT and STICT a `SubbandVector`; subband 1
@@ -39,7 +39,7 @@ is the lowpass (`scale = 0` / `level = 0`), then the scales from the coarsest
 (1) to the finest (`scales`), and `direction_levels` is read in the same order
 (`subband_layout`).  The pyramid itself runs from the finest split: scale `j`
 is split `scales + 1 - j`, the `level`/`tree_level` of `nsp_*`/`nsdfb_*`.  Every test
-suite change keeps `MultiscaleTransformsBase.Testing.test_transform` passing
+suite change keeps `AbstractMultiscaleTransforms.Testing.test_transform` passing
 (`test/items/test_interface.jl`).
 
 **Public surface.** Only the transform API is exported: transform and
@@ -53,7 +53,7 @@ release; tests and docstring examples call them qualified
 (`Contourlets.conv2d_sep`).  Every public name needs a docstring and an entry in
 `docs/src/api.md` (`checkdocs = :public`).
 
-**First checkout**: `MultiscaleTransformsBase.jl` and `MultiscaleFilterBanks.jl`
+**First checkout**: `AbstractMultiscaleTransforms.jl` and `MultiscaleFilterBanks.jl`
 are expected as sibling checkouts. MTB comes in through `[sources]`; for MFB run
 `julia --project=. dev/bootstrap.jl` once, which `Pkg.develop`s it into every
 environment of the workspace.

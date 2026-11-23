@@ -34,13 +34,13 @@ struct TICTWorkspace{Td <: Number, Tf <: AbstractFloat, M <: AbstractMatrix, E <
     engine::E
 end
 
-MultiscaleTransformsBase.transform(ws::TICTWorkspace) = ws.transform
+AbstractMultiscaleTransforms.transform(ws::TICTWorkspace) = ws.transform
 Base.size(ws::TICTWorkspace) = ws.image_size
 Base.eltype(::Type{<:TICTWorkspace{Td}}) where {Td} = Td
 _ws_matrix_type(::TICTWorkspace{Td, Tf, M}) where {Td, Tf, M} = M
 Base.show(io::IO, ws::TICTWorkspace) = print(io, "TICTWorkspace(", ws.transform, ", ", eltype(ws), ", ", ws.image_size, ")")
 
-function MultiscaleTransformsBase.make_workspace(
+function AbstractMultiscaleTransforms.make_workspace(
         t::TICT, ::Type{T}, dims::Dims; flags::Integer = FFTW.MEASURE,
         tasks::Union{Integer, Nothing} = nothing, tune::Bool = false, prewarm::Bool = true
     ) where {T <: Number}
@@ -48,7 +48,7 @@ function MultiscaleTransformsBase.make_workspace(
     return _tict_workspace(t, Td, _check_image(dims), Matrix{Td}, prewarm, flags, _check_tasks(tasks), tune)
 end
 
-function MultiscaleTransformsBase.make_workspace(
+function AbstractMultiscaleTransforms.make_workspace(
         t::TICT, x::AbstractArray; flags::Integer = FFTW.MEASURE,
         tasks::Union{Integer, Nothing} = nothing, tune::Bool = false, prewarm::Bool = true
     )

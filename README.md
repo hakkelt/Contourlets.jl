@@ -36,19 +36,19 @@ synthesize(t, c) ≈ img               # true
 
 ## Installation
 
-Contourlets.jl and its dependencies MultiscaleTransformsBase.jl and
+Contourlets.jl and its dependencies AbstractMultiscaleTransforms.jl and
 MultiscaleFilterBanks.jl are not registered yet. Clone the three repositories
 side by side and develop them into your environment:
 
 ```bash
-git clone https://github.com/hakkelt/MultiscaleTransformsBase.jl MultiscaleTransformsBase
+git clone https://github.com/hakkelt/AbstractMultiscaleTransforms.jl AbstractMultiscaleTransforms
 git clone https://github.com/hakkelt/MultiscaleFilterBanks.jl MultiscaleFilterBanks
 git clone https://github.com/hakkelt/Contourlets.jl Contourlets
 ```
 
 ```julia
 using Pkg
-Pkg.develop([PackageSpec(path = "MultiscaleTransformsBase"),
+Pkg.develop([PackageSpec(path = "AbstractMultiscaleTransforms"),
              PackageSpec(path = "MultiscaleFilterBanks"),
              PackageSpec(path = "Contourlets")])
 ```
@@ -68,7 +68,7 @@ surfacelet transform for volumes, and
 transforms. All three share the filters of
 [MultiscaleFilterBanks.jl](https://github.com/hakkelt/MultiscaleFilterBanks.jl)
 and the interface of
-[MultiscaleTransformsBase.jl](https://github.com/hakkelt/MultiscaleTransformsBase.jl).
+[AbstractMultiscaleTransforms.jl](https://github.com/hakkelt/AbstractMultiscaleTransforms.jl).
 
 ## Acknowledgments
 

@@ -2,7 +2,7 @@
     Contourlets
 
 Two-dimensional contourlet transforms, as transform objects of
-[MultiscaleTransformsBase](https://github.com/hakkelt/MultiscaleTransformsBase.jl),
+[AbstractMultiscaleTransforms](https://github.com/hakkelt/AbstractMultiscaleTransforms.jl),
 whose interface this package re-exports.
 
 ## Quick reference
@@ -58,8 +58,8 @@ using MultiscaleFilterBanks: MultiscaleFilterBanks,
     MaskItem, MaskBank, MaskBankEngine, mask_bank_forward!, mask_bank_inverse!, mask_bank_tune
 
 # The interface's functions get their methods by qualified definitions
-# (`MultiscaleTransformsBase.analyze!(...) = ...`).
-using MultiscaleTransformsBase: MultiscaleTransformsBase, AbstractMultiscaleTransform, AbstractTransformWorkspace,
+# (`AbstractMultiscaleTransforms.analyze!(...) = ...`).
+using AbstractMultiscaleTransforms: AbstractMultiscaleTransforms, AbstractMultiscaleTransform, AbstractTransformWorkspace,
     SubbandVector, SubbandLayout, check_workspace,
     analyze, analyze!, synthesize, synthesize!, make_workspace, transform,
     similar_coefficients, subband_layout, nsubbands, subband
@@ -122,7 +122,7 @@ export
     # Utilities
     parabolic_levels,
 
-    # The interface (MultiscaleTransformsBase)
+    # The interface (AbstractMultiscaleTransforms)
     AbstractMultiscaleTransform, AbstractTransformWorkspace,
     analyze, analyze!, synthesize, synthesize!, make_workspace, transform, similar_coefficients,
     subband_layout, nsubbands, subband, SubbandVector, SubbandLayout

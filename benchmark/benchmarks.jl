@@ -17,7 +17,7 @@ run only for Float64 (CT/NSCT cover the Float64-vs-ComplexF64 threading split).
 
 using BenchmarkTools, Contourlets, Random, GPUEnv
 using Contourlets: lp_decompose, lp_reconstruct, dfb_decompose, dfb_reconstruct,
-    nsdfb_decompose, nsdfb_reconstruct, conv2d, conv2d_sep
+    nsdfb_decompose, nsdfb_reconstruct, conv2d_sep
 using FFTW: FFTW
 
 # Cap each @benchmarkable's tuning + steady-state phase: AirspeedVelocity runs this
@@ -251,15 +251,9 @@ for sz in TEST_SIZES
             # ────────────────────────────────────────────────────────────────────────────
 
             SUITE["primitives"][sz_str] = BenchmarkGroup()
-            # Separable convolution (LP workhorse) and the direct/FFTW conv2d backends.
-            k_small = Float64[1.0 2.0 1.0]                       # direct backend (≤25 taps)
-            k_large = randn(RNG, Float64, 7, 7)                  # FFTW backend (>25 taps)
+            # Separable convolution, the Laplacian pyramid's workhorse.
             SUITE["primitives"][sz_str]["conv2d_sep"] =
                 @benchmarkable conv2d_sep($img, [1.0, 2.0, 1.0], [1.0, 2.0, 1.0])
-            SUITE["primitives"][sz_str]["conv2d_direct"] =
-                @benchmarkable conv2d($img, $k_small, (1, 2))
-            SUITE["primitives"][sz_str]["conv2d_fftw"] =
-                @benchmarkable conv2d($img, $k_large, (4, 4))
         end
     end
 end

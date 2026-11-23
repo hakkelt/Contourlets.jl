@@ -174,6 +174,12 @@ julia --project=test test/runtests.jl :ct,:gpu
 julia --project=test test/runtests.jl "NSCT workspace path is allocation-free"
 ```
 
+**Documentation**: build it with
+`julia --threads=2 --project=docs docs/make.jl`.  The README figures in
+`docs/src/assets/readme-*.png` are written by
+`julia --project=docs docs/readme_figures.jl`; rerun it when the transforms'
+output changes, and commit the PNGs.
+
 **Benchmarks** — smoke test, then revision comparison:
 ```bash
 julia --project=benchmark --startup-file=no -e '

@@ -1,5 +1,6 @@
 using Documenter, Contourlets, MultiscaleFilterBanks, MultiscaleTransformsBase
 
+# Doctests run in every spliced docstring, including those of the two dependencies.
 DocMeta.setdocmeta!(Contourlets, :DocTestSetup, :(using Contourlets, Random); recursive = true)
 DocMeta.setdocmeta!(
     MultiscaleFilterBanks, :DocTestSetup,
@@ -11,13 +12,14 @@ DocMeta.setdocmeta!(
 )
 
 makedocs(;
-    # MultiscaleFilterBanks and MultiscaleTransformsBase are in the list because
-    # Contourlets re-exports names whose docstrings live there (`FilterPair`,
-    # `CDF97`; the interface).  Their other public names are documented in their
-    # own manuals, so `checkdocs` skips them (Documenter ≥ 1.20 for listed modules).
+    # Documenter finds docstrings only in the listed modules.  The two
+    # dependencies are listed for the names Contourlets re-exports (`FilterPair`,
+    # `CDF97`, the interface); their other public names are documented in their
+    # own manuals, so `checkdocs` skips them.
     modules = [Contourlets, MultiscaleFilterBanks, MultiscaleTransformsBase],
     checkdocs_ignored_modules = [MultiscaleFilterBanks, MultiscaleTransformsBase],
     sitename = "Contourlets.jl",
+    # Docstrings spliced from the two dependencies link to their repositories.
     remotes = Dict(
         pkgdir(MultiscaleFilterBanks) =>
             Documenter.Remotes.GitHub("hakkelt", "MultiscaleFilterBanks.jl"),
@@ -30,16 +32,15 @@ makedocs(;
     ),
     pages = [
         "Home" => "index.md",
-        "Guide" => [
-            "2-D transforms" => "guide/transforms-2d.md",
-            "Denoising and approximation" => "guide/denoising.md",
-            "Performance, threading and GPUs" => "guide/performance.md",
+        "How-to guides" => [
+            "Choose a transform" => "guide/transforms.md",
+            "Reuse a workspace" => "guide/workspaces.md",
+            "Denoise with the NSCT" => "guide/denoising.md",
+            "Threads and GPUs" => "guide/parallel.md",
+            "Pyramid and filter-bank stages" => "guide/stages.md",
         ],
-        "Background" => [
-            "Theory — 2-D" => "theory.md",
-            "Comparison with the MATLAB toolboxes" => "comparison.md",
-        ],
-        "API Reference" => "api.md",
+        "Explanation" => ["Theory" => "theory.md"],
+        "Reference" => ["API" => "api.md"],
     ],
     checkdocs = :public,
 )

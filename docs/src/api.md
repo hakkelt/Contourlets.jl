@@ -4,11 +4,15 @@
 CurrentModule = Contourlets
 ```
 
+The transforms, their workspaces and the interface functions are exported. The
+pyramid and directional-filter-bank stages under [Building blocks](@ref
+building-blocks) are public but not exported: import them by name, as in
+`using Contourlets: lp_decompose`.
+
 ## Module
 
 ```@docs
 Contourlets
-MultiscaleFilterBanks.MultiscaleFilterBanks
 ```
 
 ## Transforms
@@ -18,16 +22,16 @@ CT
 NSCT
 TICT
 STICT
+parabolic_levels
 ```
 
 ## Running a transform
 
-The verbs and accessors are those of
-[MultiscaleTransformsBase](https://github.com/hakkelt/MultiscaleTransformsBase.jl),
-re-exported here; each entry below lists the interface's contract first and the
-contourlet methods after it.  Every verb also takes a workspace in place of the
-transform: `analyze(ws, x)`, `analyze!(c, ws, x)`, `synthesize(ws, c)` and
-`synthesize!(x, ws, c)`.
+These functions come from
+[MultiscaleTransformsBase.jl](https://github.com/hakkelt/MultiscaleTransformsBase.jl);
+each entry gives the general contract first and the contourlet methods after
+it. Every function also accepts a workspace in place of the transform, as in
+`analyze(ws, x)` and `synthesize!(x, ws, c)`.
 
 ```@docs
 analyze
@@ -58,29 +62,19 @@ SubbandVector
 SubbandLayout
 ```
 
-## From MultiscaleTransformsBase
-
-The interface's abstract types, the public helpers an implementation uses, and
-its conformance tests.
+## Filters
 
 ```@docs
-MultiscaleTransformsBase.MultiscaleTransformsBase
-AbstractMultiscaleTransform
-AbstractTransformWorkspace
-MultiscaleTransformsBase.DefaultWorkspace
-MultiscaleTransformsBase.check_workspace
-MultiscaleTransformsBase.signal_size
-MultiscaleTransformsBase.supports_streaming
-MultiscaleTransformsBase.Testing
-MultiscaleTransformsBase.Testing.test_transform
+CDF97
+Q2345
+FilterPair
+QuincunxFilterPair
+upsample_kernel
 ```
 
-## Building blocks
+## [Building blocks](@id building-blocks)
 
-The pyramid and directional stages below are public but not exported; load them
-by name, e.g. `using Contourlets: lp_decompose, dfb_decompose`.
-
-### Pyramid
+### Pyramids
 
 ```@docs
 lp_decompose
@@ -93,13 +87,9 @@ nsp_reconstruct
 nsp_reconstruct!
 ```
 
-### Directional Filter Bank
+### Directional filter banks
 
 ```@docs
-qfb_decompose
-qfb_decompose!
-qfb_reconstruct
-qfb_reconstruct!
 dfb_decompose
 dfb_decompose!
 dfb_reconstruct
@@ -107,28 +97,22 @@ dfb_reconstruct!
 dfb_subband_sizes
 nsdfb_decompose
 nsdfb_reconstruct
+qfb_decompose
+qfb_decompose!
+qfb_reconstruct
+qfb_reconstruct!
 ```
 
-## Filters
+## Interface types
+
+Types and functions of MultiscaleTransformsBase.jl and MultiscaleFilterBanks.jl
+that the entries above refer to.
 
 ```@docs
-CDF97
-Q2345
-FilterPair
-QuincunxFilterPair
-parabolic_levels
-```
-
-`FilterPair` and `CDF97` come from MultiscaleFilterBanks, as do these two
-helpers their documentation refers to:
-
-```@docs
-MultiscaleFilterBanks.upsample_filter
+AbstractMultiscaleTransform
+AbstractTransformWorkspace
+MultiscaleTransformsBase.DefaultWorkspace
+MultiscaleTransformsBase.check_workspace
+MultiscaleTransformsBase.supports_streaming
 MultiscaleFilterBanks.ReadOnlyTaps
-```
-
-The filter utility below is public but not exported.
-
-```@docs
-upsample_kernel
 ```

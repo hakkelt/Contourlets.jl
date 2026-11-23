@@ -21,15 +21,10 @@ and the Q2345 ladder are all planar, and Lu and Do prove that the hourglass
 frequency partition a volume needs cannot be critically sampled at all. The two
 packages share only the pyramid filter machinery.
 
-The shared surface with the core is small and explicit: `FilterPair`, `CDF97`
-(re-exported), and the internals `data_eltype`,
-`filter_eltype`, the scoped FFTW thread count
-(`with_fftw_threads`), `clamp_idx`, `nsp_atrous_filters`, and the
-pyramid's frequency responses (`nsp_responses`, `centered_dtft`), and the
-mask-bank engine that runs the NSCT and TICT workspaces (`MaskBankEngine`,
-`MaskBank`, `MaskItem`, `mask_bank_forward!`, `mask_bank_inverse!`; this package adds
-`mask_bank_subband`/`mask_bank_coarse`/`mask_bank_storage` methods for its
-stacked coefficients in `src/workspace/mask_bank.jl`).
+The surface shared with the core is the `using MultiscaleFilterBanks:` block in
+`src/Contourlets.jl` (`FilterPair` and `CDF97` are re-exported); this package
+adds `mask_bank_subband`/`mask_bank_coarse`/`mask_bank_storage` methods for its
+stacked coefficients in `src/workspace/mask_bank.jl`.
 
 **The transform interface** comes from MultiscaleTransformsBase (MTB): the
 transform types `CT`, `NSCT`, `TICT`, `STICT` subtype
@@ -46,8 +41,6 @@ is the lowpass (`scale = 0` / `level = 0`), then the scales from the coarsest
 is split `scales + 1 - j`, the `level`/`tree_level` of `nsp_*`/`nsdfb_*`.  Every test
 suite change keeps `MultiscaleTransformsBase.Testing.test_transform` passing
 (`test/items/test_interface.jl`).
-All are re-exported (`FilterPair`, `CDF97`) or imported (internals) in
-`src/Contourlets.jl`.
 
 **Public surface.** Only the transform API is exported: transform and
 workspace types, the re-exported MTB interface, `Q2345`/`QuincunxFilterPair`,
@@ -60,20 +53,17 @@ release; tests and docstring examples call them qualified
 (`Contourlets.conv2d_sep`).  Every public name needs a docstring and an entry in
 `docs/src/api.md` (`checkdocs = :public`).
 
-**First checkout**: CI resolves `MultiscaleFilterBanks.jl` from the registry. To
-develop against a sibling checkout, run `julia --project=. dev/bootstrap.jl`
-once; it `Pkg.develop`s the checkout into every environment of the workspace.
-
-## Quick Start
-
-1. **Read this file** for project-specific invariants.
-2. **Load the matching skill** for GPU or threading work (`my-gpu-ext`,
-   `my-threading`).
-3. **Honor the invariants** below — every change must keep them.
+**First checkout**: `MultiscaleTransformsBase.jl` and `MultiscaleFilterBanks.jl`
+are expected as sibling checkouts. MTB comes in through `[sources]`; for MFB run
+`julia --project=. dev/bootstrap.jl` once, which `Pkg.develop`s it into every
+environment of the workspace.
 
 ## Commit Rules
 
-- **Commit Message Formatting**: Follow the "Conventional Commits" format with the structure `type(scope): subject` and a detailed description (including performance numbers or context) separated by a blank line. For simple commits affecting only a couple lines, a detailed description is optional. Always append co-author line referencing yourself.
+- **Commit Message Formatting**: Conventional Commits, `type(scope): subject`,
+  then a blank line and a detailed description (performance numbers or context;
+  optional for a few-line change). End with an
+  `Assisted-by: <agent name and version> <email>` trailer, not `Co-Authored-By:`.
 - **Committing Changes**: ONLY commit code upon explicit instruction from the user.
 
 ---
@@ -88,20 +78,14 @@ Conventions that are non-obvious or specific to this package's API contract:
   `f_ladder::Vector{T}` (Phoong's β, unmodulated); every directional filter is
   derived from it. Filter constants are defined once in `src/filters/` and
   referenced by value — never rebuild filter arrays inside hot loops.
-- **Element types: real filters, real-or-complex data.** `FilterPair` and the
-  `data_eltype`/`filter_eltype` helpers come from MultiscaleFilterBanks.
-  Filters are always real
-  (`FilterPair`/`QuincunxFilterPair` and the transform types are `Tf <: AbstractFloat`);
-  image data may be complex (`Td <: Number`). The two flow independently —
-  `Td = data_eltype(image)`, `Tf = filter_eltype(Td) = real(float(Td))` — so a
-  complex image is filtered as complex·real (never complex·complex). Multiply
-  kernels (`conv2d_sep!`, `_sefilter2`, `_nsqfb_*`, `qfb`) take
-  `src::{Td}` / filter `::{Tf}` separately and accumulate in `Td`; workspace types
-  start with the parameters `{Td, Tf}` (dispatch annotations `{T}` bind the first
-  param = data type). The transforms are real-linear, `T(x + i·y) ≈ T(x) + i·T(y)`,
-  to rounding only: complex data runs complex FFTs and real data real ones, so the
-  conformance tests use `exact_real_linear = false`. The FFTW conv backend is
-  real-only; complex data routes through the direct backend.
+- **Element types** follow MultiscaleFilterBanks' rule (real `Tf` filters,
+  `Td` data, complex·real). Multiply kernels (`conv2d_sep!`, `_sefilter2`,
+  `_nsqfb_*`, `qfb`) take `src::{Td}` / filter `::{Tf}` and accumulate in `Td`;
+  workspace types start with `{Td, Tf}` (a dispatch annotation `{T}` binds the
+  data type). Real-linearity holds to rounding only: complex data runs complex
+  FFTs and real data real ones, so the conformance tests use
+  `exact_real_linear = false`. The FFTW conv backend is real-only; complex data
+  routes through the direct backend.
 - **Verbs and workspaces.** `analyze!(c, t, x; workspace, threaded)` writes into
   `c`, `analyze(t, x; ...)` allocates; likewise `synthesize!`/`synthesize`.  Every
   call takes `workspace` and `threaded` (the CT and STICT accept and ignore
@@ -130,8 +114,7 @@ Conventions that are non-obvious or specific to this package's API contract:
   previously-seen size is sub-millisecond. A `Dict` of plan objects only adds a
   lock and a type-unstable cache. Use `FFTW.MEASURE` for repeated transforms,
   `FFTW.ESTIMATE` when a plan is used once and first-call latency matters.
-- **Formatting.** Runic is mandatory — run `runic src/` before committing.
-- **Static analysis.** Run ReLint after Runic before committing:
+- **Formatting and static analysis.** Runic, then ReLint, before committing:
   ```bash
   runic src/
   JULIA_LOAD_PATH="@relint:@stdlib" julia --startup-file=no scripts/relint.jl src/
@@ -147,7 +130,7 @@ Conventions that are non-obvious or specific to this package's API contract:
 - All tests are self-contained `@testitem` blocks (TestItemRunner): each block
   must import all dependencies except `Contourlets` and `Test` inside the block.
 - Tag taxonomy: `:filters`, `:primitives`, `:pyramid`, `:directional`, `:ct`,
-  `:nsct` (also implies `:ct`), `:tict` (TICT and STICT), `:quality` (Aqua/JET),
+  `:nsct`, `:tict` (TICT and STICT), `:quality` (Aqua/JET),
   `:jet`, `:docs`, `:gpu`.
 - Seed every random input (`Random.seed!(42)`); never rely on global RNG state.
 - NSCT shift-invariance is a required property — compare `analyze(t, x)` with
@@ -165,8 +148,6 @@ Run tests through `test/runtests.jl`. It supports filtering by name and tag usin
 
 ```bash
 # Run all tests
-julia --project -e 'using Pkg; Pkg.test()'
-# OR
 julia --project=test test/runtests.jl
 
 # Run focused tests by passing tags (starting with :) or names
@@ -210,8 +191,7 @@ output.
 - **Perfect reconstruction proves nothing about directional geometry.** The
   directional stage reconstructs exactly by construction — Phoong's quincunx pair
   satisfies the PR conditions for any ladder filter — so a wrong directional
-  partition still round-trips perfectly. That is how an `nsdfb` regression once
-  slipped through (sibling wedges merged from `l = 4`). Directional tests must
+  partition still round-trips perfectly. Directional tests must
   assert the *index* of the subband a plane wave lands in, not just PR.
 - **The DFB is the thesis' multichannel bank, computed on the DFT grid.** Each
   channel is `yₖ[n] = (hₖ ⊛ x)[Sₖn]` with the closed-form equivalent filter `Hₖ`

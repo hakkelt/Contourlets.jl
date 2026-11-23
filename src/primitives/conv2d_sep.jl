@@ -115,81 +115,100 @@ function _conv2d_sep_impl!(
     i_lo = lc - cc + 1
     i_hi = n1 - lc + cc
 
-    # Column pass — border rows via _get
+    # Column pass — border rows via _get, then the interior
     for j in 1:n2
-        @inbounds for i in 1:min(i_lo - 1, n1)
-            acc = zero(Td)
-            for k in 1:lc
-                iszero(h_col[k]) || (acc += h_col[k] * _get(src, i - (k - cc), j, n1, n2, bv))
-            end
-            tmp[i, j] = acc
-        end
-        @inbounds for i in max(i_hi + 1, i_lo):n1
-            acc = zero(Td)
-            for k in 1:lc
-                iszero(h_col[k]) || (acc += h_col[k] * _get(src, i - (k - cc), j, n1, n2, bv))
-            end
-            tmp[i, j] = acc
-        end
+        _col_taps!(tmp, src, h_col, cc, 1:min(i_lo - 1, n1), j, bv)
+        _col_taps!(tmp, src, h_col, cc, max(i_hi + 1, i_lo):n1, j, bv)
     end
-    # Column pass — interior: zero then accumulate (k outer, @simd over i)
-    @inbounds for j in 1:n2
-        @simd for i in i_lo:i_hi
-            tmp[i, j] = zero(Td)
-        end
-    end
-    @inbounds for k in 1:lc
-        c = h_col[k]
-        iszero(c) && continue      # the holes of an à trous filter
-        row_off = cc - k
-        for j in 1:n2
-            @simd for i in i_lo:i_hi
-                tmp[i, j] += c * src[i + row_off, j]
-            end
-        end
-    end
+    _col_interior!(tmp, src, h_col, cc, i_lo:i_hi)
 
     # Interior column range for the row pass.  When n2 < lr the range is empty.
     # Same asymmetry as the column pass above for an even-length filter.
     j_lo = lr - cr + 1
     j_hi = n2 - lr + cr
 
-    # Row pass — border columns via _get
-    @inbounds for j in 1:min(j_lo - 1, n2)
-        for i in 1:n1
-            acc = zero(Td)
-            for k in 1:lr
-                iszero(h_row[k]) || (acc += h_row[k] * _get(tmp, i, j - (k - cr), n1, n2, bv))
-            end
-            dst[i, j] = acc
+    # Row pass — border columns via _get, then the interior
+    for j in 1:min(j_lo - 1, n2)
+        _row_taps!(dst, tmp, h_row, cr, j, bv)
+    end
+    for j in max(j_hi + 1, j_lo):n2
+        _row_taps!(dst, tmp, h_row, cr, j, bv)
+    end
+    _row_interior!(dst, tmp, h_row, cr, j_lo:j_hi)
+
+    return dst
+end
+
+# tmp[i, j] for i in `rows`: the column filter (centered at `cc`) applied to
+# column j of src, reading through the boundary extension.  `acc` carries the
+# data type (real filter × Td data → Td).
+@inline function _col_taps!(tmp::AbstractMatrix{Td}, src, h_col, cc, rows, j, bv) where {Td}
+    n1, n2 = size(src)
+    @inbounds for i in rows
+        acc = zero(Td)
+        for k in 1:length(h_col)
+            iszero(h_col[k]) || (acc += h_col[k] * _get(src, i - (k - cc), j, n1, n2, bv))
+        end
+        tmp[i, j] = acc
+    end
+    return tmp
+end
+
+# dst[:, j]: the row filter (centered at `cr`) applied along the rows of tmp at
+# column j, reading through the boundary extension.
+@inline function _row_taps!(dst::AbstractMatrix{Td}, tmp, h_row, cr, j, bv) where {Td}
+    n1, n2 = size(tmp)
+    @inbounds for i in 1:n1
+        acc = zero(Td)
+        for k in 1:length(h_row)
+            iszero(h_row[k]) || (acc += h_row[k] * _get(tmp, i, j - (k - cr), n1, n2, bv))
+        end
+        dst[i, j] = acc
+    end
+    return dst
+end
+
+# tmp[rows, :]: the column filter at rows whose taps all lie inside src — zero,
+# then accumulate one tap at a time (k outer, @simd over i).
+@inline function _col_interior!(tmp::AbstractMatrix{Td}, src, h_col, cc, rows) where {Td}
+    n2 = size(src, 2)
+    @inbounds for j in 1:n2
+        @simd for i in rows
+            tmp[i, j] = zero(Td)
         end
     end
-    @inbounds for j in max(j_hi + 1, j_lo):n2
-        for i in 1:n1
-            acc = zero(Td)
-            for k in 1:lr
-                iszero(h_row[k]) || (acc += h_row[k] * _get(tmp, i, j - (k - cr), n1, n2, bv))
+    @inbounds for k in 1:length(h_col)
+        c = h_col[k]
+        iszero(c) && continue      # the holes of an à trous filter
+        row_off = cc - k
+        for j in 1:n2
+            @simd for i in rows
+                tmp[i, j] += c * src[i + row_off, j]
             end
-            dst[i, j] = acc
         end
     end
-    # Row pass — interior: zero then accumulate (k outer, @simd over i)
-    @inbounds for j in j_lo:j_hi
+    return tmp
+end
+
+# dst[:, cols]: the row filter at columns whose taps all lie inside tmp, in the
+# same zero-then-accumulate order.
+@inline function _row_interior!(dst::AbstractMatrix{Td}, tmp, h_row, cr, cols) where {Td}
+    n1 = size(tmp, 1)
+    @inbounds for j in cols
         @simd for i in 1:n1
             dst[i, j] = zero(Td)
         end
     end
-    @inbounds for k in 1:lr
+    @inbounds for k in 1:length(h_row)
         c = h_row[k]
         iszero(c) && continue
         col_off = cr - k
-        @inbounds for j in j_lo:j_hi
+        for j in cols
             @simd for i in 1:n1
                 dst[i, j] += c * tmp[i, j + col_off]
             end
         end
     end
-
     return dst
 end
 
